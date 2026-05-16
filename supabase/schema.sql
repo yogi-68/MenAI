@@ -1,5 +1,5 @@
 -- ================================================================
--- MindfulAI Database Schema
+-- MenAI Database Schema
 -- Run this in Supabase SQL Editor
 -- ================================================================
 
