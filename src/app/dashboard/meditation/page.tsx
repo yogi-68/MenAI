@@ -236,7 +236,7 @@ export default function MeditationPage() {
           <span className="gradient-text">Meditation</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-          Find your calm with guided sessions and breathing exercises
+          Find your inner calm with guided sessions and breathing exercises. MenAI will lead the way.
         </p>
       </div>
 

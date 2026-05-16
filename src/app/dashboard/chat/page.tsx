@@ -331,7 +331,7 @@ export default function ChatPage() {
                 <Brain size={40} color="white" />
               </div>
               <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-                Hi, I&apos;m <span className="gradient-text">MindfulAI</span>
+                Hi, I&apos;m <span className="gradient-text">MenAI</span>
               </h2>
               <p style={{ color: "var(--text-secondary)", maxWidth: "400px", lineHeight: 1.6 }}>
                 I&apos;m your compassionate AI wellness companion. Talk to me about anything — 
@@ -529,7 +529,7 @@ export default function ChatPage() {
             </button>
           </div>
           <p style={{ textAlign: "center", fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "8px" }}>
-            MindfulAI is an AI companion, not a substitute for professional help. In crisis, call 988.
+            MenAI is an AI companion, not a substitute for professional help. In crisis, call 988.
           </p>
         </div>
       </div>

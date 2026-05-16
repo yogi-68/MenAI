@@ -182,7 +182,7 @@ export default function ExercisesPage() {
           <span className="gradient-text">CBT Exercises</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-          Evidence-based techniques for cognitive behavioral wellness
+          These exercises are based on evidence-based techniques to help you manage your mental health. MenAI is here to guide you through each step.
         </p>
       </div>
 
