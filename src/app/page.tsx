@@ -85,7 +85,7 @@ export default function LandingPage() {
               WebkitTextFillColor: "transparent",
             }}
           >
-            MindfulAI
+            MenAI
           </span>
         </Link>
 
@@ -360,8 +360,8 @@ export default function LandingPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Image src="/logo.png" alt="MindfulAI" width={20} height={20} style={{ borderRadius: "50%" }} />
-          <span>© {new Date().getFullYear()} MindfulAI</span>
+          <Image src="/logo.png" alt="MenAI" width={20} height={20} style={{ borderRadius: "50%" }} />
+          <span>© {new Date().getFullYear()} MenAI. This is an AI wellness companion, not a substitute for professional medical advice.</span>
         </div>
         <div style={{ display: "flex", gap: "20px" }}>
           <Link href="/login" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Login</Link>

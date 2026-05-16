@@ -114,7 +114,7 @@ export default function DashboardLayout({
                 WebkitTextFillColor: "transparent",
               }}
             >
-              MindfulAI
+              MenAI
             </span>
           </Link>
 
@@ -300,7 +300,7 @@ export default function DashboardLayout({
           >
             <Menu size={24} />
           </button>
-          <span style={{ fontWeight: 600 }}>MindfulAI</span>
+          <span style={{ fontWeight: 600 }}>MenAI</span>
           <div style={{ width: 24 }} />
         </div>
 

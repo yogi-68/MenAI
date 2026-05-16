@@ -128,7 +128,7 @@ export default function SignupPage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              MindfulAI
+              MenAI
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>

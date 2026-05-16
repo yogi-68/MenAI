@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MindfulAI — Your AI Mental Wellness Companion",
+  title: "MenAI — Your AI Mental Wellness Companion",
   description:
     "A compassionate AI companion for mental wellness. Chat therapy, mood tracking, journaling, CBT exercises, and meditation — all in one secure platform.",
   keywords: ["mental health", "AI therapy", "wellness", "CBT", "meditation", "mood tracking"],
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     apple: "/logo.png",
   },
   openGraph: {
-    title: "MindfulAI — Your AI Mental Wellness Companion",
+    title: "MenAI — Your AI Mental Wellness Companion",
     description: "AI-powered mental wellness. Chat, mood tracking, journaling, CBT exercises & meditation.",
     type: "website",
     images: ["/logo.png"],

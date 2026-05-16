@@ -1,8 +1,8 @@
 {
-  "name": "mentalai",
+  "name": "men-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "MindfulAI - AI Mental Health & Wellness Platform",
+  "description": "MenAI - AI Mental Health & Wellness Platform",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
