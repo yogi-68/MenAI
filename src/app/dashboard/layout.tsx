@@ -12,6 +12,7 @@ import {
   BookHeart,
   Dumbbell,
   Moon,
+  Sun,
   BarChart3,
   LogOut,
   Menu,
@@ -36,9 +37,26 @@ export default function DashboardLayout({
 }) {
   const { user, setUser, sidebarOpen, toggleSidebar } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
+
+  // Load saved theme
+  useEffect(() => {
+    const saved = localStorage.getItem("menai-theme") as "dark" | "light" | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.classList.toggle("light", saved === "light");
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("menai-theme", next);
+    document.documentElement.classList.toggle("light", next === "light");
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -104,7 +122,7 @@ export default function DashboardLayout({
               textDecoration: "none",
             }}
           >
-            <Image src="/logo.png" alt="MindfulAI" width={36} height={36} style={{ borderRadius: "50%" }} />
+            <Image src="/logo.png" alt="MenAI" width={36} height={36} style={{ borderRadius: "50%" }} />
             <span
               style={{
                 fontSize: "1.15rem",
@@ -118,9 +136,19 @@ export default function DashboardLayout({
             </span>
           </Link>
 
-          {/* Mobile close */}
-          <button
-            onClick={() => setMobileMenuOpen(false)}
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="theme-toggle"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+
+            {/* Mobile close */}
+            <button
+              onClick={() => setMobileMenuOpen(false)}
             style={{
               display: "none",
               background: "none",
@@ -132,6 +160,7 @@ export default function DashboardLayout({
           >
             <X size={20} />
           </button>
+          </div>
         </div>
 
         {/* New Chat Button */}

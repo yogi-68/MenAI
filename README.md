@@ -1,6 +1,6 @@
-# 🧠 MindfulAI
+# 🧠 MenAI
 
-**AI-powered mental wellness companion** — built with Next.js 15, Supabase, and OpenAI GPT-4o.
+**Production-grade AI mental wellness platform** — built with Next.js 15, Supabase, and OpenAI GPT-4o.
 
 Talk to an empathetic AI, track your mood, journal with AI insights, practice CBT exercises, and meditate — all in one secure, private platform.
 
@@ -10,13 +10,64 @@ Talk to an empathetic AI, track your mood, journal with AI insights, practice CB
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **AI Chat** | Compassionate conversations powered by GPT-4o with emotional intelligence, memory, and context awareness |
+| 🤖 **AI Chat** | Compassionate conversations with emotional intelligence, memory, and state-aware responses |
 | 📊 **Mood Tracking** | Log daily mood with emotions, energy, sleep. Beautiful timeline visualizations |
 | 📝 **Smart Journal** | Write freely → get AI-generated insights and sentiment analysis |
 | 🧠 **CBT Exercises** | Guided cognitive behavioral therapy (Thought Records, Grounding, Behavioral Activation) |
 | 🧘 **Meditation** | Guided sessions for sleep, anxiety, self-compassion + breathing exercises |
+| 🌗 **Day / Night Theme** | Toggle between dark and light mode with one click |
 | 🚨 **Crisis Support** | Multi-layer safety system with emergency resource escalation |
 | 🔐 **Privacy First** | End-to-end encryption, Row Level Security, HIPAA-aligned practices |
+
+---
+
+## 🏗️ AI Architecture
+
+MenAI uses a **production-grade orchestrator** instead of a simple Frontend → API → OpenAI pipeline:
+
+```
+User Message
+     ↓
+┌─────────────────────────┐
+│    AI ORCHESTRATOR       │
+├─────────────────────────┤
+│ 1. Safety Engine         │ ← Multi-layer: Keywords + OpenAI Moderation + Emotional Intensity
+│ 2. Emotion Engine        │ ← Real-time emotional analysis (LLM-based)
+│ 3. State Machine         │ ← LISTENING → VALIDATING → EXPLORING → REFRAMING → GROUNDING
+│ 4. Memory Engine         │ ← Short-term + Long-term + Episodic + Emotional (pgvector RAG)
+│ 5. LLM Router            │ ← Cost-optimized: cheap/standard/premium model selection
+│ 6. Prompt Builder        │ ← Dynamic context-aware prompt construction
+│ 7. LLM Call              │ ← GPT-4o or GPT-4o-mini based on context
+│ 8. Response Validator    │ ← No diagnosis, no meds, no human claims, length check
+│ 9. Memory Storage        │ ← Conversation summaries + memory compression
+└─────────────────────────┘
+     ↓
+AI Response
+```
+
+### Conversation States
+
+The AI uses a **state machine** to determine what mode to be in:
+
+| State | When | Behavior |
+|-------|------|----------|
+| `LISTENING` | Default | Absorb, reflect, ask one gentle question |
+| `VALIDATING` | High emotion detected | Validate feelings only, no advice yet |
+| `EXPLORING` | After validation | Ask deeper questions to understand |
+| `REFRAMING` | Negative thought patterns | Gently challenge distortions (CBT) |
+| `GROUNDING` | Panic/anxiety signals | Immediate grounding exercises |
+| `GOAL_SETTING` | User asks for help | Small, actionable steps |
+| `REFLECTION` | Progress/gratitude | Acknowledge growth |
+| `ESCALATION` | Crisis detected | Safety resources + empathy |
+
+### Cost Optimization
+
+| Model | Used For | Cost |
+|-------|----------|------|
+| `gpt-4o-mini` | Classification, summaries, casual chat | ~$0.15/1M tokens |
+| `gpt-4o` | High-emotion, crisis, reframing | ~$2.50/1M tokens |
+
+---
 
 ## 🛠️ Tech Stack
 
@@ -24,7 +75,7 @@ Talk to an empathetic AI, track your mood, journal with AI insights, practice CB
 - **State**: Zustand
 - **Database**: Supabase PostgreSQL + pgvector (RAG memory)
 - **Auth**: Supabase Auth (Email + Google OAuth)
-- **AI**: OpenAI GPT-4o + text-embedding-3-small
+- **AI**: OpenAI GPT-4o / GPT-4o-mini
 - **Deployment**: Vercel + Supabase Cloud
 
 ---
@@ -40,8 +91,8 @@ Talk to an empathetic AI, track your mood, journal with AI insights, practice CB
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/MindfulAI.git
-cd MindfulAI
+git clone https://github.com/yogi-68/MenAI.git
+cd MenAI
 npm install
 ```
 
@@ -59,17 +110,19 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 OPENAI_API_KEY=sk-your-openai-key
 ```
 
+> **Note:** We do NOT use Pinecone. Memory/RAG uses **pgvector** (built into Supabase) — zero extra cost.
+
 ### 3. Set Up Database
 
 1. Go to [Supabase Dashboard](https://supabase.com/dashboard) → SQL Editor
 2. Paste the contents of `supabase/schema.sql`
-3. Click **Run** — creates all tables, RLS policies, triggers, and seed data
+3. Click **Run** — creates all tables, RLS policies, triggers, and indexes
 
 ### 4. Enable Auth Providers
 
 In Supabase Dashboard → Authentication → Providers:
-- ✅ Enable **Email** (enabled by default)
-- ✅ Enable **Google** (optional — needs OAuth credentials from [Google Cloud Console](https://console.cloud.google.com))
+- ✅ **Email** (enabled by default)
+- ✅ **Google** (optional — needs OAuth credentials from [Google Cloud Console](https://console.cloud.google.com))
 
 ### 5. Run
 
@@ -81,101 +134,117 @@ Open [http://localhost:3000](http://localhost:3000) → Sign up → Start chatti
 
 ---
 
+## 🌐 Deploy to Vercel
+
+### Root Directory
+
+When Vercel asks for root directory: **leave it as `.` (root)**. Do NOT set a subdirectory.
+
+### Steps
+
+1. Push to GitHub
+2. Go to [vercel.com/new](https://vercel.com/new)
+3. Import your `MenAI` repository
+4. **Root Directory**: Leave as `.` (default)
+5. **Framework**: Next.js (auto-detected)
+6. **Environment Variables** — add these 4:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `OPENAI_API_KEY`
+7. Click **Deploy** — live in ~60 seconds!
+
+### What about `node_modules`?
+
+**NO.** Never push `node_modules` to git. It's in `.gitignore`. Vercel automatically runs `npm install` during build to recreate it.
+
+---
+
 ## 📁 Project Structure
 
 ```
 src/
 ├── app/
 │   ├── api/
-│   │   ├── chat/route.ts           # AI chat pipeline (10-step)
-│   │   ├── conversations/          # Conversation CRUD
-│   │   ├── journal/route.ts        # Journal + AI insights
-│   │   └── mood/route.ts           # Mood tracking
-│   ├── auth/callback/route.ts      # OAuth callback
+│   │   ├── chat/route.ts              # Chat API (uses Orchestrator)
+│   │   ├── conversations/             # Conversation CRUD
+│   │   ├── journal/route.ts           # Journal + AI insights
+│   │   └── mood/route.ts              # Mood tracking
+│   ├── auth/callback/route.ts         # OAuth callback
 │   ├── dashboard/
-│   │   ├── layout.tsx              # Sidebar navigation
-│   │   ├── page.tsx                # Dashboard overview
-│   │   ├── chat/page.tsx           # AI chat interface
-│   │   ├── mood/page.tsx           # Mood tracker
-│   │   ├── journal/page.tsx        # Journal
-│   │   ├── exercises/page.tsx      # CBT exercises
-│   │   └── meditation/page.tsx     # Guided meditation
-│   ├── login/page.tsx              # Login
-│   ├── signup/page.tsx             # Signup
-│   └── page.tsx                    # Landing page
+│   │   ├── layout.tsx                 # Sidebar + theme toggle
+│   │   ├── page.tsx                   # Dashboard overview
+│   │   ├── chat/page.tsx              # AI chat interface
+│   │   ├── mood/page.tsx              # Mood tracker
+│   │   ├── journal/page.tsx           # Journal
+│   │   ├── exercises/page.tsx         # CBT exercises
+│   │   └── meditation/page.tsx        # Guided meditation
+│   ├── login/page.tsx
+│   ├── signup/page.tsx
+│   └── page.tsx                       # Landing page
 ├── lib/
 │   ├── ai/
-│   │   ├── openai.ts               # OpenAI client
-│   │   ├── prompts.ts              # System prompts (emotional intelligence)
-│   │   ├── crisis-detection.ts     # Safety system
-│   │   └── memory.ts               # RAG memory (pgvector)
-│   ├── supabase/
-│   │   ├── client.ts               # Browser client
-│   │   ├── server.ts               # Server client
-│   │   └── middleware.ts           # Auth middleware
-│   ├── store.ts                    # Zustand state
-│   └── utils.ts                    # Utilities
+│   │   ├── orchestrator/              # ★ THE BRAIN ★
+│   │   │   ├── index.ts               # Main orchestrator pipeline
+│   │   │   ├── router.ts              # LLM model selection
+│   │   │   ├── memory-engine.ts       # Multi-tier memory + summarization
+│   │   │   ├── emotion-engine.ts      # Emotion detection
+│   │   │   ├── safety-engine.ts       # Multi-layer safety pipeline
+│   │   │   ├── state-machine.ts       # Conversational state management
+│   │   │   ├── prompt-builder.ts      # Dynamic prompt construction
+│   │   │   ├── response-validator.ts  # Output safety checks
+│   │   │   └── types.ts               # Shared type definitions
+│   │   ├── openai.ts                  # OpenAI client + embeddings
+│   │   ├── prompts.ts                 # System prompts
+│   │   ├── crisis-detection.ts        # Crisis keyword detection
+│   │   └── memory.ts                  # Legacy memory (kept for compatibility)
+│   ├── supabase/                      # Supabase clients
+│   ├── store.ts                       # Zustand state
+│   └── utils.ts                       # Utilities
 supabase/
-└── schema.sql                      # Complete DB schema
+└── schema.sql                         # Complete DB schema
 ```
 
 ---
 
-## 🧠 Do I Need to Fine-Tune OpenAI?
+## 🧠 Do I Need Fine-Tuning?
 
-**No.** This project uses **prompt engineering** (not fine-tuning) to get great results. Here's why:
+**No.** MenAI uses **prompt engineering + orchestration** instead of fine-tuning:
 
-| Approach | When to Use |
-|----------|-------------|
-| **Prompt Engineering** ✅ | Works great for most cases. Our detailed system prompt handles emotional intelligence, safety, and conversation style |
-| **Fine-Tuning** | Only needed if you have 1000+ curated therapy conversation examples and need specialized behavior that prompts can't achieve |
+| Approach | Status |
+|----------|--------|
+| System Prompt Engineering | ✅ Done — deeply refined for empathy |
+| Conversation State Machine | ✅ Done — 8 therapeutic states |
+| Cost-Optimized Model Routing | ✅ Done — cheap model for simple tasks |
+| Memory Compression | ✅ Done — summarizes every 20 messages |
+| Response Validation | ✅ Done — no diagnosis, no meds, no human claims |
 
-The system prompt in `src/lib/ai/prompts.ts` is deeply refined to:
-- Validate feelings before offering suggestions
-- Never minimize pain or rush to fix
-- Apologize properly when wrong
-- Recognize emotional patterns
-- Maintain appropriate safety boundaries
-
-You can improve responses further by:
-1. Adjusting the system prompt in `prompts.ts`
-2. Tuning `temperature` (0.8) and `max_tokens` (500) in `api/chat/route.ts`
-3. Adding more crisis detection patterns in `crisis-detection.ts`
-
----
-
-## 🌐 Deploy to Vercel
-
-1. Push to GitHub
-2. Go to [vercel.com/new](https://vercel.com/new)
-3. Import your repository
-4. Add environment variables (same as `.env.local`)
-5. Deploy — your app is live!
+Fine-tuning is only needed after collecting 1000+ real conversation examples.
 
 ---
 
 ## 📱 Mobile App
 
-The web app is fully responsive and works on mobile browsers. For a native app:
+The web app is fully responsive. For a native app:
 - Use **React Native + Expo** sharing the same Supabase backend
-- The API routes and database work identically for both web and mobile
+- Same env vars, same database, same API
 
 ---
 
 ## 🔒 Security
 
-- **Encrypted at rest** via Supabase
 - **Row Level Security** on every table
 - **Server-side auth** — no client-side token exposure
+- **Multi-layer safety** — keyword detection + OpenAI moderation + emotional assessment
+- **Response validation** — no diagnosis, no medication advice, no human impersonation
 - **Crisis protocol** — emergency resources always available
-- **No diagnosis** — AI never makes medical claims
 - **Content moderation** — OpenAI moderation API on all inputs
 
 ---
 
 ## ⚠️ Disclaimer
 
-MindfulAI is an AI wellness companion and is **NOT a substitute for professional medical advice, diagnosis, or treatment**. If you are in crisis, please call **988** (Suicide & Crisis Lifeline) or text **HELLO** to **741741** (Crisis Text Line).
+MenAI is an AI wellness companion and is **NOT a substitute for professional medical advice, diagnosis, or treatment**. If you are in crisis, please call **988** (Suicide & Crisis Lifeline) or text **HELLO** to **741741** (Crisis Text Line).
 
 ---
 
