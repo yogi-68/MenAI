@@ -7,6 +7,7 @@
 import type { PipelineContext } from "./types";
 import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
+import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 
 /**
  * Build the complete prompt messages array for the LLM
@@ -67,6 +68,19 @@ Use this to show emotional continuity. Connect dots between past and present fee
   if (ctx.safety.level === "caution" || ctx.safety.level === "warning") {
     parts.push(`## Safety Alert
 This person may be in distress. Be extra gentle and present. If you sense escalation, ask directly: "Are you safe right now?" Don't wait.`);
+  }
+
+  // Response length guidance
+  parts.push(getResponseLengthGuidance(ctx.state, ctx.emotion));
+
+  // Anti-repetition (check last 3 AI responses)
+  const recentAiResponses = ctx.conversationHistory
+    .filter((m) => m.role === "assistant")
+    .slice(-3)
+    .map((m) => m.content);
+  const antiRepetition = getAntiRepetitionInstructions(recentAiResponses);
+  if (antiRepetition) {
+    parts.push(antiRepetition);
   }
 
   // Conversation length awareness

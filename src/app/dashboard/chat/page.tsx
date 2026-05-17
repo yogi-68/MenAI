@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Phone,
   MessageSquare,
+  Trash2,
 } from "lucide-react";
 
 interface Message {
@@ -88,6 +89,20 @@ export default function ChatPage() {
     setConversationId(null);
     setCrisisAlert(false);
     setInput("");
+  };
+
+  // Delete conversation
+  const deleteConversation = async (convId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Delete this conversation? This cannot be undone.")) return;
+
+    const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
+    if (res.ok) {
+      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      if (conversationId === convId) {
+        startNewChat();
+      }
+    }
   };
 
   // Send message
@@ -207,38 +222,58 @@ export default function ChatPage() {
         </div>
 
         {conversations.map((conv) => (
-          <button
+          <div
             key={conv.id}
             onClick={() => loadConversation(conv.id)}
             style={{
-              display: "block",
-              width: "100%",
-              textAlign: "left",
-              padding: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 12px",
               borderRadius: "var(--radius-md)",
-              border: "none",
               cursor: "pointer",
               marginBottom: "4px",
               transition: "all 0.2s",
               background: conversationId === conv.id ? "rgba(124, 92, 252, 0.1)" : "transparent",
-              color: conversationId === conv.id ? "var(--accent-primary)" : "var(--text-secondary)",
             }}
           >
-            <div
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: conversationId === conv.id ? 600 : 400,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  color: conversationId === conv.id ? "var(--accent-primary)" : "var(--text-secondary)",
+                }}
+              >
+                {conv.title || "Untitled"}
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "2px" }}>
+                {formatTime(conv.updated_at)}
+              </div>
+            </div>
+            <button
+              onClick={(e) => deleteConversation(conv.id, e)}
+              title="Delete conversation"
               style={{
-                fontSize: "0.85rem",
-                fontWeight: conversationId === conv.id ? 600 : 400,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
+                background: "none",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                padding: "4px",
+                borderRadius: "4px",
+                opacity: 0.4,
+                transition: "all 0.2s",
+                flexShrink: 0,
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--accent-tertiary)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; e.currentTarget.style.color = "var(--text-muted)"; }}
             >
-              {conv.title || "Untitled"}
-            </div>
-            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "4px" }}>
-              {formatTime(conv.updated_at)}
-            </div>
-          </button>
+              <Trash2 size={14} />
+            </button>
+          </div>
         ))}
 
         {conversations.length === 0 && (
