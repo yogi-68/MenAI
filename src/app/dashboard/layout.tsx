@@ -37,18 +37,17 @@ export default function DashboardLayout({
 }) {
   const { user, setUser, sidebarOpen, toggleSidebar } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
 
-  // Load saved theme
+  // Load saved theme (default to light)
   useEffect(() => {
     const saved = localStorage.getItem("menai-theme") as "dark" | "light" | null;
-    if (saved) {
-      setTheme(saved);
-      document.documentElement.classList.toggle("light", saved === "light");
-    }
+    const activeTheme = saved || "light";
+    setTheme(activeTheme);
+    document.documentElement.classList.toggle("light", activeTheme === "light");
   }, []);
 
   const toggleTheme = () => {

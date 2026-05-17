@@ -295,7 +295,9 @@ export default function MoodPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.7)",
+            background: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -306,7 +308,7 @@ export default function MoodPage() {
           onClick={(e) => e.target === e.currentTarget && resetForm()}
         >
           <div
-            className="glass-card animate-slide-up"
+            className="animate-slide-up"
             style={{
               width: "100%",
               maxWidth: "560px",
@@ -314,6 +316,10 @@ export default function MoodPage() {
               overflowY: "auto",
               padding: "32px",
               cursor: "default",
+              background: "var(--bg-secondary)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-lg)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>

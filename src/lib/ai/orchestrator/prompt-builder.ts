@@ -1,6 +1,7 @@
 /**
  * Prompt Builder — Dynamic context-aware prompt construction
- * Builds the system prompt with all context from the pipeline
+ * Injects emotional state, memory, mood trends, and conversational state
+ * into the system prompt to create deeply personalized responses
  */
 
 import type { PipelineContext } from "./types";
@@ -16,44 +17,66 @@ export function buildPrompt(
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
 
   // === Build dynamic system prompt ===
-  let systemContent = SYSTEM_PROMPT;
+  const parts: string[] = [SYSTEM_PROMPT];
 
   // User personalization
   if (ctx.user.fullName) {
-    systemContent += `\n\n## About This Person\nName: ${ctx.user.fullName}. Use it warmly but not every message.`;
+    parts.push(`## About This Person
+Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
   }
 
   if (ctx.user.therapyGoals && ctx.user.therapyGoals.length > 0) {
-    systemContent += `\nTheir therapy goals: ${ctx.user.therapyGoals.join(", ")}.`;
+    parts.push(`They're working on: ${ctx.user.therapyGoals.join(", ")}.`);
   }
 
-  // Conversation state instructions
-  systemContent += `\n\n## Current Mode\n${getStateInstructions(ctx.state)}`;
+  // Conversation state — this fundamentally changes response style
+  parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 
-  // Emotional context
+  // Emotional context — drives tone and depth
   if (ctx.emotion) {
-    systemContent += `\n\n## Their Current Emotional State`;
-    systemContent += `\nPrimary emotion: ${ctx.emotion.primaryEmotion} (intensity: ${ctx.emotion.intensity}/10)`;
+    let emotionBlock = `## What They're Feeling Right Now`;
+    emotionBlock += `\nPrimary: ${ctx.emotion.primaryEmotion} (intensity: ${ctx.emotion.intensity}/10)`;
+    
     if (ctx.emotion.secondaryEmotions.length > 0) {
-      systemContent += `\nAlso feeling: ${ctx.emotion.secondaryEmotions.join(", ")}`;
+      emotionBlock += `\nAlso present: ${ctx.emotion.secondaryEmotions.join(", ")}`;
     }
-    systemContent += `\nSentiment: ${ctx.emotion.sentiment}`;
+
+    // Tone adaptation based on intensity
+    if (ctx.emotion.intensity >= 8) {
+      emotionBlock += `\n\n⚠️ VERY HIGH emotional intensity. Keep your response SHORT. Lead with empathy. No advice. No questions unless absolutely necessary. Be an anchor.`;
+    } else if (ctx.emotion.intensity >= 6) {
+      emotionBlock += `\n\nHigh emotional intensity. Lead with warmth. Validate before anything else. Keep it brief and grounded.`;
+    }
+
     if (ctx.emotion.needsSupport) {
-      systemContent += `\n⚠️ This person needs emotional support right now. Lead with empathy.`;
+      emotionBlock += `\nThis person needs support right now. Show up for them.`;
     }
+
+    parts.push(emotionBlock);
   }
 
-  // Memory context
+  // Memory context — emotional continuity
   if (ctx.memory.formatted) {
-    systemContent += `\n\n## What You Remember About Them\n${ctx.memory.formatted}\nUse this naturally — don't force references.`;
+    parts.push(`## What You Remember About Them
+${ctx.memory.formatted}
+
+Use this to show emotional continuity. Connect dots between past and present feelings. But keep it natural — don't recite facts.`);
   }
 
   // Safety context
   if (ctx.safety.level === "caution" || ctx.safety.level === "warning") {
-    systemContent += `\n\n## Safety Note\nThis person may be in distress. Be extra gentle. If appropriate, gently mention that professional support is available.`;
+    parts.push(`## Safety Alert
+This person may be in distress. Be extra gentle and present. If you sense escalation, ask directly: "Are you safe right now?" Don't wait.`);
   }
 
-  messages.push({ role: "system", content: systemContent });
+  // Conversation length awareness
+  const msgCount = ctx.conversationHistory.length;
+  if (msgCount > 10) {
+    parts.push(`## Conversation Depth
+This is message ${msgCount}+ in the conversation. You should have enough context to notice patterns, connect dots, and reference earlier parts of this conversation. Don't start fresh each message.`);
+  }
+
+  messages.push({ role: "system", content: parts.join("\n\n") });
 
   // === Add conversation history (last 20 messages) ===
   const history = ctx.conversationHistory.slice(-20);

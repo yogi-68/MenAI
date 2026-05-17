@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Moon, Play, Pause, RotateCcw, Timer, Heart, Wind } from "lucide-react";
+import { Play, Pause, RotateCcw, Timer, Wind, X } from "lucide-react";
 
 interface MeditationSession {
   id: string;
@@ -19,10 +19,12 @@ export default function MeditationPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
+  const [breathSeconds, setBreathSeconds] = useState(0);
   const [showBreathing, setShowBreathing] = useState(false);
+  const [breathCycles, setBreathCycles] = useState(0);
   const [loading, setLoading] = useState(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const breathRef = useRef<NodeJS.Timeout | null>(null);
+  const breathTimerRef = useRef<NodeJS.Timeout | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -56,25 +58,61 @@ export default function MeditationPage() {
     };
   }, [isPlaying, active]);
 
-  // Breathing animation cycle
+  // Breathing exercise timer — real countdown per phase
+  const INHALE_DURATION = 4;
+  const HOLD_DURATION = 4;
+  const EXHALE_DURATION = 6;
+
+  const getPhaseTotal = useCallback(() => {
+    if (breathPhase === "inhale") return INHALE_DURATION;
+    if (breathPhase === "hold") return HOLD_DURATION;
+    return EXHALE_DURATION;
+  }, [breathPhase]);
+
   useEffect(() => {
-    if (showBreathing) {
-      const cycle = () => {
-        setBreathPhase("inhale");
-        breathRef.current = setTimeout(() => {
-          setBreathPhase("hold");
-          breathRef.current = setTimeout(() => {
-            setBreathPhase("exhale");
-            breathRef.current = setTimeout(cycle, 6000);
-          }, 4000);
-        }, 4000);
-      };
-      cycle();
+    if (!showBreathing) {
+      if (breathTimerRef.current) clearInterval(breathTimerRef.current);
+      return;
     }
+
+    setBreathPhase("inhale");
+    setBreathSeconds(0);
+    setBreathCycles(0);
+
     return () => {
-      if (breathRef.current) clearTimeout(breathRef.current);
+      if (breathTimerRef.current) clearInterval(breathTimerRef.current);
     };
   }, [showBreathing]);
+
+  useEffect(() => {
+    if (!showBreathing) return;
+
+    breathTimerRef.current = setInterval(() => {
+      setBreathSeconds((prev) => {
+        const total = breathPhase === "inhale" ? INHALE_DURATION
+          : breathPhase === "hold" ? HOLD_DURATION
+          : EXHALE_DURATION;
+
+        if (prev >= total - 1) {
+          // Move to next phase
+          if (breathPhase === "inhale") {
+            setBreathPhase("hold");
+          } else if (breathPhase === "hold") {
+            setBreathPhase("exhale");
+          } else {
+            setBreathPhase("inhale");
+            setBreathCycles((c) => c + 1);
+          }
+          return 0;
+        }
+        return prev + 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (breathTimerRef.current) clearInterval(breathTimerRef.current);
+    };
+  }, [showBreathing, breathPhase]);
 
   const formatTimer = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -93,17 +131,116 @@ export default function MeditationPage() {
     return icons[c] || "🧘";
   };
 
-  const getCategoryGradient = (c: string) => {
-    const gradients: Record<string, string> = {
-      "Morning": "linear-gradient(135deg, #fcb05c, #fc5c9c)",
-      "Anxiety": "linear-gradient(135deg, #5c8cfc, #5ce0d8)",
-      "Sleep": "linear-gradient(135deg, #7c5cfc, #5c8cfc)",
-      "Self-Care": "linear-gradient(135deg, #fc5c9c, #fcb05c)",
-      "Breathing": "linear-gradient(135deg, #5ce0d8, #7c5cfc)",
-    };
-    return gradients[c] || "var(--gradient-primary)";
-  };
+  // ===== BREATHING EXERCISE OVERLAY =====
+  if (showBreathing) {
+    const phaseTotal = getPhaseTotal();
+    const progress = ((breathSeconds + 1) / phaseTotal) * 100;
+    const circleSize = breathPhase === "inhale"
+      ? 140 + (breathSeconds / INHALE_DURATION) * 60
+      : breathPhase === "hold"
+      ? 200
+      : 200 - (breathSeconds / EXHALE_DURATION) * 60;
 
+    return (
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "var(--bg-primary)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 50,
+          padding: "32px",
+        }}
+      >
+        <button
+          onClick={() => setShowBreathing(false)}
+          style={{
+            position: "absolute",
+            top: "24px",
+            right: "24px",
+            background: "var(--bg-glass)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            width: 40,
+            height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <X size={20} />
+        </button>
+
+        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "8px" }}>
+          Cycle {breathCycles + 1}
+        </p>
+
+        <h2 style={{ fontSize: "1.3rem", fontWeight: 600, marginBottom: "48px", color: "var(--text-secondary)" }}>
+          {breathPhase === "inhale" ? "Breathe In" : breathPhase === "hold" ? "Hold" : "Breathe Out"}
+        </h2>
+
+        {/* Animated breathing circle */}
+        <div
+          style={{
+            width: circleSize,
+            height: circleSize,
+            borderRadius: "50%",
+            background: breathPhase === "inhale"
+              ? "linear-gradient(135deg, rgba(92, 140, 252, 0.3), rgba(92, 224, 216, 0.3))"
+              : breathPhase === "hold"
+              ? "linear-gradient(135deg, rgba(124, 92, 252, 0.3), rgba(92, 140, 252, 0.3))"
+              : "linear-gradient(135deg, rgba(92, 224, 216, 0.3), rgba(124, 92, 252, 0.2))",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "all 1s ease-in-out",
+            boxShadow: `0 0 ${breathPhase === "hold" ? 60 : 30}px ${
+              breathPhase === "inhale" ? "rgba(92, 224, 216, 0.2)" : "rgba(124, 92, 252, 0.2)"
+            }`,
+          }}
+        >
+          <span
+            style={{
+              fontSize: "2.5rem",
+              fontWeight: 700,
+              fontFamily: "var(--font-mono)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {phaseTotal - breathSeconds}
+          </span>
+        </div>
+
+        <p style={{
+          marginTop: "48px",
+          color: "var(--text-muted)",
+          fontSize: "0.85rem",
+          textAlign: "center",
+          maxWidth: "300px",
+          lineHeight: 1.6,
+        }}>
+          {breathPhase === "inhale" && "Slowly fill your lungs through your nose..."}
+          {breathPhase === "hold" && "Gently hold. Notice the stillness..."}
+          {breathPhase === "exhale" && "Release slowly through your mouth..."}
+        </p>
+
+        <button
+          onClick={() => setShowBreathing(false)}
+          className="btn-secondary"
+          style={{ marginTop: "32px" }}
+        >
+          End Exercise
+        </button>
+      </div>
+    );
+  }
+
+  // ===== ACTIVE SESSION VIEW =====
   if (active) {
     const progress = (timeElapsed / active.duration_seconds) * 100;
     return (
@@ -228,6 +365,7 @@ export default function MeditationPage() {
     );
   }
 
+  // ===== MAIN PAGE =====
   return (
     <div style={{ padding: "32px", maxWidth: "900px", margin: "0 auto" }}>
       {/* Header */}
@@ -236,7 +374,7 @@ export default function MeditationPage() {
           <span className="gradient-text">Meditation</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-          Find your inner calm with guided sessions and breathing exercises. MenAI will lead the way.
+          Find your calm with guided sessions and breathing exercises
         </p>
       </div>
 
@@ -250,38 +388,26 @@ export default function MeditationPage() {
           textAlign: "center",
           background: "linear-gradient(135deg, rgba(92, 224, 216, 0.05), rgba(124, 92, 252, 0.05))",
         }}
-        onClick={() => setShowBreathing(!showBreathing)}
+        onClick={() => setShowBreathing(true)}
       >
         <Wind size={24} style={{ color: "var(--accent-secondary)", marginBottom: "12px" }} />
         <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "4px" }}>Quick Breathing</h3>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "20px" }}>
-          Tap to start a simple breathing exercise
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "8px" }}>
+          4-4-6 breathing exercise · tap to begin
         </p>
-
-        {showBreathing && (
-          <div style={{ animation: "fadeIn 0.3s ease-out" }}>
-            <div
-              className="animate-breathe"
-              style={{
-                width: 120,
-                height: 120,
-                borderRadius: "50%",
-                background: "var(--gradient-calm)",
-                margin: "0 auto 16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <span style={{ fontSize: "1.2rem", fontWeight: 700, color: "white" }}>
-                {breathPhase === "inhale" ? "Breathe In" : breathPhase === "hold" ? "Hold" : "Breathe Out"}
-              </span>
-            </div>
-            <p style={{ color: "var(--accent-secondary)", fontSize: "0.9rem" }}>
-              {breathPhase === "inhale" ? "4 seconds" : breathPhase === "hold" ? "4 seconds" : "6 seconds"}
-            </p>
-          </div>
-        )}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "0.85rem",
+            color: "var(--accent-primary)",
+            fontWeight: 500,
+          }}
+        >
+          <Play size={14} />
+          Start Breathing
+        </span>
       </div>
 
       {/* Sessions Grid */}

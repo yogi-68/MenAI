@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="light">
       <body className={`${inter.variable} font-sans antialiased`}>
         {/* Ambient background orbs */}
         <div className="ambient-bg" aria-hidden="true">
