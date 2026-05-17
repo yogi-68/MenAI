@@ -1,13 +1,16 @@
 /**
  * Prompt Builder — Dynamic context-aware prompt construction
- * Injects emotional state, memory, mood trends, and conversational state
- * into the system prompt to create deeply personalized responses
+ * 
+ * Now includes the REGULATION ENGINE — the critical missing layer
+ * that moves responses from "empathetic acknowledgement" to
+ * "actual emotional state transformation."
  */
 
 import type { PipelineContext } from "./types";
 import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
+import { buildRegulationPrompt, detectNervousSystemState } from "./regulation-engine";
 
 /**
  * Build the complete prompt messages array for the LLM
@@ -30,10 +33,24 @@ Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
     parts.push(`They're working on: ${ctx.user.therapyGoals.join(", ")}.`);
   }
 
-  // Conversation state — this fundamentally changes response style
+  // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 
-  // Emotional context — drives tone and depth
+  // ===== THE CRITICAL LAYER: EMOTIONAL REGULATION =====
+  // This determines HOW to do it — pacing, structure, nervous system calming
+  const regulationPrompt = buildRegulationPrompt(
+    ctx.emotion,
+    ctx.state,
+    ctx.input.message
+  );
+  parts.push(regulationPrompt);
+
+  // Nervous system state label for context
+  const nervousState = detectNervousSystemState(ctx.emotion, ctx.input.message);
+  parts.push(`## Nervous System State: ${nervousState}
+Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT (calmer, more grounded, less alone, more contained) after reading your response — not just "heard."`);
+
+  // Emotional context — drives tone
   if (ctx.emotion) {
     let emotionBlock = `## What They're Feeling Right Now`;
     emotionBlock += `\nPrimary: ${ctx.emotion.primaryEmotion} (intensity: ${ctx.emotion.intensity}/10)`;
@@ -42,15 +59,8 @@ Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
       emotionBlock += `\nAlso present: ${ctx.emotion.secondaryEmotions.join(", ")}`;
     }
 
-    // Tone adaptation based on intensity
-    if (ctx.emotion.intensity >= 8) {
-      emotionBlock += `\n\n⚠️ VERY HIGH emotional intensity. Keep your response SHORT. Lead with empathy. No advice. No questions unless absolutely necessary. Be an anchor.`;
-    } else if (ctx.emotion.intensity >= 6) {
-      emotionBlock += `\n\nHigh emotional intensity. Lead with warmth. Validate before anything else. Keep it brief and grounded.`;
-    }
-
     if (ctx.emotion.needsSupport) {
-      emotionBlock += `\nThis person needs support right now. Show up for them.`;
+      emotionBlock += `\nThis person needs regulation right now — not just empathy.`;
     }
 
     parts.push(emotionBlock);
@@ -61,7 +71,7 @@ Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
     parts.push(`## What You Remember About Them
 ${ctx.memory.formatted}
 
-Use this to show emotional continuity. Connect dots between past and present feelings. But keep it natural — don't recite facts.`);
+Use this to create resonance — not just recall. Connect their past emotional patterns to what's happening now. That's what makes them feel truly understood.`);
   }
 
   // Safety context
@@ -70,7 +80,7 @@ Use this to show emotional continuity. Connect dots between past and present fee
 This person may be in distress. Be extra gentle and present. If you sense escalation, ask directly: "Are you safe right now?" Don't wait.`);
   }
 
-  // Response length guidance
+  // Response length guidance (from naturalizer)
   parts.push(getResponseLengthGuidance(ctx.state, ctx.emotion));
 
   // Anti-repetition (check last 3 AI responses)
@@ -87,7 +97,7 @@ This person may be in distress. Be extra gentle and present. If you sense escala
   const msgCount = ctx.conversationHistory.length;
   if (msgCount > 10) {
     parts.push(`## Conversation Depth
-This is message ${msgCount}+ in the conversation. You should have enough context to notice patterns, connect dots, and reference earlier parts of this conversation. Don't start fresh each message.`);
+This is message ${msgCount}+ in the conversation. You have enough context to notice patterns, emotional arcs, and what's really going on underneath. Don't start fresh each message. Connect dots.`);
   }
 
   messages.push({ role: "system", content: parts.join("\n\n") });
