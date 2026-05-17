@@ -4,6 +4,8 @@
 
 All major components of the Emotional Companion Transformation have been successfully implemented. The system has been transformed from a therapy-focused chatbot into an emotionally intelligent companion with relationship-like warmth.
 
+**Latest Update (May 17, 2026 - 7:17 PM)**: Refined system prompt with enhanced structure, explicit forbidden phrases, and improved conversation pacing guidance.
+
 ---
 
 ## ✅ Phase 1: Core Tone Transformation (COMPLETED)
@@ -12,18 +14,30 @@ All major components of the Emotional Companion Transformation have been success
 **File**: `src/lib/ai/prompts.ts`
 
 - ✅ Replaced entire `SYSTEM_PROMPT` with companion-focused master prompt
+- ✅ **[UPDATED]** Refined with clearer structure and explicit guidance
 - ✅ Removed therapy-centric language ("I'm here to support you")
 - ✅ Added companion warmth and relationship-like energy
 - ✅ Emphasized emotional resonance over generic validation
-- ✅ Updated response length guidance (3-6 sentences for emotional moments)
+- ✅ Updated response length guidance (3-6 sentences, 5-7 lines for heavy emotion)
 - ✅ Added explicit memory continuity instructions
 - ✅ Removed clinical/corporate tone guardrails
+- ✅ **[NEW]** Added explicit list of forbidden repetitive phrases
+- ✅ **[NEW]** Enhanced conversation pacing section (do NOT constantly ask questions)
+- ✅ **[NEW]** Clearer crisis mode instructions with structured guidance
 
 **Key Changes**:
 - Focus on emotional companionship, not therapy simulation
 - Users should feel like talking to an emotionally intelligent friend at 2am
 - Goal: emotional state shift (calmer, lighter, more connected)
 - Natural human language, avoiding robotic AI patterns
+
+**Latest Refinements (May 17, 2026)**:
+- **Better Organization**: Clearer section hierarchy with separator lines for easy parsing
+- **Forbidden Phrases**: Explicit list - "Your feelings are valid", "I'm here for you", "That sounds difficult", "I understand", "How does that make you feel?"
+- **Conversation Pacing**: Strong emphasis on NOT constantly asking questions; sometimes just hold space
+- **Response Length**: More specific - "3-6 emotionally connected sentences, sometimes 5-7 lines when emotion is heavy"
+- **Crisis Clarity**: More structured approach to crisis responses - "become calmer, use shorter grounding responses"
+- **Final Experience**: Ends with clear goal - "a calm, emotionally intelligent human sitting beside the user"
 
 ### 2. Response Token Limits
 **File**: `src/lib/ai/orchestrator/router.ts`
@@ -376,3 +390,94 @@ The MentalAI system has been successfully transformed into an emotionally intell
 - Uses warm, companion-like language throughout
 
 **The goal has been achieved**: Users should feel emotionally understood, calmer, and less alone after conversations.
+
+---
+
+## 🔄 Update: System Prompt Refinement (May 17, 2026 - 7:17 PM)
+
+### Overview
+
+The system prompt in `src/lib/ai/prompts.ts` has been refined with enhanced structure and more explicit guidance to prevent common AI patterns and improve conversation quality.
+
+### Key Improvements
+
+#### 1. **Clearer Structure & Organization**
+- Added visual separator lines between major sections for easier parsing
+- Better section hierarchy with descriptive headers
+- More logical flow from core principles to specific guidance
+
+#### 2. **Explicit Forbidden Phrases**
+The prompt now explicitly lists phrases to avoid:
+- "Your feelings are valid"
+- "I'm here for you"
+- "That sounds difficult"
+- "I understand"
+- "How does that make you feel?"
+
+**Impact**: Reduces repetitive empathy patterns and forces more creative, genuine emotional responses.
+
+#### 3. **Enhanced Response Length Guidance**
+- More specific: "3-6 emotionally connected sentences"
+- Added: "sometimes 5-7 lines when the emotion is heavy"
+- Explicit about avoiding one-line replies during emotional moments
+- Clearer balance between avoiding giant paragraphs and being too brief
+
+#### 4. **Stronger Conversation Pacing Section**
+- New explicit instruction: "DO NOT constantly ask questions"
+- Added: "Sometimes do NOT ask a question at all"
+- Emphasis on emotional holding space without interrogation
+- Better guidance on when to just reflect vs. when to inquire
+
+#### 5. **Improved Crisis Mode Instructions**
+More structured and clear:
+- "become calmer"
+- "use shorter grounding responses"
+- "emotionally stabilize first"
+- "avoid overwhelming text"
+
+**Before**: Crisis section was less structured
+**After**: Clear, actionable steps for handling high-risk moments
+
+#### 6. **Enhanced Final Experience Goal**
+Ends with powerful, clear vision:
+> "The conversation should feel like: a calm, emotionally intelligent human sitting beside the user during a difficult moment."
+
+### Technical Details
+
+**File Modified**: `src/lib/ai/prompts.ts`
+**Lines Changed**: 15-350 (SYSTEM_PROMPT constant)
+**Integration**: Fully compatible with existing `prompt-builder.ts` and `orchestrator/index.ts`
+**Breaking Changes**: None - drop-in replacement
+
+### Verification
+
+Verified that the new prompt structure works seamlessly with:
+- ✅ `src/lib/ai/orchestrator/prompt-builder.ts` - Context injection works correctly
+- ✅ `src/lib/ai/orchestrator/index.ts` - Orchestrator flow unchanged
+- ✅ `src/lib/ai/prompts.ts` - `buildChatPrompt()` function continues to append context sections properly
+
+### Expected User Experience Improvements
+
+1. **More Natural Conversations**: Explicit avoidance of repetitive validation phrases creates more varied, genuine responses
+2. **Better Emotional Pacing**: Clearer guidance on when NOT to ask questions reduces interrogation feel
+3. **Deeper Resonance**: Stronger emphasis on looking beneath surface emotions
+4. **Clearer Crisis Handling**: More structured approach to high-risk moments improves safety
+5. **Consistent Warmth**: Final experience goal reinforces the companion philosophy throughout
+
+### What Stayed the Same
+
+- All existing emotional intelligence features (rhythm engine, memory engine, regulation engine)
+- Token limits (400/700/900)
+- Response validation pipeline
+- Emotional state detection
+- Crisis detection and escalation
+- Memory retrieval and storage
+- All conversation states including EMOTIONAL_HOLDING
+
+### Notes
+
+- This refinement maintains complete backward compatibility
+- No database changes required
+- No API changes required
+- Existing conversations continue working without interruption
+- The update enhances guidance clarity without changing the core companion philosophy
