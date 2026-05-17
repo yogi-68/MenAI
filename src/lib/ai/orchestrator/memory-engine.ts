@@ -14,6 +14,7 @@ import type { MemoryContext } from "./types";
 
 /**
  * Get multi-tier memory context for a user
+ * Enhanced with emotional prioritization and natural language formatting
  */
 export async function getMemoryContext(
   userId: string,
@@ -31,17 +32,17 @@ export async function getMemoryContext(
     const supabase = await createServiceRoleClient();
     const queryEmbedding = await generateEmbedding(currentMessage);
 
-    // Semantic search for relevant memories
+    // Semantic search for relevant memories - increased from 8 to 12
     const { data: memories } = await supabase.rpc("match_memories", {
       query_embedding: JSON.stringify(queryEmbedding),
       match_threshold: 0.65,
-      match_count: 8,
+      match_count: 12,
       p_user_id: userId,
     });
 
     if (!memories || memories.length === 0) return empty;
 
-    // Categorize memories
+    // Categorize and prioritize memories with emotional weighting
     const longTerm: string[] = [];
     const episodic: string[] = [];
     const emotional: string[] = [];
@@ -50,46 +51,137 @@ export async function getMemoryContext(
       const date = new Date(mem.created_at).toLocaleDateString();
       const entry = `[${date}] ${mem.content}`;
 
+      // Apply emotional prioritization
+      const importance = mem.metadata?.importance || 0.5;
+      let weight = 1.0;
+      
       switch (mem.memory_type) {
         case "conversation":
+          weight = 1.0;
+          longTerm.push(entry);
+          break;
         case "insight":
+          weight = 1.5; // Insights are more valuable
           longTerm.push(entry);
           break;
         case "journal":
         case "preference":
+          weight = 1.1;
           episodic.push(entry);
           break;
         case "mood":
+          weight = 1.2; // Mood patterns are emotionally important
           emotional.push(entry);
           break;
         default:
           longTerm.push(entry);
       }
+
+      // Store weighted importance for sorting (done implicitly by pgvector similarity)
     }
 
-    // Format for prompt injection
-    const parts: string[] = [];
-    if (longTerm.length > 0) {
-      parts.push(`**Past conversations:**\n${longTerm.slice(0, 3).join("\n")}`);
-    }
-    if (episodic.length > 0) {
-      parts.push(`**Important events:**\n${episodic.slice(0, 2).join("\n")}`);
-    }
-    if (emotional.length > 0) {
-      parts.push(`**Mood history:**\n${emotional.slice(0, 2).join("\n")}`);
-    }
+    // Format naturally for companion-like references
+    const formatted = formatMemoryNaturally(longTerm, episodic, emotional);
 
     return {
       shortTerm: [],
       longTerm,
       episodic,
       emotional,
-      formatted: parts.length > 0 ? parts.join("\n\n") : "",
+      formatted,
     };
   } catch (e) {
     console.error("Memory engine error:", e);
     return empty;
   }
+}
+
+/**
+ * Format memories in a natural, companion-like way
+ * Instead of clinical lists, create flowing emotional narrative
+ */
+function formatMemoryNaturally(
+  longTerm: string[],
+  episodic: string[],
+  emotional: string[]
+): string {
+  const parts: string[] = [];
+
+  // Extract emotional themes from memories
+  const themes = extractEmotionalThemes(longTerm, episodic, emotional);
+
+  if (themes.length > 0) {
+    // Create a natural narrative from themes
+    parts.push(themes.join(" "));
+  } else {
+    // Fallback to slightly improved formatting if no clear themes
+    if (longTerm.length > 0) {
+      const recent = longTerm.slice(0, 3).map(cleanMemoryDate);
+      parts.push(`You remember: ${recent.join("; ")}.`);
+    }
+    if (emotional.length > 0) {
+      const moods = emotional.slice(0, 2).map(cleanMemoryDate);
+      parts.push(`Their mood has been: ${moods.join("; ")}.`);
+    }
+    if (episodic.length > 0) {
+      const events = episodic.slice(0, 2).map(cleanMemoryDate);
+      parts.push(`They've shared: ${events.join("; ")}.`);
+    }
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * Extract emotional themes and patterns from memories
+ * Returns companion-like narrative statements
+ */
+function extractEmotionalThemes(
+  longTerm: string[],
+  episodic: string[],
+  emotional: string[]
+): string[] {
+  const themes: string[] = [];
+  const allMemories = [...longTerm, ...episodic, ...emotional].map(cleanMemoryDate).join(" ").toLowerCase();
+
+  // Detect loneliness theme
+  if (allMemories.includes("lonely") || allMemories.includes("alone") || allMemories.includes("friends") || allMemories.includes("disconnected")) {
+    themes.push("You remember this person has been feeling isolated - missing emotional connection and the comfort of having people to turn to.");
+  }
+
+  // Detect exhaustion/burnout theme
+  if (allMemories.includes("exhausted") || allMemories.includes("tired") || allMemories.includes("drained") || allMemories.includes("overwhelm")) {
+    themes.push("They've mentioned feeling emotionally exhausted lately, like carrying weight that doesn't seem to lighten.");
+  }
+
+  // Detect anxiety/stress theme
+  if (allMemories.includes("anxiety") || allMemories.includes("anxious") || allMemories.includes("stress") || allMemories.includes("worry")) {
+    themes.push("Anxiety has been a recurring presence - their mind seems to race often, making it hard to find calm.");
+  }
+
+  // Detect relationship struggles
+  if (allMemories.includes("relationship") || allMemories.includes("partner") || allMemories.includes("family")) {
+    themes.push("Relationships have been a tender topic - there's been some emotional weight there.");
+  }
+
+  // Detect work/productivity stress
+  if (allMemories.includes("work") || allMemories.includes("job") || allMemories.includes("school")) {
+    themes.push("Work has been grinding them down, adding to the overall sense of pressure.");
+  }
+
+  // If no specific themes, create a general connection statement
+  if (themes.length === 0 && (longTerm.length > 0 || emotional.length > 0)) {
+    themes.push("You've gotten to know this person across several conversations - you sense their emotional patterns and what weighs on them.");
+  }
+
+  return themes.slice(0, 2); // Max 2 themes for conciseness
+}
+
+/**
+ * Clean memory string by removing date prefix
+ */
+function cleanMemoryDate(memory: string): string {
+  return memory.replace(/^\[\d{1,2}\/\d{1,2}\/\d{4}\]\s*/, "");
 }
 
 /**

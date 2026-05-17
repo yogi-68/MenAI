@@ -10,7 +10,7 @@ import type { PipelineContext } from "./types";
 import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
-import { buildRegulationPrompt, detectNervousSystemState } from "./regulation-engine";
+import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
 
 /**
  * Build the complete prompt messages array for the LLM
@@ -45,9 +45,8 @@ Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
   );
   parts.push(regulationPrompt);
 
-  // Nervous system state label for context
-  const nervousState = detectNervousSystemState(ctx.emotion, ctx.input.message);
-  parts.push(`## Nervous System State: ${nervousState}
+  const emotionalState = detectEmotionalState(ctx.emotion, ctx.input.message);
+  parts.push(`## Emotional State: ${emotionalState}
 Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT (calmer, more grounded, less alone, more contained) after reading your response — not just "heard."`);
 
   // Emotional context — drives tone
@@ -71,7 +70,7 @@ Remember: your response should create an emotional SHIFT. The user should feel D
     parts.push(`## What You Remember About Them
 ${ctx.memory.formatted}
 
-Use this to create resonance — not just recall. Connect their past emotional patterns to what's happening now. That's what makes them feel truly understood.`);
+This is what creates continuity — reference these naturally when relevant. Don't list them out robotically. Weave them into understanding what's happening now. That's what makes someone feel truly seen across time.`);
   }
 
   // Safety context

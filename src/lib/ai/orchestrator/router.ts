@@ -1,28 +1,30 @@
 /**
  * LLM Router — Cost-Optimized Model Selection
  * Routes requests to cheap/standard/premium models based on context
+ * Now includes rhythm-aware streaming for emotional pacing
  */
 
 import { getOpenAI } from "@/lib/ai/openai";
+import { determineRhythm, applyRhythm } from "./rhythm-engine";
 import type { ModelConfig, ModelTier, EmotionAnalysis, SafetyResult, ConversationState } from "./types";
 
 // Model configurations
 const MODELS: Record<ModelTier, ModelConfig> = {
   cheap: {
     model: "gpt-4o-mini",
-    maxTokens: 300,
+    maxTokens: 400,
     temperature: 0.7,
     tier: "cheap",
   },
   standard: {
     model: "gpt-4o-mini",
-    maxTokens: 500,
+    maxTokens: 700,
     temperature: 0.8,
     tier: "standard",
   },
   premium: {
     model: "gpt-4o",
-    maxTokens: 600,
+    maxTokens: 900,
     temperature: 0.8,
     tier: "premium",
   },
@@ -94,10 +96,13 @@ export async function callLLM(
 
 /**
  * Call the LLM with streaming — returns a ReadableStream for progressive rendering
+ * Enhanced with emotional rhythm pacing
  */
 export async function callLLMStreaming(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  config: ModelConfig
+  config: ModelConfig,
+  emotion?: EmotionAnalysis,
+  state?: ConversationState
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   model: string;
@@ -116,7 +121,7 @@ export async function callLLMStreaming(
 
   const encoder = new TextEncoder();
 
-  const stream = new ReadableStream<Uint8Array>({
+  const baseStream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         for await (const chunk of completion) {
@@ -132,7 +137,14 @@ export async function callLLMStreaming(
     },
   });
 
-  return { stream, model: config.model };
+  // Apply emotional rhythm if context is available
+  let finalStream = baseStream;
+  if (emotion && state) {
+    const rhythmConfig = determineRhythm(emotion, state);
+    finalStream = await applyRhythm(baseStream, rhythmConfig);
+  }
+
+  return { stream: finalStream, model: config.model };
 }
 
 /**

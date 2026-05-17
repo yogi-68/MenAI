@@ -381,7 +381,7 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
   const promptMessages = buildPrompt(ctx);
 
   // ===== STEP 6: Stream LLM + collect for post-processing =====
-  const { stream: llmStream, model } = await callLLMStreaming(promptMessages, modelConfig);
+  const { stream: llmStream, model } = await callLLMStreaming(promptMessages, modelConfig, emotion, state);
 
   let fullResponse = "";
   const encoder = new TextEncoder();

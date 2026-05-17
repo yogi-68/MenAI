@@ -12,6 +12,7 @@ export type ConversationState =
   | "GROUNDING"        // Grounding exercises for anxiety/panic
   | "GOAL_SETTING"     // Helping set small actionable goals
   | "REFLECTION"       // Reflecting on progress/patterns
+  | "EMOTIONAL_HOLDING" // Emotional silence - just hold space, no questions
   | "ESCALATION";      // Crisis mode — safety first
 
 // ===== LLM Tiers =====
