@@ -93,6 +93,49 @@ export async function callLLM(
 }
 
 /**
+ * Call the LLM with streaming — returns a ReadableStream for progressive rendering
+ */
+export async function callLLMStreaming(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  config: ModelConfig
+): Promise<{
+  stream: ReadableStream<Uint8Array>;
+  model: string;
+}> {
+  const openai = getOpenAI();
+
+  const completion = await openai.chat.completions.create({
+    model: config.model,
+    messages,
+    max_tokens: config.maxTokens,
+    temperature: config.temperature,
+    presence_penalty: 0.3,
+    frequency_penalty: 0.3,
+    stream: true,
+  });
+
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            controller.enqueue(encoder.encode(delta));
+          }
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+
+  return { stream, model: config.model };
+}
+
+/**
  * Quick classification call (always uses cheapest model)
  */
 export async function classifyWithLLM(

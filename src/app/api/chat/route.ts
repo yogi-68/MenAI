@@ -1,20 +1,21 @@
 /**
  * Chat API Route — /api/chat
  * 
- * Now uses the AI Orchestrator for the full pipeline:
- * Safety → Emotion → State Machine → Memory → LLM Router → Response Validation
+ * Uses the AI Orchestrator for the full pipeline:
+ * Safety → Emotion → State Machine → Memory → LLM Router → Streaming Response
+ * 
+ * Returns a streaming response with metadata in custom headers.
  */
 
 import { NextRequest } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { orchestrate } from "@/lib/ai/orchestrator";
+import { orchestrateStreaming } from "@/lib/ai/orchestrator";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
-    // Authenticate user
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -34,35 +35,31 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Run the full AI orchestrator pipeline
-    const result = await orchestrate({
+    const result = await orchestrateStreaming({
       userId: user.id,
       message: message.trim(),
       conversationId: conversationId || null,
     });
 
-    return new Response(
-      JSON.stringify({
-        response: result.response,
-        conversationId: result.conversationId,
-        crisis: result.crisis,
-        crisisLevel: result.crisisLevel || null,
-        emotion: result.emotion || null,
-        state: result.state,
-        modelUsed: result.modelUsed,
-        resources: result.resources || [],
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return new Response(result.stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "X-Conversation-Id": result.metadata.conversationId,
+        "X-Crisis": String(result.metadata.crisis),
+        "X-Crisis-Level": result.metadata.crisisLevel || "",
+        "X-Emotion": result.metadata.emotion?.primaryEmotion || "",
+        "X-Emotion-Intensity": String(result.metadata.emotion?.intensity || 0),
+        "X-State": result.metadata.state,
+        "X-Model": result.metadata.modelUsed,
+      },
+    });
   } catch (error) {
     console.error("Chat API Error:", error);
     return new Response(
       JSON.stringify({
         error: "Something went wrong. Please try again.",
-        response: "I'm sorry, I had a moment there. Could you try saying that again? 💙",
       }),
       {
         status: 500,

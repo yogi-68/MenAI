@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "@/lib/store";
 import { formatTime } from "@/lib/utils";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import {
   Send,
@@ -14,6 +14,8 @@ import {
   Phone,
   MessageSquare,
   Trash2,
+  Menu,
+  X,
 } from "lucide-react";
 
 interface Message {
@@ -24,55 +26,46 @@ interface Message {
   crisis?: boolean;
 }
 
-interface CrisisResource {
-  name: string;
-  phone: string;
-  text?: string;
-}
-
 export default function ChatPage() {
   const { user } = useAppStore();
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [crisisAlert, setCrisisAlert] = useState(false);
-  const [conversations, setConversations] = useState<any[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const supabase = createClient();
 
-  // Load conversations list
-  useEffect(() => {
-    const loadConversations = async () => {
+  const { data: conversations = [] } = useQuery({
+    queryKey: ["conversations"],
+    queryFn: async () => {
       const res = await fetch("/api/conversations");
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data.conversations || []);
-      }
-    };
-    loadConversations();
-  }, []);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.conversations || [];
+    },
+    staleTime: 30_000,
+  });
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamingContent]);
 
-  // Auto-resize textarea
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
     e.target.style.height = "auto";
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   };
 
-  // Load conversation messages
-  const loadConversation = async (convId: string) => {
+  const loadConversation = useCallback(async (convId: string) => {
     const res = await fetch(`/api/conversations/${convId}`);
     if (res.ok) {
       const data = await res.json();
       setMessages(
-        (data.messages || []).map((m: any) => ({
+        (data.messages || []).map((m: Record<string, string>) => ({
           id: m.id,
           role: m.role,
           content: m.content,
@@ -80,32 +73,32 @@ export default function ChatPage() {
         }))
       );
       setConversationId(convId);
+      setSidebarOpen(false);
     }
-  };
+  }, []);
 
-  // Start new conversation
   const startNewChat = () => {
     setMessages([]);
     setConversationId(null);
     setCrisisAlert(false);
+    setStreamingContent("");
     setInput("");
+    setSidebarOpen(false);
   };
 
-  // Delete conversation
   const deleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Delete this conversation? This cannot be undone.")) return;
 
     const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
     if (res.ok) {
-      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
       if (conversationId === convId) {
         startNewChat();
       }
     }
   };
 
-  // Send message
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
@@ -119,8 +112,8 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
+    setStreamingContent("");
 
-    // Reset textarea height
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
@@ -135,39 +128,55 @@ export default function ChatPage() {
         }),
       });
 
-      const data = await res.json();
+      if (!res.ok) {
+        throw new Error("Chat request failed");
+      }
 
-      if (data.crisis) {
+      const newConvId = res.headers.get("X-Conversation-Id");
+      const isCrisis = res.headers.get("X-Crisis") === "true";
+
+      if (isCrisis) {
         setCrisisAlert(true);
       }
 
-      if (data.conversationId && !conversationId) {
-        setConversationId(data.conversationId);
-        // Refresh conversation list
-        const convRes = await fetch("/api/conversations");
-        if (convRes.ok) {
-          const convData = await convRes.json();
-          setConversations(convData.conversations || []);
-        }
+      if (newConvId && !conversationId) {
+        setConversationId(newConvId);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        accumulated += text;
+        setStreamingContent(accumulated);
       }
 
       const aiMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.response || "I'm here for you. Could you tell me more?",
+        content: accumulated || "I'm here for you. Could you tell me more?",
         created_at: new Date().toISOString(),
-        crisis: data.crisis,
+        crisis: isCrisis,
       };
 
       setMessages((prev) => [...prev, aiMessage]);
-    } catch (error) {
+      setStreamingContent("");
+    } catch {
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "I'm sorry, I had a moment there. Could you try saying that again? 💙",
+        content: "I'm sorry, I had a moment there. Could you try saying that again?",
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMessage]);
+      setStreamingContent("");
     } finally {
       setLoading(false);
     }
@@ -181,9 +190,46 @@ export default function ChatPage() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
+    <div style={{ display: "flex", height: "100vh", position: "relative" }}>
+      {/* Mobile sidebar toggle */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="chat-sidebar-toggle"
+        style={{
+          position: "absolute",
+          top: "12px",
+          left: "12px",
+          zIndex: 20,
+          background: "var(--bg-glass)",
+          border: "1px solid var(--border-color)",
+          borderRadius: "var(--radius-md)",
+          padding: "8px",
+          cursor: "pointer",
+          color: "var(--text-secondary)",
+          display: "none",
+        }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="chat-sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 25,
+            display: "none",
+          }}
+        />
+      )}
+
       {/* ===== CONVERSATION SIDEBAR ===== */}
       <div
+        className="chat-sidebar"
         style={{
           width: "260px",
           borderRight: "1px solid var(--border-color)",
@@ -192,36 +238,54 @@ export default function ChatPage() {
           flexDirection: "column",
           padding: "16px",
           overflowY: "auto",
+          flexShrink: 0,
         }}
       >
-        <button
-          onClick={startNewChat}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            padding: "12px",
-            borderRadius: "var(--radius-md)",
-            background: "var(--bg-glass)",
-            border: "1px solid var(--border-color)",
-            color: "var(--text-primary)",
-            cursor: "pointer",
-            fontWeight: 500,
-            fontSize: "0.9rem",
-            marginBottom: "16px",
-            transition: "all 0.2s",
-          }}
-        >
-          <Plus size={18} />
-          New Conversation
-        </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+          <button
+            onClick={startNewChat}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "12px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--bg-glass)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              fontWeight: 500,
+              fontSize: "0.9rem",
+              transition: "all 0.2s",
+            }}
+          >
+            <Plus size={18} />
+            New Conversation
+          </button>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="chat-sidebar-close"
+            style={{
+              display: "none",
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              padding: "8px",
+              marginLeft: "8px",
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
 
         <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Recent Chats
         </div>
 
-        {conversations.map((conv) => (
+        {conversations.map((conv: { id: string; title: string; updated_at: string }) => (
           <div
             key={conv.id}
             onClick={() => loadConversation(conv.id)}
@@ -286,7 +350,7 @@ export default function ChatPage() {
       </div>
 
       {/* ===== CHAT AREA ===== */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Crisis Alert Banner */}
         {crisisAlert && (
           <div
@@ -338,7 +402,7 @@ export default function ChatPage() {
             gap: "16px",
           }}
         >
-          {messages.length === 0 && (
+          {messages.length === 0 && !streamingContent && (
             <div
               style={{
                 flex: 1,
@@ -369,7 +433,7 @@ export default function ChatPage() {
                 Hi, I&apos;m <span className="gradient-text">MenAI</span>
               </h2>
               <p style={{ color: "var(--text-secondary)", maxWidth: "400px", lineHeight: 1.6 }}>
-                I&apos;m your compassionate AI wellness companion. Talk to me about anything — 
+                I&apos;m your compassionate AI wellness companion. Talk to me about anything —
                 how you&apos;re feeling, what&apos;s on your mind, or if you just need someone to listen.
               </p>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center", marginTop: "8px" }}>
@@ -469,8 +533,38 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {/* Typing indicator */}
-          {loading && (
+          {/* Streaming response */}
+          {streamingContent && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "var(--gradient-primary)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Brain size={16} color="white" />
+              </div>
+              <div className="chat-bubble-ai">
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.7, fontSize: "0.95rem" }}>{children}</p>,
+                    strong: ({ children }) => <strong style={{ color: "var(--accent-primary)", fontWeight: 600 }}>{children}</strong>,
+                  }}
+                >
+                  {streamingContent}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+
+          {/* Typing indicator (pre-stream) */}
+          {loading && !streamingContent && (
             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
               <div
                 style={{
@@ -568,6 +662,21 @@ export default function ChatPage() {
           </p>
         </div>
       </div>
+
+      <style jsx global>{`
+        @media (max-width: 768px) {
+          .chat-sidebar-toggle { display: block !important; }
+          .chat-sidebar-overlay { display: block !important; }
+          .chat-sidebar-close { display: block !important; }
+          .chat-sidebar {
+            position: fixed !important;
+            left: 0; top: 0; bottom: 0;
+            z-index: 30;
+            transform: ${sidebarOpen ? "translateX(0)" : "translateX(-100%)"};
+            transition: transform 0.3s ease;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -24,7 +24,10 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ messages });
+  return NextResponse.json(
+    { messages },
+    { headers: { "Cache-Control": "private, max-age=60" } }
+  );
 }
 
 /**

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
 import { getMoodEmoji, getMoodColor, formatRelative } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   MessageCircleHeart,
@@ -18,31 +18,22 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-interface DashboardStats {
-  totalChats: number;
-  moodEntries: number;
-  journalEntries: number;
-  recentMood: number | null;
-  streak: number;
+interface MoodEntry {
+  id: string;
+  mood_score: number;
+  mood_label: string;
+  created_at: string;
 }
 
 export default function DashboardOverview() {
   const { user } = useAppStore();
-  const [stats, setStats] = useState<DashboardStats>({
-    totalChats: 0,
-    moodEntries: 0,
-    journalEntries: 0,
-    recentMood: null,
-    streak: 0,
-  });
-  const [recentMoods, setRecentMoods] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  useEffect(() => {
-    const fetchStats = async () => {
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
+      if (!authUser) return null;
 
       const [convRes, moodRes, journalRes] = await Promise.all([
         supabase.from("conversations").select("id", { count: "exact" }).eq("user_id", authUser.id),
@@ -50,20 +41,22 @@ export default function DashboardOverview() {
         supabase.from("journal_entries").select("id", { count: "exact" }).eq("user_id", authUser.id),
       ]);
 
-      setStats({
-        totalChats: convRes.count || 0,
-        moodEntries: moodRes.data?.length || 0,
-        journalEntries: journalRes.count || 0,
-        recentMood: moodRes.data?.[0]?.mood_score || null,
-        streak: Math.min(moodRes.data?.length || 0, 7),
-      });
+      return {
+        stats: {
+          totalChats: convRes.count || 0,
+          moodEntries: moodRes.data?.length || 0,
+          journalEntries: journalRes.count || 0,
+          recentMood: moodRes.data?.[0]?.mood_score || null,
+          streak: Math.min(moodRes.data?.length || 0, 7),
+        },
+        recentMoods: (moodRes.data || []) as MoodEntry[],
+      };
+    },
+    staleTime: 60_000,
+  });
 
-      setRecentMoods(moodRes.data || []);
-      setLoading(false);
-    };
-
-    fetchStats();
-  }, []);
+  const stats = data?.stats || { totalChats: 0, moodEntries: 0, journalEntries: 0, recentMood: null, streak: 0 };
+  const recentMoods = data?.recentMoods || [];
 
   const greeting = () => {
     const hour = new Date().getHours();

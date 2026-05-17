@@ -61,12 +61,31 @@ export function validateResponse(
     }
   }
 
-  // === Check 5: Response not too long (trim if needed) ===
+  // === Check 5: Enforce medium-length responses ===
+  const maxLength = context.crisisMode ? 400 : 800;
+  const maxSentences = context.crisisMode ? 4 : 8;
+
+  if (content.length > maxLength) {
+    const sentences = content.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length > maxSentences) {
+      content = sentences.slice(0, maxSentences).join(" ").trim();
+      if (!/[.!?]$/.test(content)) content += ".";
+      flags.push("response_trimmed_medium");
+      modified = true;
+    }
+  }
+
   if (content.length > 2000) {
-    const sentences = content.split(/[.!?]+/).filter(Boolean);
-    content = sentences.slice(0, 8).join(". ").trim() + ".";
-    flags.push("response_trimmed");
+    const sentences = content.split(/(?<=[.!?])\s+/).filter(Boolean);
+    content = sentences.slice(0, 6).join(" ").trim();
+    if (!/[.!?]$/.test(content)) content += ".";
+    flags.push("response_hard_trimmed");
     modified = true;
+  }
+
+  // Flag (but don't trim) responses that feel too short for emotional conversations
+  if (!context.crisisMode && context.emotionIntensity >= 5 && content.length < 40) {
+    flags.push("response_too_short_for_emotion");
   }
 
   // === Check 6: Response not dismissive during crisis ===

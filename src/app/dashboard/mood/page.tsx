@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { getMoodEmoji, getMoodLabel, getMoodColor, formatDate } from "@/lib/utils";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Plus,
@@ -52,7 +53,7 @@ const activityOptions = [
 ];
 
 export default function MoodPage() {
-  const [entries, setEntries] = useState<MoodEntry[]>([]);
+  const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedMood, setSelectedMood] = useState<number | null>(null);
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([]);
@@ -61,20 +62,17 @@ export default function MoodPage() {
   const [energy, setEnergy] = useState<number>(3);
   const [sleep, setSleep] = useState<string>("");
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchEntries();
-  }, []);
-
-  const fetchEntries = async () => {
-    const res = await fetch("/api/mood");
-    if (res.ok) {
+  const { data: entries = [], isLoading: loading } = useQuery<MoodEntry[]>({
+    queryKey: ["mood-entries"],
+    queryFn: async () => {
+      const res = await fetch("/api/mood");
+      if (!res.ok) return [];
       const data = await res.json();
-      setEntries(data.entries || []);
-    }
-    setLoading(false);
-  };
+      return data.entries || [];
+    },
+    staleTime: 30_000,
+  });
 
   const handleSave = async () => {
     if (!selectedMood) return;
@@ -95,7 +93,8 @@ export default function MoodPage() {
     });
 
     if (res.ok) {
-      await fetchEntries();
+      queryClient.invalidateQueries({ queryKey: ["mood-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       resetForm();
     }
     setSaving(false);
