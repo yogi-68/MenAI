@@ -67,10 +67,6 @@ This person is building a startup/product. Think like a co-founder. Push executi
 Instructed behavior: ${styleText}`);
   }
 
-  if (ctx.user.therapyGoals && ctx.user.therapyGoals.length > 0) {
-    parts.push(`Their key focus areas: ${ctx.user.therapyGoals.join(", ")}.`);
-  }
-
   // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 

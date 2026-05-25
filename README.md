@@ -1,52 +1,46 @@
 # ⚡ MenAI — AI Life Operating System & Execution Coach
 
-**MenAI** is a premium, developer-friendly AI Life Operating System and Execution Coach designed for startup founders, creators, and high performers. It goes beyond wellness chats, functioning as an intelligent partner that tracks your trajectory, maintains accountability, challenges excuse patterns, and monitors momentum.
+**MenAI** is a premium, developer-friendly AI Life Operating System and Execution Coach designed for startup founders, creators, and high performers. 
+
+It functions as an intelligent strategic partner that tracks your trajectory, maintains strict accountability, challenges excuse patterns, and monitors your execution momentum.
 
 Built with **Next.js**, **Supabase PostgreSQL**, **pgvector** for long-term memory, and **OpenAI APIs**.
 
 ---
 
-## ✨ Features & Capabilities
+## ✨ Core Systems & Capabilities
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **AI Mentor** | Conversational coach with memory, adaptive pressure states, and customized coaching styles. |
+| 🤖 **AI Mentor** | Conversational execution coach with deep memory, adaptive pressure states, and customized coaching styles. |
 | 📊 **Command Center** | Minimalist daily dashboard presenting today's priorities, execution momentum, latest strategist insight, and accountability alerts. |
-| 🎯 **Automatic Goal Extraction** | Extracts goals, commitments, and relationships automatically from your dialogue. |
-| 🔄 **Goals & Tasks Manager** | Track milestones and standalone checklists with built-in recurrence and streak tracking. |
-| 🧭 **Life Status Board** | Holistic tracking of commitments (consistency scores), relationships (support network), and accountability history. |
-| ⚡ **Energy & Focus** | Log daily energy levels to optimize your performance cycles (rebranded from clinical mood tracking). |
-| 📝 **Reflections** | Capture thoughts and get micro-insights on underlying cognitive blocks (rebranded from traditional journaling). |
-| 🔋 **Reset & Recovery** | Performance-centered tools (breathing, calming, activation) to recharge focus and prevent burnout. |
+| 🎯 **Silent Extraction Engine** | Extracts goals, commitments, and projects automatically from your dialogue. No manual data entry required. |
+| 🔄 **Goals & Tasks Manager** | Track milestones, manage execution checklists, and maintain daily momentum. |
+| 🧭 **Life Status Board** | Holistic tracking of active commitments (consistency scores) and structural accountability. |
 | ⚙️ **Execution Settings** | Turn on **Founder Mode**, set your **Life Vision**, and customize coaching styles (`balanced`, `push`, `gentle`, `strategic`). |
 
 ---
 
-## 🏗️ AI Orchestration Pipeline
+## 🏗️ Intelligence Orchestration Pipeline
 
-Rather than a simple chat pipeline, MenAI runs a multi-layered **conversational orchestrator** parallel to database operations:
+MenAI runs a multi-layered **conversational orchestrator** parallel to database operations, fundamentally changing how the AI interacts based on context:
 
 ```
                   User Message
                        │
                        ▼
              ┌──────────────────┐
-             │  Safety Engine   │ ◄── Rule-based crisis keywords & resources
+             │  Intent Engine   │ ◄── Classifies PLANNING, GOAL_DECLARATION, etc.
              └─────────┬────────┘
                        │
                        ▼
              ┌──────────────────┐
-             │  Emotion Engine  │ ◄── Real-time sentiment and body states
+             │Extraction Engine │ ◄── Parallel goal, task, & project parsing
              └─────────┬────────┘
                        │
                        ▼
              ┌──────────────────┐
-             │Extraction Engine │ ◄── Parallel goal, task, & relation parsing
-             └─────────┬────────┘
-                       │
-                       ▼
-             ┌──────────────────┐
-             │  State Machine   │ ◄── PLANNING, FOUNDER_COACHING, REFRAMING, etc.
+             │  State Machine   │ ◄── PLANNING, FOUNDER_COACHING, STRATEGIC_THINKING
              └─────────┬────────┘
                        │
                        ▼
@@ -56,12 +50,7 @@ Rather than a simple chat pipeline, MenAI runs a multi-layered **conversational 
                        │
                        ▼
              ┌──────────────────┐
-             │  Accountability  │ ◄── Active commitments & momentum scores
-             └─────────┬────────┘
-                       │
-                       ▼
-             ┌──────────────────┐
-             │    LLM Router    │ ◄── Cost-efficient routing models
+             │  Accountability  │ ◄── Checks active commitments & missing progress
              └─────────┬────────┘
                        │
                        ▼
@@ -72,11 +61,6 @@ Rather than a simple chat pipeline, MenAI runs a multi-layered **conversational 
                        ▼
              ┌──────────────────┐
              │    LLM Stream    │ ◄── Progressive token responses
-             └─────────┬────────┘
-                       │
-                       ▼
-             ┌──────────────────┐
-             │    Validator     │ ◄── Safety check and persistence filters
              └──────────────────┘
 ```
 
@@ -89,12 +73,7 @@ MenAI relies on Supabase for data management and vector similarity search. Follo
 ### 1. Base Schema Setup
 1. Go to your **Supabase Dashboard** -> **SQL Editor**.
 2. Paste the contents of `supabase/schema.sql` and click **Run**.
-3. This sets up base profiles, conversations, messages, mood entries, and enabling the `vector` extension.
-
-### 2. Life OS Migration (CRITICAL 🚨)
-1. In the **SQL Editor**, open a new query tab.
-2. Paste the contents of `supabase/migration_life_os.sql` and click **Run**.
-3. This creates the OS infrastructure: `goals`, `tasks`, `commitments`, `relationships`, `daily_plans`, and `accountability_log` tables, updates constraints, adds profile fields (`vision`, `founder_mode`, `coaching_style`), and deploys RLS policy rules.
+3. This sets up the pure Life OS infrastructure: `profiles`, `conversations`, `messages`, `goals`, `tasks`, `commitments`, `memories` (vector DB), and enables Row Level Security.
 
 ---
 
@@ -125,7 +104,7 @@ OPENAI_API_KEY=sk-your-key
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) and sign up to access your Command Center!
+Open [http://localhost:3000](http://localhost:3000) and sign up to access your Command Center.
 
 ---
 
@@ -137,15 +116,13 @@ src/
 │   ├── api/
 │   │   ├── chat/route.ts              # Conversational orchestrator stream
 │   │   ├── goals/route.ts             # Goals CRUD
-│   │   ├── tasks/route.ts             # Task updates
-│   │   └── mood/route.ts              # Energy log submission
+│   │   └── tasks/route.ts             # Task updates
 │   ├── dashboard/
-│   │   ├── page.tsx                   # Simplified Command Center Dashboard
+│   │   ├── page.tsx                   # Command Center Dashboard
 │   │   ├── chat/page.tsx              # AI Mentor chat view
-│   │   ├── goals/page.tsx             # Goals and Standalone Tasks
-│   │   ├── status/page.tsx            # Life Status board (Commitments & People)
-│   │   ├── settings/page.tsx          # Founder Mode and Coaching style options
-│   │   └── mood/page.tsx              # Energy & Focus logger
+│   │   ├── goals/page.tsx             # Execution tasks & goals
+│   │   ├── status/page.tsx            # Life Status & Commitments
+│   │   └── settings/page.tsx          # Founder Mode and Coaching style options
 │   └── page.tsx                       # Branding Landing Hero
 ├── lib/
 │   ├── ai/
@@ -154,16 +131,9 @@ src/
 │   │   │   ├── prompt-builder.ts      # Prompt injection with user settings
 │   │   │   ├── accountability-engine.ts# Follow-up prompts & consistency scores
 │   │   │   ├── extraction-engine.ts   # Auto-extract parameters from chat
-│   │   │   └── regulation-engine.ts   # Focus, Scattered, Burnout state behaviors
+│   │   │   └── state-machine.ts       # Execution states (PLANNING, STRATEGY)
 │   │   └── prompts.ts                 # Master System prompts
 ```
-
----
-
-## 🔒 Safety & Moderation
-- **Row Level Security (RLS)** is enabled on every table to isolate user data.
-- **Rules-based & AI Moderation**: Parallel keywords and OpenAI safety scans prevent inappropriate usage.
-- **Grounding and Crisis Trigger**: Instant redirection to help hotlines if safety limits are exceeded.
 
 ---
 

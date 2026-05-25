@@ -7,7 +7,6 @@ interface UserProfile {
   role: string;
   subscription_tier: string;
   onboarding_completed: boolean;
-  therapy_goals: string[];
 }
 
 interface Conversation {
@@ -48,9 +47,6 @@ interface AppState {
   addMessage: (msg: Message) => void;
   setIsAiTyping: (typing: boolean) => void;
 
-  // Mood
-  todayMood: number | null;
-  setTodayMood: (mood: number | null) => void;
 
   // UI
   activeView: string;
@@ -78,9 +74,6 @@ export const useAppStore = create<AppState>((set) => ({
   addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
   setIsAiTyping: (typing) => set({ isAiTyping: typing }),
 
-  // Mood
-  todayMood: null,
-  setTodayMood: (mood) => set({ todayMood: mood }),
 
   // UI
   activeView: "chat",

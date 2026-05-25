@@ -18,7 +18,7 @@ export function getResponseLengthGuidance(
   emotion: EmotionAnalysis
 ): string {
   // Crisis: very short, grounding
-  if (state === "ESCALATION" || state === "GROUNDING") {
+  if (state === "ESCALATION") {
     return "RESPONSE LENGTH: 1-3 sentences MAX. Short, steady, grounding. No essays. Be an anchor.";
   }
 
@@ -47,25 +47,14 @@ export function getResponseLengthGuidance(
     return "RESPONSE LENGTH: 2-4 sentences. Lead with empathy. Don't overwhelm them with words when they're already overwhelmed.";
   }
 
-  // Emotional holding: brief, impactful
-  if (state === "EMOTIONAL_HOLDING") {
-    return "RESPONSE LENGTH: 2-3 sentences. Pure presence. No questions. Just warm resonance.";
-  }
 
-  // Validating: brief, impactful
-  if (state === "VALIDATING") {
-    return "RESPONSE LENGTH: 2-3 sentences. Sometimes the most powerful thing is brevity. Show you heard them. Don't over-explain.";
-  }
 
   // Exploring: moderate
   if (state === "EXPLORING") {
     return "RESPONSE LENGTH: 3-5 sentences. One reflection + one focused question. Natural conversational depth.";
   }
 
-  // Reframing: moderate with care
-  if (state === "REFRAMING") {
-    return "RESPONSE LENGTH: 3-5 sentences. Acknowledge first, then gently challenge. Don't lecture.";
-  }
+
 
   // Goal setting: moderate with specificity
   if (state === "GOAL_SETTING") {

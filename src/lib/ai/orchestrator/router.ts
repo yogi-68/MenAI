@@ -50,7 +50,6 @@ export function selectModel(params: {
   if (
     state === "FOUNDER_COACHING" ||
     state === "STRATEGIC_THINKING" ||
-    state === "REFRAMING" ||
     state === "ESCALATION"
   ) {
     return MODELS.premium;
@@ -68,9 +67,7 @@ export function selectModel(params: {
     state === "ACCOUNTABILITY" ||
     state === "EXECUTION_REVIEW" ||
     state === "GOAL_SETTING" ||
-    state === "EXPLORING" ||
-    state === "VALIDATING" ||
-    state === "EMOTIONAL_HOLDING"
+    state === "EXPLORING"
   ) {
     return MODELS.standard;
   }

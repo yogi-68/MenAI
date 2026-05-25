@@ -8,7 +8,6 @@ import Link from "next/link";
 import {
   MessageCircleHeart,
   Target,
-  Target,
   CheckCircle2,
   Circle,
   Flame,

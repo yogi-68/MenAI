@@ -206,7 +206,6 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const user: UserProfile = {
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
-    therapyGoals: profileResult.data?.therapy_goals || [],
     vision: profileResult.data?.vision || undefined,
     founderMode: profileResult.data?.founder_mode || false,
     coachingStyle: profileResult.data?.coaching_style || "balanced",
@@ -536,7 +535,6 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const user: UserProfile = {
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
-    therapyGoals: profileResult.data?.therapy_goals || [],
     vision: profileResult.data?.vision || undefined,
     founderMode: profileResult.data?.founder_mode || false,
     coachingStyle: profileResult.data?.coaching_style || "balanced",

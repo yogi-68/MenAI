@@ -45,7 +45,7 @@ export function determineRhythm(
   }
 
   // HIGH ANXIETY: Slow, calming rhythm
-  if (state === "GROUNDING" || (emotion.intensity >= 7 && emotion.sentiment === "negative")) {
+  if ((emotion.intensity >= 7 && emotion.sentiment === "negative")) {
     return {
       mode: "grounding",
       chunkDelayMs: 50,  // 50ms delay creates calmer feeling
@@ -54,15 +54,6 @@ export function determineRhythm(
     };
   }
 
-  // EMOTIONAL HOLDING: Medium-slow, warm rhythm
-  if (state === "EMOTIONAL_HOLDING") {
-    return {
-      mode: "thoughtful",
-      chunkDelayMs: 40,
-      pauseAfterSentence: 120,
-      description: "Gentle, unhurried presence",
-    };
-  }
 
   // REFLECTION: Thoughtful, contemplative rhythm
   if (state === "REFLECTION" || state === "EXPLORING") {
