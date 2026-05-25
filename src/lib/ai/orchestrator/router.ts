@@ -1,6 +1,6 @@
 /**
  * LLM Router — Cost-Optimized Model Selection
- * Routes requests to cheap/standard/premium models based on context
+ * Routes requests to gpt-4.1-nano/mini/4.1 based on context
  * Now includes rhythm-aware streaming for emotional pacing
  */
 
@@ -8,7 +8,7 @@ import { getOpenAI } from "@/lib/ai/openai";
 import { determineRhythm, applyRhythm } from "./rhythm-engine";
 import type { ModelConfig, ModelTier, EmotionAnalysis, SafetyResult, ConversationState } from "./types";
 
-// Model configurations
+// Model configurations — OpenAI Model Strategy
 const MODELS: Record<ModelTier, ModelConfig> = {
   cheap: {
     model: "gpt-4o-mini",
@@ -17,14 +17,14 @@ const MODELS: Record<ModelTier, ModelConfig> = {
     tier: "cheap",
   },
   standard: {
-    model: "gpt-4o-mini",
-    maxTokens: 700,
-    temperature: 0.8,
+    model: "gpt-4o-mini", // The operational brain (handles 70-85% of traffic)
+    maxTokens: 800,
+    temperature: 0.75,
     tier: "standard",
   },
   premium: {
-    model: "gpt-4o",
-    maxTokens: 900,
+    model: "gpt-4o", // The mentor brain (handles deep reasoning & coaching)
+    maxTokens: 1200,
     temperature: 0.8,
     tier: "premium",
   },
@@ -46,22 +46,41 @@ export function selectModel(params: {
     return MODELS.premium;
   }
 
-  // HIGH EMOTION: Use premium for deeply emotional conversations
-  if (emotion.intensity >= 7 || emotion.needsSupport) {
+  // PREMIUM: Deep Founder Coaching, Strategic Thinking, Identity-Level Reframing
+  if (
+    state === "FOUNDER_COACHING" ||
+    state === "STRATEGIC_THINKING" ||
+    state === "REFRAMING" ||
+    state === "ESCALATION"
+  ) {
     return MODELS.premium;
   }
 
-  // REFRAMING/GOAL_SETTING: Needs nuanced responses
-  if (state === "REFRAMING" || state === "GOAL_SETTING" || state === "ESCALATION") {
+  // PREMIUM: Burnout & Crisis Mode (High stress, exhaustion, panic)
+  if (emotion.intensity >= 8 || emotion.needsSupport) {
     return MODELS.premium;
   }
 
-  // STANDARD: Normal conversations
-  if (emotion.intensity >= 4 || state === "EXPLORING" || state === "VALIDATING") {
+  // STANDARD: Planning, Accountability, Execution Review, Goal Setting, Exploring, Validation
+  // Most operations run here (operational brain)
+  if (
+    state === "PLANNING" ||
+    state === "ACCOUNTABILITY" ||
+    state === "EXECUTION_REVIEW" ||
+    state === "GOAL_SETTING" ||
+    state === "EXPLORING" ||
+    state === "VALIDATING" ||
+    state === "EMOTIONAL_HOLDING"
+  ) {
     return MODELS.standard;
   }
 
-  // CHEAP: Casual greetings, simple questions, reflection
+  // STANDARD: Moderate emotion
+  if (emotion.intensity >= 4) {
+    return MODELS.standard;
+  }
+
+  // CHEAP: Casual greetings, simple check-ins, confirmation, reflection
   return MODELS.cheap;
 }
 
@@ -88,7 +107,7 @@ export async function callLLM(
   });
 
   return {
-    content: completion.choices[0]?.message?.content || "I'm here for you. Could you tell me more?",
+    content: completion.choices[0]?.message?.content || "I'm here. Tell me what's on your mind.",
     tokensUsed: completion.usage?.total_tokens || 0,
     model: config.model,
   };
@@ -162,7 +181,7 @@ export async function classifyWithLLM(
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
     ],
-    max_tokens: 150,
+    max_tokens: 300,
     temperature: 0.3,
   });
 

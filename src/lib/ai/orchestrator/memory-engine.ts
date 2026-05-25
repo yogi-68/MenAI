@@ -226,11 +226,11 @@ export async function summarizeConversation(
     .join("\n");
 
   const raw = await classifyWithLLM(
-    `You are analyzing a therapy conversation. Return ONLY valid JSON:
+    `You are analyzing a coaching conversation. Return ONLY valid JSON:
 {
-  "summary": "2-3 sentence emotional summary",
+  "summary": "2-3 sentence session summary focusing on goals, blockers, and decisions",
   "keyEvents": ["event1", "event2"],
-  "emotionalArc": "brief description of how emotions changed",
+  "emotionalArc": "brief description of how energy and focus shifted",
   "userTraits": ["trait1", "trait2"]
 }`,
     transcript.slice(0, 3000)

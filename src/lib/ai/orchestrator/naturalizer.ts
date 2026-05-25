@@ -4,7 +4,7 @@
  * Prevents the AI from sounding repetitive by:
  * 1. Varying validation phrases
  * 2. Randomizing sentence starters
- * 3. Adjusting response length based on emotional state
+ * 3. Adjusting response length based on state and emotion
  * 4. Adding natural conversational rhythm
  */
 
@@ -22,9 +22,34 @@ export function getResponseLengthGuidance(
     return "RESPONSE LENGTH: 1-3 sentences MAX. Short, steady, grounding. No essays. Be an anchor.";
   }
 
+  // Planning: can be longer — structured output
+  if (state === "PLANNING") {
+    return "RESPONSE LENGTH: Medium to long. Structured output with clear sections. Use bullet points or numbered lists for tasks. Make it scannable and actionable.";
+  }
+
+  // Founder coaching: medium to deep — strategic depth
+  if (state === "FOUNDER_COACHING" || state === "STRATEGIC_THINKING") {
+    return "RESPONSE LENGTH: 4-8 sentences. Go deep on strategy. Be specific. Reference their product/business context. Challenge assumptions.";
+  }
+
+  // Accountability: direct and concise
+  if (state === "ACCOUNTABILITY") {
+    return "RESPONSE LENGTH: 2-5 sentences. Be direct. Ask about specific commitments. Celebrate or explore what happened. Always end with a forward-looking question.";
+  }
+
+  // Execution review: warm celebration + bridging
+  if (state === "EXECUTION_REVIEW") {
+    return "RESPONSE LENGTH: 3-5 sentences. Celebrate specifically. Connect to bigger picture. Bridge to next steps naturally.";
+  }
+
   // High emotion: moderate, warm
   if (emotion.intensity >= 7) {
     return "RESPONSE LENGTH: 2-4 sentences. Lead with empathy. Don't overwhelm them with words when they're already overwhelmed.";
+  }
+
+  // Emotional holding: brief, impactful
+  if (state === "EMOTIONAL_HOLDING") {
+    return "RESPONSE LENGTH: 2-3 sentences. Pure presence. No questions. Just warm resonance.";
   }
 
   // Validating: brief, impactful
@@ -34,12 +59,17 @@ export function getResponseLengthGuidance(
 
   // Exploring: moderate
   if (state === "EXPLORING") {
-    return "RESPONSE LENGTH: 3-5 sentences. One reflection + one gentle question. Natural conversational depth.";
+    return "RESPONSE LENGTH: 3-5 sentences. One reflection + one focused question. Natural conversational depth.";
   }
 
   // Reframing: moderate with care
   if (state === "REFRAMING") {
-    return "RESPONSE LENGTH: 3-5 sentences. Acknowledge first, then gently reframe. Don't lecture.";
+    return "RESPONSE LENGTH: 3-5 sentences. Acknowledge first, then gently challenge. Don't lecture.";
+  }
+
+  // Goal setting: moderate with specificity
+  if (state === "GOAL_SETTING") {
+    return "RESPONSE LENGTH: 3-6 sentences. Make it concrete. Push for specifics. SMART goals.";
   }
 
   // Reflection: warm, moderate
@@ -48,7 +78,7 @@ export function getResponseLengthGuidance(
   }
 
   // Default: natural conversation
-  return "RESPONSE LENGTH: 2-4 sentences. Natural, like a friend. Vary between short and medium responses.";
+  return "RESPONSE LENGTH: 2-5 sentences. Natural, like a mentor. Adapt length to what's needed — shorter for clarity, longer for depth.";
 }
 
 /**
@@ -76,6 +106,15 @@ export function getAntiRepetitionInstructions(
   }
   if (recentText.includes("would you like to")) {
     banned.push("'Would you like to...' — too formal. Try: 'Want to try...' or 'How about we...'");
+  }
+  if (recentText.includes("you got this")) {
+    banned.push("'You got this' — generic motivation. Be specific about WHY you believe in them.");
+  }
+  if (recentText.includes("that's great") || recentText.includes("that's amazing")) {
+    banned.push("'That's great/amazing' — be specific about WHAT is great. Name it.");
+  }
+  if (recentText.includes("let's break")) {
+    banned.push("'Let's break it down' — you just used this. Try: 'Here's how I'd approach it' or 'What if we focus on...'");
   }
 
   if (banned.length === 0) return "";
@@ -117,6 +156,18 @@ export function getValidationVariations(emotion: string): string[] {
       "Fear can make everything feel bigger than it is.",
       "Yeah, not knowing what's coming is really unsettling.",
       "That uncertainty is hard to sit with.",
+    ],
+    frustration: [
+      "That kind of friction wears you down over time.",
+      "Being stuck when you know what you want is genuinely maddening.",
+      "Makes sense you're frustrated — this has been dragging on.",
+      "That's the kind of thing that builds up if you don't address it.",
+    ],
+    burnout: [
+      "You've been running too hard for too long.",
+      "That exhaustion isn't weakness — it's your body saying 'enough.'",
+      "Burnout doesn't mean you failed. It means you gave too much without recovery.",
+      "You're not lazy. You're depleted. There's a difference.",
     ],
     hopelessness: [
       "When it all feels pointless, everything gets heavier.",

@@ -9,17 +9,17 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MenAI — Your AI Mental Wellness Companion",
+  title: "MenAI — Your AI Life Operating System",
   description:
-    "A compassionate AI companion for mental wellness. Chat therapy, mood tracking, journaling, CBT exercises, and meditation — all in one secure platform.",
-  keywords: ["mental health", "AI therapy", "wellness", "CBT", "meditation", "mood tracking"],
+    "An AI execution coach and life operating system. Goal tracking, accountability, strategic coaching, and personal growth intelligence — available 24/7.",
+  keywords: ["AI mentor", "execution coach", "accountability", "goal tracking", "life OS", "productivity", "personal growth"],
   icons: {
     icon: "/logo.png",
     apple: "/logo.png",
   },
   openGraph: {
-    title: "MenAI — Your AI Mental Wellness Companion",
-    description: "AI-powered mental wellness. Chat, mood tracking, journaling, CBT exercises & meditation.",
+    title: "MenAI — Your AI Life Operating System",
+    description: "AI-powered execution coaching. Goal tracking, accountability, strategic planning & personal growth intelligence.",
     type: "website",
     images: ["/logo.png"],
   },

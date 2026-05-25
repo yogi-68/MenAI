@@ -1,16 +1,19 @@
 /**
- * AI Orchestrator — The Brain of MenAI
+ * AI Orchestrator — The Brain of MenAI Life Operating System
  * 
  * Pipeline:
- * 1. Safety Engine     → Crisis detection + moderation
- * 2. Emotion Engine    → Emotional analysis
- * 3. State Machine     → Determine conversation mode
- * 4. Memory Engine     → Retrieve relevant context
- * 5. LLM Router        → Select optimal model
- * 6. Prompt Builder    → Construct dynamic prompt
- * 7. LLM Call          → Generate response
- * 8. Response Validator → Output safety check
- * 9. Memory Storage    → Store for future context
+ * 1. Safety Engine        → Crisis detection + moderation
+ * 2. Emotion Engine       → Emotional analysis
+ * 3. Extraction Engine    → Extract goals/commitments/relationships (parallel)
+ * 4. State Machine        → Determine conversation mode
+ * 5. Memory Engine        → Retrieve relevant context (vector)
+ * 6. Accountability Engine → Retrieve life context (structured)
+ * 7. LLM Router           → Select optimal model
+ * 8. Prompt Builder        → Construct dynamic prompt
+ * 9. LLM Call              → Generate response
+ * 10. Response Validator   → Output safety check
+ * 11. Memory Storage       → Store for future context
+ * 12. Data Persistence     → Persist extracted life data
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/server";
@@ -21,7 +24,9 @@ import { getMemoryContext, storeMemory, summarizeConversation, compressMemories 
 import { selectModel, callLLM, callLLMStreaming } from "./router";
 import { buildPrompt } from "./prompt-builder";
 import { validateResponse } from "./response-validator";
-import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis } from "./types";
+import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
+import { getLifeContext } from "./accountability-engine";
+import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext } from "./types";
 
 /**
  * Main orchestrator — process a user message through the full pipeline
@@ -92,11 +97,11 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     content: input.message,
   });
 
-  // ===== STEP 4: Load Context (with smart RAG bypass) =====
+  // ===== STEP 4: Load Context (parallel: history, memory, profile, life context, extraction) =====
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [] as string[], longTerm: [] as string[], episodic: [] as string[], emotional: [] as string[], formatted: "" };
 
-  const [historyResult, memory, profileResult] = await Promise.all([
+  const [historyResult, memory, profileResult, lifeContext, extractedData] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -106,9 +111,11 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     skipMemory ? Promise.resolve(emptyMemory) : getMemoryContext(input.userId, input.message),
     serviceClient
       .from("profiles")
-      .select("full_name, therapy_goals")
+      .select("full_name, therapy_goals, vision, founder_mode, coaching_style")
       .eq("id", input.userId)
       .single(),
+    getLifeContext(input.userId).catch(() => null),
+    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [] })),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -120,15 +127,20 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
     therapyGoals: profileResult.data?.therapy_goals || [],
+    vision: profileResult.data?.vision || undefined,
+    founderMode: profileResult.data?.founder_mode || false,
+    coachingStyle: profileResult.data?.coaching_style || "balanced",
     sessionCount: conversationHistory.length,
   };
 
   // ===== STEP 5: Determine Conversation State =====
+  const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
   const state = determineState({
     emotion,
     safety,
     messageCount: conversationHistory.length,
     userMessage: input.message,
+    hasAccountabilityItems: hasAccountability,
   });
 
   // ===== STEP 6: Select Model =====
@@ -146,6 +158,7 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     safety,
     emotion,
     memory,
+    lifeContext: lifeContext || undefined,
     state,
     conversationHistory: conversationHistory.slice(0, -1), // Exclude just-added message
     conversationId,
@@ -196,6 +209,23 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     metadata: { conversation_id: conversationId, state },
   }).catch(() => {});
 
+  // Persist extracted life data
+  if (hasExtractedData(extractedData)) {
+    persistExtractedData(input.userId, extractedData, conversationId, serviceClient).catch(() => {});
+
+    // Store extraction as memory too (for vector recall)
+    const extractionSummary = buildExtractionSummary(extractedData);
+    if (extractionSummary) {
+      storeMemory({
+        userId: input.userId,
+        content: extractionSummary,
+        memoryType: extractedData.goals.length > 0 ? "goal" : "commitment",
+        importance: 0.85,
+        metadata: { conversation_id: conversationId, type: "extraction" },
+      }).catch(() => {});
+    }
+  }
+
   // Summarize after every 20 messages
   if (conversationHistory.length > 0 && conversationHistory.length % 20 === 0) {
     summarizeConversation(conversationHistory).then(async (summary) => {
@@ -222,6 +252,7 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     state,
     modelUsed: llmResult.model,
     tokensUsed: llmResult.tokensUsed,
+    extractedData: hasExtractedData(extractedData) ? extractedData : undefined,
   };
 }
 
@@ -238,6 +269,29 @@ function shouldSkipMemory(message: string, emotion: EmotionAnalysis): boolean {
   if (casualPatterns.some((p) => p.test(lower))) return true;
   if (emotion.intensity <= 2 && emotion.sentiment !== "negative") return true;
   return false;
+}
+
+/**
+ * Build a summary string from extracted data for memory storage
+ */
+function buildExtractionSummary(data: import("./types").ExtractedLifeData): string {
+  const parts: string[] = [];
+  if (data.goals.length > 0) {
+    parts.push(`Goals mentioned: ${data.goals.map((g) => g.title).join(", ")}`);
+  }
+  if (data.commitments.length > 0) {
+    parts.push(`Commitments made: ${data.commitments.map((c) => c.description).join(", ")}`);
+  }
+  if (data.projects.length > 0) {
+    parts.push(`Projects discussed: ${data.projects.map((p) => `${p.name} (${p.status})`).join(", ")}`);
+  }
+  if (data.relationships.length > 0) {
+    parts.push(`People mentioned: ${data.relationships.map((r) => `${r.name} (${r.role})`).join(", ")}`);
+  }
+  if (data.blockers.length > 0) {
+    parts.push(`Blockers identified: ${data.blockers.join(", ")}`);
+  }
+  return parts.join(". ");
 }
 
 /**
@@ -325,11 +379,11 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     content: input.message,
   });
 
-  // ===== STEP 4: Load Context (with smart RAG bypass) =====
+  // ===== STEP 4: Load Context (parallel) =====
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [], longTerm: [], episodic: [], emotional: [], formatted: "" };
 
-  const [historyResult, memory, profileResult] = await Promise.all([
+  const [historyResult, memory, profileResult, lifeContext, extractedData] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -339,9 +393,11 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     skipMemory ? Promise.resolve(emptyMemory) : getMemoryContext(input.userId, input.message),
     serviceClient
       .from("profiles")
-      .select("full_name, therapy_goals")
+      .select("full_name, therapy_goals, vision, founder_mode, coaching_style")
       .eq("id", input.userId)
       .single(),
+    getLifeContext(input.userId).catch(() => null),
+    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [] })),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -353,15 +409,20 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
     therapyGoals: profileResult.data?.therapy_goals || [],
+    vision: profileResult.data?.vision || undefined,
+    founderMode: profileResult.data?.founder_mode || false,
+    coachingStyle: profileResult.data?.coaching_style || "balanced",
     sessionCount: conversationHistory.length,
   };
 
   // ===== STEP 5: State + Model + Prompt =====
+  const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
   const state = determineState({
     emotion,
     safety,
     messageCount: conversationHistory.length,
     userMessage: input.message,
+    hasAccountabilityItems: hasAccountability,
   });
 
   const modelConfig = selectModel({ emotion, safety, state, messageLength: input.message.length });
@@ -372,6 +433,7 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     safety,
     emotion,
     memory,
+    lifeContext: lifeContext || undefined,
     state,
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
@@ -434,6 +496,21 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
             importance: emotion.intensity > 6 ? 0.8 : 0.5,
             metadata: { conversation_id: conversationId, state },
           }).catch(() => {});
+        }
+
+        // Persist extracted data
+        if (hasExtractedData(extractedData)) {
+          persistExtractedData(input.userId, extractedData, conversationId, serviceClient).catch(() => {});
+          const extractionSummary = buildExtractionSummary(extractedData);
+          if (extractionSummary) {
+            storeMemory({
+              userId: input.userId,
+              content: extractionSummary,
+              memoryType: extractedData.goals.length > 0 ? "goal" : "commitment",
+              importance: 0.85,
+              metadata: { conversation_id: conversationId, type: "extraction" },
+            }).catch(() => {});
+          }
         }
 
         if (conversationHistory.length > 0 && conversationHistory.length % 20 === 0) {

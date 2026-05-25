@@ -5,52 +5,52 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   MessageCircleHeart,
-  BookHeart,
-  Activity,
+  Target,
+  BarChart3,
   Shield,
   Sparkles,
   ArrowRight,
-  Heart,
-  Moon,
+  Zap,
   Brain,
+  Compass,
 } from "lucide-react";
 
 const features = [
   {
     icon: MessageCircleHeart,
-    title: "AI Therapy Chat",
+    title: "AI Mentor",
     description:
-      "Talk to a compassionate AI companion trained in CBT, mindfulness, and evidence-based techniques.",
+      "An emotionally intelligent execution coach that learns your life, remembers your goals, and holds you accountable.",
   },
   {
-    icon: Activity,
-    title: "Mood Tracking",
+    icon: Target,
+    title: "Automatic Goal Tracking",
     description:
-      "Track your emotional patterns over time with beautiful visualizations and AI-powered insights.",
+      "Just talk. MenAI extracts your goals, commitments, and plans from natural conversation — no manual input needed.",
   },
   {
-    icon: BookHeart,
-    title: "Smart Journaling",
+    icon: BarChart3,
+    title: "Life Dashboard",
     description:
-      "Write freely and receive AI-generated insights, sentiment analysis, and pattern recognition.",
+      "See your execution status at a glance — momentum, consistency, streaks, and focus. One screen, full clarity.",
   },
   {
     icon: Brain,
-    title: "CBT Exercises",
+    title: "Execution Intelligence",
     description:
-      "Guided cognitive behavioral therapy exercises like thought records, behavioral activation, and grounding.",
+      "Detects procrastination, avoidance patterns, burnout signals, and energy cycles — then adapts your plan accordingly.",
   },
   {
-    icon: Moon,
-    title: "Guided Meditation",
+    icon: Compass,
+    title: "Strategic Companion",
     description:
-      "Calming meditation sessions for sleep, anxiety relief, self-compassion, and morning calm.",
+      "Founder coaching, career decisions, life direction — a personal strategist available 24/7.",
   },
   {
     icon: Shield,
-    title: "Crisis Support",
+    title: "Always-On Safety",
     description:
-      "Always-on safety system that provides immediate emergency resources when you need them most.",
+      "Emotionally aware at all times. Detects crisis signals and provides immediate support when it matters most.",
   },
 ];
 
@@ -75,18 +75,23 @@ export default function LandingPage() {
         }}
       >
         <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
-          <Image src="/logo.png" alt="MindfulAI" width={36} height={36} style={{ borderRadius: "50%" }} />
-          <span
-            style={{
-              fontSize: "1.25rem",
-              fontWeight: 700,
-              background: "var(--gradient-primary)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            MenAI
-          </span>
+          <Image src="/logo.png" alt="MenAI" width={36} height={36} style={{ borderRadius: "50%" }} />
+          <div>
+            <span
+              style={{
+                fontSize: "1.25rem",
+                fontWeight: 700,
+                background: "var(--gradient-primary)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                display: "block",
+                lineHeight: 1.2,
+              }}
+            >
+              MenAI
+            </span>
+            <span style={{ fontSize: "0.6rem", color: "var(--text-muted)", letterSpacing: "0.06em" }}>LIFE OS</span>
+          </div>
         </Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
@@ -141,7 +146,7 @@ export default function LandingPage() {
             }}
           >
             <Sparkles size={14} />
-            AI-Powered Mental Wellness
+            AI Life Operating System
           </div>
 
           <h1
@@ -153,20 +158,20 @@ export default function LandingPage() {
               maxWidth: "800px",
             }}
           >
-            Your mind deserves a{" "}
-            <span className="gradient-text">compassionate</span> companion
+            Your AI{" "}
+            <span className="gradient-text">execution coach</span> for life
           </h1>
 
           <p
             style={{
               fontSize: "1.15rem",
               color: "var(--text-secondary)",
-              maxWidth: "560px",
+              maxWidth: "580px",
               marginBottom: "40px",
               lineHeight: 1.7,
             }}
           >
-            Evidence-based therapy techniques with empathetic AI — available 24/7, completely private.
+            An AI mentor that learns your life, tracks your goals, holds you accountable, and helps you execute consistently — 24/7.
           </p>
 
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
@@ -198,13 +203,13 @@ export default function LandingPage() {
             gridTemplateColumns: "repeat(3, 1fr)",
             gap: "40px",
             marginTop: "80px",
-            maxWidth: "500px",
+            maxWidth: "600px",
             width: "100%",
           }}
         >
           {[
-            { value: "24/7", label: "Available" },
-            { value: "100%", label: "Private" },
+            { value: "24/7", label: "AI Mentor" },
+            { value: "Auto", label: "Goal Tracking" },
             { value: "Free", label: "To Start" },
           ].map((stat) => (
             <div key={stat.label} style={{ textAlign: "center" }}>
@@ -243,11 +248,11 @@ export default function LandingPage() {
           style={{ textAlign: "center", marginBottom: "64px" }}
         >
           <h2 style={{ fontSize: "2.5rem", fontWeight: 700, marginBottom: "16px" }}>
-            Everything for your{" "}
-            <span className="gradient-text">wellbeing</span>
+            Your personal{" "}
+            <span className="gradient-text">operating system</span>
           </h2>
-          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", maxWidth: "500px", margin: "0 auto" }}>
-            Evidence-based tools powered by AI, designed for your emotional health.
+          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", maxWidth: "520px", margin: "0 auto" }}>
+            AI that understands your life, tracks your momentum, and keeps you executing at your best.
           </p>
         </motion.div>
 
@@ -321,12 +326,12 @@ export default function LandingPage() {
               pointerEvents: "none",
             }}
           />
-          <Heart size={40} style={{ color: "var(--accent-tertiary)", marginBottom: "20px" }} />
+          <Zap size={40} style={{ color: "var(--accent-secondary)", marginBottom: "20px" }} />
           <h2 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "12px" }}>
-            Your wellbeing matters
+            Stop planning. Start executing.
           </h2>
           <p style={{ color: "var(--text-secondary)", marginBottom: "28px", lineHeight: 1.7, fontSize: "0.95rem" }}>
-            Take the first step toward a healthier mind. Free to start, always private.
+            MenAI learns your life, structures your goals, and keeps you accountable — so you actually follow through.
           </p>
           <Link
             href="/signup"
@@ -345,7 +350,7 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      {/* ====== FOOTER (minimal startup) ====== */}
+      {/* ====== FOOTER ====== */}
       <footer
         style={{
           padding: "24px",
@@ -361,7 +366,7 @@ export default function LandingPage() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Image src="/logo.png" alt="MenAI" width={20} height={20} style={{ borderRadius: "50%" }} />
-          <span>© {new Date().getFullYear()} MenAI. This is an AI wellness companion, not a substitute for professional medical advice.</span>
+          <span>© {new Date().getFullYear()} MenAI. Your AI Life Operating System.</span>
         </div>
         <div style={{ display: "flex", gap: "20px" }}>
           <Link href="/login" style={{ color: "var(--text-muted)", textDecoration: "none" }}>Login</Link>

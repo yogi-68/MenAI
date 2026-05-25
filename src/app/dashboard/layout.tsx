@@ -10,25 +10,37 @@ import {
   MessageCircleHeart,
   Activity,
   BookHeart,
-  Dumbbell,
-  Moon,
-  Sun,
+  Target,
   BarChart3,
   LogOut,
   Menu,
   X,
   Plus,
   Sparkles,
+  Sun,
+  Moon,
+  Compass,
+  Zap,
+  RefreshCcw,
+  Battery,
+  Settings,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/dashboard", icon: BarChart3, label: "Overview" },
-  { href: "/dashboard/chat", icon: MessageCircleHeart, label: "AI Chat" },
-  { href: "/dashboard/mood", icon: Activity, label: "Mood Tracker" },
-  { href: "/dashboard/journal", icon: BookHeart, label: "Journal" },
-  { href: "/dashboard/exercises", icon: Dumbbell, label: "CBT Exercises" },
-  { href: "/dashboard/meditation", icon: Moon, label: "Meditation" },
+const primaryNav = [
+  { href: "/dashboard", icon: BarChart3, label: "Command Center" },
+  { href: "/dashboard/chat", icon: MessageCircleHeart, label: "AI Mentor" },
+  { href: "/dashboard/goals", icon: Target, label: "Goals & Tasks" },
+  { href: "/dashboard/status", icon: Compass, label: "Life Status" },
+  { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
+
+const toolsNav = [
+  { href: "/dashboard/mood", icon: Zap, label: "Energy & Focus" },
+  { href: "/dashboard/journal", icon: BookHeart, label: "Reflections" },
+  { href: "/dashboard/exercises", icon: RefreshCcw, label: "Reset Tools" },
+  { href: "/dashboard/meditation", icon: Battery, label: "Recovery" },
+];
+
 
 export default function DashboardLayout({
   children,
@@ -121,17 +133,24 @@ export default function DashboardLayout({
             }}
           >
             <Image src="/logo.png" alt="MenAI" width={36} height={36} style={{ borderRadius: "50%" }} />
-            <span
-              style={{
-                fontSize: "1.15rem",
-                fontWeight: 700,
-                background: "var(--gradient-primary)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-              }}
-            >
-              MenAI
-            </span>
+            <div>
+              <span
+                style={{
+                  fontSize: "1.15rem",
+                  fontWeight: 700,
+                  background: "var(--gradient-primary)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  display: "block",
+                  lineHeight: 1.2,
+                }}
+              >
+                MenAI
+              </span>
+              <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                LIFE OS
+              </span>
+            </div>
           </Link>
 
           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -181,12 +200,12 @@ export default function DashboardLayout({
           }}
         >
           <Plus size={18} />
-          New Chat
+          Talk to Mentor
         </Link>
 
-        {/* Nav Items */}
+        {/* Nav Items — Primary */}
         <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-          {navItems.map((item) => {
+          {primaryNav.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
@@ -196,6 +215,25 @@ export default function DashboardLayout({
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <item.icon size={20} />
+                {item.label}
+              </Link>
+            );
+          })}
+
+          {/* Tools Section */}
+          <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "16px 12px 6px", marginTop: "8px" }}>
+            Tools
+          </div>
+          {toolsNav.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`sidebar-link ${isActive ? "active" : ""}`}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <item.icon size={18} />
                 {item.label}
               </Link>
             );

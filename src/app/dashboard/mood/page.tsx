@@ -136,15 +136,15 @@ export default function MoodPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px" }}>
-            <span className="gradient-text">Mood Tracker</span>
+            <span className="gradient-text">Energy & Focus</span>
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            Track your emotional patterns and find insights
+            Track your energy patterns to optimize execution
           </p>
         </div>
         <button onClick={() => setShowForm(true)} className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Plus size={18} />
-          Log Mood
+          Log Energy
         </button>
       </div>
 
@@ -153,7 +153,7 @@ export default function MoodPage() {
         <div className="glass-card" style={{ padding: "20px", cursor: "default" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
             <Activity size={16} style={{ color: "var(--accent-primary)" }} />
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Average Mood</span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Avg Energy</span>
           </div>
           <div style={{ fontSize: "2rem", fontWeight: 700 }}>
             {avgMood > 0 ? `${avgMood}` : "—"}
@@ -193,7 +193,7 @@ export default function MoodPage() {
       {/* Mood Bar Visualization */}
       {entries.length > 0 && (
         <div className="glass-card" style={{ padding: "24px", marginBottom: "32px", cursor: "default" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "16px" }}>Mood Timeline</h3>
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "16px" }}>Energy Timeline</h3>
           <div style={{ display: "flex", alignItems: "flex-end", gap: "6px", height: "120px" }}>
             {entries.slice(0, 30).reverse().map((entry, i) => (
               <div
@@ -231,7 +231,7 @@ export default function MoodPage() {
       ) : entries.length === 0 ? (
         <div className="glass-card" style={{ padding: "48px", textAlign: "center", cursor: "default" }}>
           <Activity size={40} style={{ color: "var(--text-muted)", opacity: 0.3, marginBottom: "12px" }} />
-          <p style={{ color: "var(--text-secondary)" }}>No mood entries yet. Start by logging how you feel!</p>
+          <p style={{ color: "var(--text-secondary)" }}>No entries yet. Start tracking your energy to find patterns.</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -322,7 +322,7 @@ export default function MoodPage() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-              <h2 style={{ fontSize: "1.3rem", fontWeight: 700 }}>How are you feeling?</h2>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 700 }}>How&apos;s your energy?</h2>
               <button onClick={resetForm} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
                 <X size={20} />
               </button>
@@ -349,7 +349,7 @@ export default function MoodPage() {
             {/* Emotions */}
             <div style={{ marginBottom: "24px" }}>
               <label style={{ fontSize: "0.9rem", fontWeight: 600, marginBottom: "10px", display: "block" }}>
-                What emotions are you feeling?
+                What&apos;s going on today?
               </label>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 {emotionOptions.map((emotion) => (
@@ -451,7 +451,7 @@ export default function MoodPage() {
               }}
             >
               {saving ? <span className="animate-spin">⏳</span> : <Check size={18} />}
-              {saving ? "Saving..." : "Save Mood Entry"}
+              {saving ? "Saving..." : "Save Entry"}
             </button>
           </div>
         </div>

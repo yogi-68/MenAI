@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Dumbbell, Clock, Tag, ChevronRight, CheckCircle2, ArrowLeft } from "lucide-react";
+import { Dumbbell, Clock, Tag, ChevronRight, CheckCircle2, ArrowLeft, Zap, Brain, RefreshCcw } from "lucide-react";
 
 interface Exercise {
   id: string;
@@ -15,7 +15,30 @@ interface Exercise {
   tags: string[];
 }
 
-export default function ExercisesPage() {
+// Remap CBT categories to execution psychology categories
+const getCategoryLabel = (c: string) => {
+  const map: Record<string, string> = {
+    "Cognitive Restructuring": "Clarity Reset",
+    "Positive Psychology": "Momentum Builder",
+    "Relaxation": "Recovery",
+    "Behavioral": "Execution Pattern",
+    "Mindfulness": "Focus Reset",
+  };
+  return map[c] || c;
+};
+
+const getCategoryIcon = (c: string) => {
+  const icons: Record<string, string> = {
+    "Cognitive Restructuring": "🎯",
+    "Positive Psychology": "⚡",
+    "Relaxation": "🔋",
+    "Behavioral": "🧭",
+    "Mindfulness": "🧠",
+  };
+  return icons[c] || "💡";
+};
+
+export default function ResetToolsPage() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [selected, setSelected] = useState<Exercise | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
@@ -41,15 +64,13 @@ export default function ExercisesPage() {
     return "var(--accent-tertiary)";
   };
 
-  const getCategoryIcon = (c: string) => {
-    const icons: Record<string, string> = {
-      "Cognitive Restructuring": "🧠",
-      "Positive Psychology": "✨",
-      "Relaxation": "🌊",
-      "Behavioral": "🎯",
-      "Mindfulness": "🧘",
+  const getDifficultyLabel = (d: string) => {
+    const map: Record<string, string> = {
+      "beginner": "Quick",
+      "intermediate": "Medium",
+      "advanced": "Deep",
     };
-    return icons[c] || "💡";
+    return map[d] || d;
   };
 
   if (selected) {
@@ -71,7 +92,7 @@ export default function ExercisesPage() {
           }}
         >
           <ArrowLeft size={18} />
-          Back to exercises
+          Back to resets
         </button>
 
         <div className="glass-card" style={{ padding: "32px", cursor: "default" }}>
@@ -80,7 +101,7 @@ export default function ExercisesPage() {
             <div>
               <h1 style={{ fontSize: "1.5rem", fontWeight: 700 }}>{selected.title}</h1>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                {selected.category} · {selected.duration_minutes} min
+                {getCategoryLabel(selected.category)} · {selected.duration_minutes} min
               </p>
             </div>
           </div>
@@ -178,17 +199,25 @@ export default function ExercisesPage() {
   return (
     <div style={{ padding: "32px", maxWidth: "900px", margin: "0 auto" }}>
       <div style={{ marginBottom: "32px" }}>
-        <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px" }}>
-          <span className="gradient-text">CBT Exercises</span>
+        <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px", display: "flex", alignItems: "center", gap: "10px" }}>
+          <RefreshCcw size={28} style={{ color: "var(--accent-primary)" }} />
+          <span className="gradient-text">Reset Tools</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-          These exercises are based on evidence-based techniques to help you manage your mental health. MenAI is here to guide you through each step.
+          Structured mental resets to regain clarity, focus, and momentum when you&apos;re stuck.
         </p>
       </div>
 
       {loading ? (
         <div style={{ display: "grid", gap: "16px" }}>
           {[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: "120px" }} />)}
+        </div>
+      ) : exercises.length === 0 ? (
+        <div className="glass-card" style={{ padding: "48px", textAlign: "center", cursor: "default" }}>
+          <RefreshCcw size={40} style={{ color: "var(--text-muted)", opacity: 0.3, marginBottom: "12px" }} />
+          <p style={{ color: "var(--text-secondary)" }}>
+            No reset tools available yet. Check back soon.
+          </p>
         </div>
       ) : (
         <div style={{ display: "grid", gap: "16px" }}>
@@ -217,14 +246,13 @@ export default function ExercisesPage() {
                       background: getDifficultyColor(exercise.difficulty) + "15",
                       color: getDifficultyColor(exercise.difficulty),
                       fontWeight: 500,
-                      textTransform: "capitalize",
                     }}
                   >
-                    {exercise.difficulty}
+                    {getDifficultyLabel(exercise.difficulty)}
                   </span>
-                  {exercise.tags.slice(0, 3).map((tag) => (
-                    <span key={tag} style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>#{tag}</span>
-                  ))}
+                  <span style={{ fontSize: "0.72rem", color: "var(--accent-primary)", fontWeight: 500 }}>
+                    {getCategoryLabel(exercise.category)}
+                  </span>
                 </div>
               </div>
               <ChevronRight size={20} style={{ color: "var(--text-muted)" }} />

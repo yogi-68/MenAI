@@ -1,9 +1,14 @@
 /**
  * Prompt Builder — Dynamic context-aware prompt construction
  * 
- * Now includes the REGULATION ENGINE — the critical missing layer
- * that moves responses from "empathetic acknowledgement" to
- * "actual emotional state transformation."
+ * Builds the complete prompt for the LLM with:
+ * - System prompt (mentor/coach identity)
+ * - User profile context
+ * - Conversation state instructions
+ * - Emotional regulation guidance
+ * - Life context (goals, tasks, commitments, accountability)
+ * - Memory context (vector-based long-term memory)
+ * - Response guidance
  */
 
 import type { PipelineContext } from "./types";
@@ -11,6 +16,7 @@ import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
+import { formatLifeContextForPrompt } from "./accountability-engine";
 
 /**
  * Build the complete prompt messages array for the LLM
@@ -29,15 +35,46 @@ export function buildPrompt(
 Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
   }
 
+  if (ctx.user.vision) {
+    parts.push(`## Their Vision
+They described the life they want to build as: "${ctx.user.vision}"
+Hold them to this. Reference it when they're drifting.`);
+  }
+
+  if (ctx.user.founderMode) {
+    parts.push(`## Founder Mode: ACTIVE
+This person is building a startup/product. Think like a co-founder. Push execution. Challenge feature creep. Remind them to ship.`);
+  }
+
+  if (ctx.user.coachingStyle) {
+    let styleText = "";
+    switch (ctx.user.coachingStyle) {
+      case "push":
+        styleText = "Direct, high-pressure execution coaching. Call out procrastination, hold them strictly accountable, challenge excuses directly, and cut through avoidant talk. Do not baby them.";
+        break;
+      case "gentle":
+        styleText = "Supportive, warm, and restorative guide. Focus on energy restoration, recovery, and pacing. Avoid aggressive pressure or guilt-inducing accountability. Emphasize sustainability.";
+        break;
+      case "strategic":
+        styleText = "Executive systems consultant. Focus on strategic leverage, business metrics, product-market validation, delegation, and structured execution. Think like an advisor rather than a cheerleader.";
+        break;
+      case "balanced":
+      default:
+        styleText = "A balanced mix of supportive active listening and firm accountability push. Praise consistency, but call out patterns of stagnation when they arise.";
+        break;
+    }
+    parts.push(`## Your Mentorship Style: ${ctx.user.coachingStyle.toUpperCase()}
+Instructed behavior: ${styleText}`);
+  }
+
   if (ctx.user.therapyGoals && ctx.user.therapyGoals.length > 0) {
-    parts.push(`They're working on: ${ctx.user.therapyGoals.join(", ")}.`);
+    parts.push(`Their key focus areas: ${ctx.user.therapyGoals.join(", ")}.`);
   }
 
   // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 
-  // ===== THE CRITICAL LAYER: EMOTIONAL REGULATION =====
-  // This determines HOW to do it — pacing, structure, nervous system calming
+  // ===== EMOTIONAL REGULATION LAYER =====
   const regulationPrompt = buildRegulationPrompt(
     ctx.emotion,
     ctx.state,
@@ -47,7 +84,18 @@ Their name is ${ctx.user.fullName}. Use it warmly but not every message.`);
 
   const emotionalState = detectEmotionalState(ctx.emotion, ctx.input.message);
   parts.push(`## Emotional State: ${emotionalState}
-Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT (calmer, more grounded, less alone, more contained) after reading your response — not just "heard."`);
+Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT — clearer, more grounded, more accountable, or more at peace — after reading your response.`);
+
+  // ===== LIFE CONTEXT (Structured Data) =====
+  if (ctx.lifeContext) {
+    const lifeContextFormatted = formatLifeContextForPrompt(ctx.lifeContext);
+    if (lifeContextFormatted) {
+      parts.push(`## Their Life Context — What You Know
+${lifeContextFormatted}
+
+Use this naturally. Reference their goals and commitments when relevant. Follow up on accountability items at appropriate moments — not all at once. This is what makes you feel like a mentor who actually pays attention.`);
+    }
+  }
 
   // Emotional context — drives tone
   if (ctx.emotion) {
@@ -59,18 +107,18 @@ Remember: your response should create an emotional SHIFT. The user should feel D
     }
 
     if (ctx.emotion.needsSupport) {
-      emotionBlock += `\nThis person needs regulation right now — not just empathy.`;
+      emotionBlock += `\nThis person needs grounding right now — not just empathy.`;
     }
 
     parts.push(emotionBlock);
   }
 
-  // Memory context — emotional continuity
+  // Memory context — emotional and factual continuity
   if (ctx.memory.formatted) {
-    parts.push(`## What You Remember About Them
+    parts.push(`## What You Remember About Them (from past conversations)
 ${ctx.memory.formatted}
 
-This is what creates continuity — reference these naturally when relevant. Don't list them out robotically. Weave them into understanding what's happening now. That's what makes someone feel truly seen across time.`);
+Reference these naturally when relevant. Weave them into understanding what's happening now. This is what creates the feeling of being known across time.`);
   }
 
   // Safety context
@@ -79,7 +127,7 @@ This is what creates continuity — reference these naturally when relevant. Don
 This person may be in distress. Be extra gentle and present. If you sense escalation, ask directly: "Are you safe right now?" Don't wait.`);
   }
 
-  // Response length guidance (from naturalizer)
+  // Response length guidance
   parts.push(getResponseLengthGuidance(ctx.state, ctx.emotion));
 
   // Anti-repetition (check last 3 AI responses)
@@ -92,11 +140,11 @@ This person may be in distress. Be extra gentle and present. If you sense escala
     parts.push(antiRepetition);
   }
 
-  // Conversation length awareness
+  // Conversation depth awareness
   const msgCount = ctx.conversationHistory.length;
   if (msgCount > 10) {
     parts.push(`## Conversation Depth
-This is message ${msgCount}+ in the conversation. You have enough context to notice patterns, emotional arcs, and what's really going on underneath. Don't start fresh each message. Connect dots.`);
+This is message ${msgCount}+ in the conversation. You have enough context to notice patterns, connect dots, and go deeper. Don't start fresh. Build on what's been discussed.`);
   }
 
   messages.push({ role: "system", content: parts.join("\n\n") });

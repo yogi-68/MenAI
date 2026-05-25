@@ -91,15 +91,15 @@ export default function JournalPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "32px" }}>
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px" }}>
-            <span className="gradient-text-warm">Journal</span>
+            <span className="gradient-text-warm">Reflections</span>
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            Express yourself freely. AI provides gentle insights.
+            Process your thinking, capture patterns, build self-awareness.
           </p>
         </div>
         <button onClick={() => setShowForm(true)} className="btn-primary" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Plus size={18} />
-          New Entry
+          New Reflection
         </button>
       </div>
 
@@ -113,12 +113,12 @@ export default function JournalPage() {
       ) : entries.length === 0 ? (
         <div className="glass-card" style={{ padding: "64px", textAlign: "center", cursor: "default" }}>
           <BookHeart size={48} style={{ color: "var(--text-muted)", opacity: 0.3, marginBottom: "16px" }} />
-          <h3 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "8px" }}>Your journal is empty</h3>
+          <h3 style={{ fontSize: "1.2rem", fontWeight: 600, marginBottom: "8px" }}>No reflections yet</h3>
           <p style={{ color: "var(--text-secondary)", marginBottom: "24px" }}>
-            Start writing to unlock AI-powered insights about your emotional patterns.
+            Start reflecting to unlock AI-powered insights about your patterns and behavior.
           </p>
           <button onClick={() => setShowForm(true)} className="btn-primary">
-            Write Your First Entry
+            Write Your First Reflection
           </button>
         </div>
       ) : (
@@ -220,7 +220,7 @@ export default function JournalPage() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-              <h2 style={{ fontSize: "1.3rem", fontWeight: 700 }}>✍️ New Journal Entry</h2>
+              <h2 style={{ fontSize: "1.3rem", fontWeight: 700 }}>✍️ New Reflection</h2>
               <button onClick={resetForm} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
                 <X size={20} />
               </button>
@@ -240,7 +240,7 @@ export default function JournalPage() {
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="Write freely... What's on your mind today? How are you feeling? What happened?"
+                placeholder="What happened today? What did you learn? What patterns do you notice?"
                 className="input-field"
                 rows={10}
                 style={{ resize: "vertical", minHeight: "200px", lineHeight: 1.7 }}
@@ -304,7 +304,7 @@ export default function JournalPage() {
             </button>
 
             <p style={{ textAlign: "center", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "12px" }}>
-              <Sparkles size={10} style={{ display: "inline" }} /> AI will analyze your entry and provide insights after saving.
+              <Sparkles size={10} style={{ display: "inline" }} /> AI will analyze your reflection and surface patterns after saving.
             </p>
           </div>
         </div>

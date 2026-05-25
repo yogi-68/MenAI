@@ -161,7 +161,7 @@ export default function ChatPage() {
       const aiMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: accumulated || "I'm here for you. Could you tell me more?",
+        content: accumulated || "I'm here. What's on your mind?",
         created_at: new Date().toISOString(),
         crisis: isCrisis,
       };
@@ -433,11 +433,11 @@ export default function ChatPage() {
                 Hi, I&apos;m <span className="gradient-text">MenAI</span>
               </h2>
               <p style={{ color: "var(--text-secondary)", maxWidth: "400px", lineHeight: 1.6 }}>
-                I&apos;m your compassionate AI wellness companion. Talk to me about anything —
-                how you&apos;re feeling, what&apos;s on your mind, or if you just need someone to listen.
+                I&apos;m your AI mentor, execution coach, and accountability partner. Talk to me about
+                your goals, what&apos;s blocking you, or what you want to build next.
               </p>
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center", marginTop: "8px" }}>
-                {["I'm feeling anxious", "Help me sleep", "I need to vent", "Breathing exercise"].map((suggestion) => (
+                {["Plan my day", "Review my goals", "I need clarity", "Focus reset"].map((suggestion) => (
                   <button
                     key={suggestion}
                     onClick={() => {
@@ -615,7 +615,7 @@ export default function ChatPage() {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Share what's on your mind..."
+              placeholder="What's on your mind? Goals, blockers, ideas..."
               rows={1}
               style={{
                 flex: 1,

@@ -1,0 +1,175 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export async function GET(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get("status");
+  const goalId = searchParams.get("goalId");
+  const dueDate = searchParams.get("dueDate"); // 'today', 'overdue', 'week'
+
+  let query = supabase
+    .from("tasks")
+    .select("*, goals(title, category)")
+    .eq("user_id", user.id)
+    .order("due_date", { ascending: true, nullsFirst: false });
+
+  if (status && status !== "all") {
+    query = query.eq("status", status);
+  } else if (!status) {
+    query = query.in("status", ["pending", "in_progress"]);
+  }
+
+  if (goalId) {
+    query = query.eq("goal_id", goalId);
+  }
+
+  if (dueDate === "today") {
+    const today = new Date().toISOString().split("T")[0];
+    query = query.eq("due_date", today);
+  } else if (dueDate === "overdue") {
+    const today = new Date().toISOString().split("T")[0];
+    query = query.lt("due_date", today).in("status", ["pending", "in_progress"]);
+  } else if (dueDate === "week") {
+    const today = new Date();
+    const weekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    query = query.gte("due_date", today.toISOString().split("T")[0]).lte("due_date", weekLater.toISOString().split("T")[0]);
+  }
+
+  const { data, error } = await query.limit(50);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ tasks: data });
+}
+
+export async function POST(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const { title, description, goalId, dueDate, scheduledTime, recurrence } = body;
+
+  if (!title) {
+    return NextResponse.json({ error: "title is required" }, { status: 400 });
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      user_id: user.id,
+      title,
+      description: description || null,
+      goal_id: goalId || null,
+      due_date: dueDate || null,
+      scheduled_time: scheduledTime || null,
+      recurrence: recurrence || null,
+    })
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ task: data }, { status: 201 });
+}
+
+export async function PATCH(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const { id, ...updates } = body;
+
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  // If completing a task, update last_completed_at and potentially streak
+  if (updates.status === "completed") {
+    const { data: existing } = await supabase
+      .from("tasks")
+      .select("streak_count, last_completed_at, recurrence")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (existing) {
+      updates.last_completed_at = new Date().toISOString();
+
+      // Update streak
+      if (existing.last_completed_at) {
+        const lastCompleted = new Date(existing.last_completed_at);
+        const daysDiff = Math.floor((Date.now() - lastCompleted.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysDiff <= 1) {
+          updates.streak_count = (existing.streak_count || 0) + 1;
+        } else {
+          updates.streak_count = 1; // reset streak
+        }
+      } else {
+        updates.streak_count = 1;
+      }
+
+      // If recurring, create next instance
+      if (existing.recurrence && updates.status === "completed") {
+        const nextDue = getNextDueDate(existing.recurrence);
+        await supabase.from("tasks").insert({
+          user_id: user.id,
+          title: (await supabase.from("tasks").select("title, goal_id, description, scheduled_time").eq("id", id).single()).data?.title || "Recurring task",
+          goal_id: (await supabase.from("tasks").select("goal_id").eq("id", id).single()).data?.goal_id || null,
+          due_date: nextDue,
+          recurrence: existing.recurrence,
+        });
+      }
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .update(updates)
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ task: data });
+}
+
+export async function DELETE(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
+
+function getNextDueDate(recurrence: string): string {
+  const today = new Date();
+  switch (recurrence) {
+    case "daily":
+      today.setDate(today.getDate() + 1);
+      break;
+    case "weekly":
+      today.setDate(today.getDate() + 7);
+      break;
+    case "weekdays":
+      do {
+        today.setDate(today.getDate() + 1);
+      } while (today.getDay() === 0 || today.getDay() === 6);
+      break;
+  }
+  return today.toISOString().split("T")[0];
+}

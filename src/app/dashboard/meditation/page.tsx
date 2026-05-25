@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Play, Pause, RotateCcw, Timer, Wind, X } from "lucide-react";
+import { Play, Pause, RotateCcw, Timer, Wind, X, Battery, Coffee } from "lucide-react";
 
-interface MeditationSession {
+interface RecoverySession {
   id: string;
   title: string;
   description: string;
@@ -13,9 +13,9 @@ interface MeditationSession {
   guide_text: string;
 }
 
-export default function MeditationPage() {
-  const [sessions, setSessions] = useState<MeditationSession[]>([]);
-  const [active, setActive] = useState<MeditationSession | null>(null);
+export default function RecoveryPage() {
+  const [sessions, setSessions] = useState<RecoverySession[]>([]);
+  const [active, setActive] = useState<RecoverySession | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [breathPhase, setBreathPhase] = useState<"inhale" | "hold" | "exhale">("inhale");
@@ -58,7 +58,7 @@ export default function MeditationPage() {
     };
   }, [isPlaying, active]);
 
-  // Breathing exercise timer — real countdown per phase
+  // Breathing exercise timer
   const INHALE_DURATION = 4;
   const HOLD_DURATION = 4;
   const EXHALE_DURATION = 6;
@@ -94,7 +94,6 @@ export default function MeditationPage() {
           : EXHALE_DURATION;
 
         if (prev >= total - 1) {
-          // Move to next phase
           if (breathPhase === "inhale") {
             setBreathPhase("hold");
           } else if (breathPhase === "hold") {
@@ -120,21 +119,31 @@ export default function MeditationPage() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const getCategoryLabel = (c: string) => {
+    const map: Record<string, string> = {
+      "Morning": "Morning Activation",
+      "Anxiety": "Nervous System Reset",
+      "Sleep": "Deep Recovery",
+      "Self-Care": "Energy Restoration",
+      "Breathing": "Focus Reset",
+    };
+    return map[c] || c;
+  };
+
   const getCategoryIcon = (c: string) => {
     const icons: Record<string, string> = {
-      "Morning": "🌅",
-      "Anxiety": "🌊",
+      "Morning": "⚡",
+      "Anxiety": "🔋",
       "Sleep": "🌙",
-      "Self-Care": "💗",
-      "Breathing": "🌬️",
+      "Self-Care": "💪",
+      "Breathing": "🧠",
     };
-    return icons[c] || "🧘";
+    return icons[c] || "🔋";
   };
 
   // ===== BREATHING EXERCISE OVERLAY =====
   if (showBreathing) {
     const phaseTotal = getPhaseTotal();
-    const progress = ((breathSeconds + 1) / phaseTotal) * 100;
     const circleSize = breathPhase === "inhale"
       ? 140 + (breathSeconds / INHALE_DURATION) * 60
       : breathPhase === "hold"
@@ -224,9 +233,9 @@ export default function MeditationPage() {
           maxWidth: "300px",
           lineHeight: 1.6,
         }}>
-          {breathPhase === "inhale" && "Slowly fill your lungs through your nose..."}
-          {breathPhase === "hold" && "Gently hold. Notice the stillness..."}
-          {breathPhase === "exhale" && "Release slowly through your mouth..."}
+          {breathPhase === "inhale" && "Slowly fill your lungs. Reset your nervous system."}
+          {breathPhase === "hold" && "Hold. Notice the stillness. Let your body recalibrate."}
+          {breathPhase === "exhale" && "Release slowly. Let go of tension and scattered energy."}
         </p>
 
         <button
@@ -234,7 +243,7 @@ export default function MeditationPage() {
           className="btn-secondary"
           style={{ marginTop: "32px" }}
         >
-          End Exercise
+          End Reset
         </button>
       </div>
     );
@@ -265,7 +274,7 @@ export default function MeditationPage() {
             {active.title}
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "32px" }}>
-            {active.category} · {formatTimer(active.duration_seconds)}
+            {getCategoryLabel(active.category)} · {formatTimer(active.duration_seconds)}
           </p>
 
           {/* Timer Circle */}
@@ -370,15 +379,16 @@ export default function MeditationPage() {
     <div style={{ padding: "32px", maxWidth: "900px", margin: "0 auto" }}>
       {/* Header */}
       <div style={{ marginBottom: "32px" }}>
-        <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px" }}>
-          <span className="gradient-text">Meditation</span>
+        <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "4px", display: "flex", alignItems: "center", gap: "10px" }}>
+          <Battery size={28} style={{ color: "var(--accent-secondary)" }} />
+          <span className="gradient-text">Recovery</span>
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-          Find your calm with guided sessions and breathing exercises
+          Structured recovery sessions to restore energy, reset focus, and prevent burnout.
         </p>
       </div>
 
-      {/* Quick Breathing Exercise */}
+      {/* Quick Focus Reset */}
       <div
         className="glass-card"
         style={{
@@ -391,9 +401,9 @@ export default function MeditationPage() {
         onClick={() => setShowBreathing(true)}
       >
         <Wind size={24} style={{ color: "var(--accent-secondary)", marginBottom: "12px" }} />
-        <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "4px" }}>Quick Breathing</h3>
+        <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "4px" }}>Quick Focus Reset</h3>
         <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", marginBottom: "8px" }}>
-          4-4-6 breathing exercise · tap to begin
+          4-4-6 breathing protocol · Reset your nervous system in 2 minutes
         </p>
         <span
           style={{
@@ -406,7 +416,7 @@ export default function MeditationPage() {
           }}
         >
           <Play size={14} />
-          Start Breathing
+          Start Reset
         </span>
       </div>
 
@@ -443,9 +453,12 @@ export default function MeditationPage() {
                 </div>
               </div>
               <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "6px" }}>{session.title}</h3>
-              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: "8px" }}>
                 {session.description}
               </p>
+              <span style={{ fontSize: "0.72rem", color: "var(--accent-primary)", fontWeight: 500 }}>
+                {getCategoryLabel(session.category)}
+              </span>
               <div
                 style={{
                   display: "inline-flex",

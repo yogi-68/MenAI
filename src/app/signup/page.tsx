@@ -90,7 +90,7 @@ export default function SignupPage() {
           </h2>
           <p style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
             We&apos;ve sent a confirmation link to <strong>{email}</strong>. Click the link to activate
-            your account and start your wellness journey.
+            your account and get started.
           </p>
           <Link
             href="/login"
@@ -118,7 +118,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MindfulAI" width={44} height={44} style={{ borderRadius: "50%" }} />
+            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} />
             <span
               style={{
                 fontSize: "1.5rem",
@@ -132,7 +132,7 @@ export default function SignupPage() {
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
-            Begin your journey toward a healthier mind.
+            Build the life you want. Your AI execution coach is ready.
           </p>
         </div>
 
@@ -301,7 +301,7 @@ export default function SignupPage() {
               lineHeight: 1.5,
             }}
           >
-            By signing up, you agree that MindfulAI is an AI wellness tool and not a substitute for professional medical advice.
+            By signing up, you agree that MenAI is an AI coaching tool and not a substitute for professional medical advice.
           </p>
         </div>
 
