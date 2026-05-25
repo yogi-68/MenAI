@@ -8,8 +8,7 @@ import Link from "next/link";
 import {
   MessageCircleHeart,
   Target,
-  Zap,
-  BookHeart,
+  Target,
   CheckCircle2,
   Circle,
   Flame,
@@ -22,12 +21,6 @@ import {
   Settings,
 } from "lucide-react";
 
-interface MoodEntry {
-  id: string;
-  mood_score: number;
-  mood_label: string;
-  created_at: string;
-}
 
 interface Goal {
   id: string;
@@ -73,29 +66,22 @@ export default function DashboardOverview() {
         goalsRes,
         tasksRes,
         commitmentsRes,
-        moodRes,
         memoriesRes,
-        journalInsightRes,
       ] = await Promise.all([
         supabase.from("goals").select("*").eq("user_id", authUser.id).eq("status", "active").order("priority", { ascending: false }),
         supabase.from("tasks").select("*").eq("user_id", authUser.id).in("status", ["pending", "in_progress"]).order("due_date", { ascending: true }),
         supabase.from("commitments").select("*").eq("user_id", authUser.id).eq("status", "active"),
-        supabase.from("mood_entries").select("*").eq("user_id", authUser.id).order("created_at", { ascending: false }).limit(7),
         supabase.from("memories").select("content").eq("user_id", authUser.id).eq("memory_type", "insight").order("created_at", { ascending: false }).limit(1),
-        supabase.from("journal_entries").select("ai_insight").eq("user_id", authUser.id).not("ai_insight", "is", null).order("created_at", { ascending: false }).limit(1),
       ]);
 
       const goals = (goalsRes.data || []) as Goal[];
       const tasks = (tasksRes.data || []) as TaskItem[];
       const commitments = (commitmentsRes.data || []) as Commitment[];
-      const moods = (moodRes.data || []) as MoodEntry[];
 
       // Build one insight
       let latestInsight = "";
       if (memoriesRes.data && memoriesRes.data.length > 0) {
         latestInsight = memoriesRes.data[0].content;
-      } else if (journalInsightRes.data && journalInsightRes.data.length > 0) {
-        latestInsight = journalInsightRes.data[0].ai_insight || "";
       }
 
       // Calculate stats
@@ -112,7 +98,7 @@ export default function DashboardOverview() {
         return t.due_date < todayStr;
       });
 
-      const latestEnergy = moods.length > 0 ? moods[0].mood_score : null;
+
 
       // Extract one accountability issue
       let accountabilityItem = null;
@@ -139,7 +125,6 @@ export default function DashboardOverview() {
           activeCommitments: commitments.length,
           avgConsistency,
           avgProgress,
-          latestEnergy,
         },
         goals,
         tasks,
@@ -169,7 +154,7 @@ export default function DashboardOverview() {
 
   const stats = data?.stats || {
     activeGoals: 0, pendingTasks: 0, overdueTasks: 0,
-    activeCommitments: 0, avgConsistency: 0, avgProgress: 0, latestEnergy: null,
+    activeCommitments: 0, avgConsistency: 0, avgProgress: 0,
   };
   const tasks = data?.tasks || [];
   const commitments = data?.commitments || [];
@@ -190,12 +175,10 @@ export default function DashboardOverview() {
     .filter(t => !t.due_date || t.due_date <= todayStr)
     .slice(0, 4);
 
-  // Momentum formula
   const momentumScore = Math.round(
-    (stats.avgProgress * 0.3) +
+    (stats.avgProgress * 0.4) +
     (stats.avgConsistency * 0.4) +
-    ((1 - (stats.overdueTasks / Math.max(stats.pendingTasks, 1))) * 100 * 0.2) +
-    ((stats.latestEnergy || 5) * 10 * 0.1)
+    ((1 - (stats.overdueTasks / Math.max(stats.pendingTasks, 1))) * 100 * 0.2)
   );
 
   const momentumColor = momentumScore > 70 ? "var(--accent-secondary)" : momentumScore > 40 ? "var(--accent-warm)" : "var(--accent-tertiary)";
@@ -462,30 +445,6 @@ export default function DashboardOverview() {
               <div>
                 <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-primary)" }}>Life Status</div>
                 <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>Metrics & Commitments</div>
-              </div>
-            </div>
-            <ArrowRight size={14} style={{ color: "var(--text-muted)" }} />
-          </Link>
-
-          <Link
-            href="/dashboard/journal"
-            className="glass-card"
-            style={{
-              padding: "16px 20px",
-              textDecoration: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              transition: "transform 0.2s, background 0.2s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <BookHeart size={16} style={{ color: "var(--accent-warm)" }} />
-              <div>
-                <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-primary)" }}>Reflections</div>
-                <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>Process Thinking Patterns</div>
               </div>
             </div>
             <ArrowRight size={14} style={{ color: "var(--text-muted)" }} />

@@ -169,10 +169,25 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, aiMessage]);
       setStreamingContent("");
     } catch {
+      // Context-aware fallback — NEVER expose internal errors
+      const lastUserMsg = input.trim().toLowerCase();
+      let fallbackContent = "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?";
+
+      // Generate context-sensitive fallback based on what user said
+      if (/plan my (day|week)/i.test(lastUserMsg)) {
+        fallbackContent = "I'd love to help you plan. What are the main things you want to move forward today?";
+      } else if (/i (want|need) to (build|create|start|launch)/i.test(lastUserMsg)) {
+        fallbackContent = "That sounds like something that's been sitting seriously on your mind. Are you still exploring ideas, or do you already have something specific you want to build?";
+      } else if (/i('m| am) (stuck|lost|confused)/i.test(lastUserMsg)) {
+        fallbackContent = "Being stuck usually means you're at the edge of something new. What's the thing that feels most unclear right now?";
+      } else if (/i('m| am) (tired|exhausted|burned out)/i.test(lastUserMsg)) {
+        fallbackContent = "That kind of tiredness isn't just physical. What's been draining you the most?";
+      }
+
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: "I'm sorry, I had a moment there. Could you try saying that again?",
+        content: fallbackContent,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMessage]);

@@ -20,9 +20,6 @@ import {
   Sun,
   Moon,
   Compass,
-  Zap,
-  RefreshCcw,
-  Battery,
   Settings,
 } from "lucide-react";
 
@@ -33,14 +30,6 @@ const primaryNav = [
   { href: "/dashboard/status", icon: Compass, label: "Life Status" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
-
-const toolsNav = [
-  { href: "/dashboard/mood", icon: Zap, label: "Energy & Focus" },
-  { href: "/dashboard/journal", icon: BookHeart, label: "Reflections" },
-  { href: "/dashboard/exercises", icon: RefreshCcw, label: "Reset Tools" },
-  { href: "/dashboard/meditation", icon: Battery, label: "Recovery" },
-];
-
 
 export default function DashboardLayout({
   children,
@@ -90,7 +79,6 @@ export default function DashboardLayout({
           role: profile.role || "user",
           subscription_tier: profile.subscription_tier || "free",
           onboarding_completed: profile.onboarding_completed || false,
-          therapy_goals: profile.therapy_goals || [],
         });
       }
     };
@@ -215,25 +203,6 @@ export default function DashboardLayout({
                 onClick={() => setMobileMenuOpen(false)}
               >
                 <item.icon size={20} />
-                {item.label}
-              </Link>
-            );
-          })}
-
-          {/* Tools Section */}
-          <div style={{ fontSize: "0.68rem", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "16px 12px 6px", marginTop: "8px" }}>
-            Tools
-          </div>
-          {toolsNav.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`sidebar-link ${isActive ? "active" : ""}`}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <item.icon size={18} />
                 {item.label}
               </Link>
             );

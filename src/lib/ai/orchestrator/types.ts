@@ -6,19 +6,46 @@
 // ===== Conversation States =====
 export type ConversationState =
   | "LISTENING"           // Absorbing what the user says
-  | "VALIDATING"          // Acknowledging and validating feelings
   | "EXPLORING"           // Asking clarifying questions
-  | "REFRAMING"           // Gently reframing negative thoughts
-  | "GROUNDING"           // Grounding exercises for anxiety/panic
   | "GOAL_SETTING"        // Helping set small actionable goals
   | "REFLECTION"          // Reflecting on progress/patterns
-  | "EMOTIONAL_HOLDING"   // Emotional silence — just hold space, no questions
   | "ACCOUNTABILITY"      // Following up on commitments and promises
   | "PLANNING"            // Creating daily/weekly execution plans
   | "FOUNDER_COACHING"    // Startup/business strategic coaching
   | "STRATEGIC_THINKING"  // Long-term decisions and life direction
   | "EXECUTION_REVIEW"    // Reviewing progress and adapting plans
   | "ESCALATION";         // Crisis mode — safety first
+
+// ===== User Intent (classified BEFORE state selection) =====
+export type UserIntentType =
+  | "GOAL_DECLARATION"       // "I want to build...", "I need to...", "My goal is..."
+  | "PLANNING_REQUEST"       // "Plan my day", "Help me prioritize"
+  | "PROGRESS_REPORT"        // "I finished...", "Here's what I did..."
+  | "IDENTITY_EXPLORATION"   // "I don't know what I want", "Who am I becoming?"
+  | "EXECUTION_BLOCK"        // "I'm stuck", "Can't figure out..."
+  | "FOUNDER_REFLECTION"     // "My startup...", "My product...", business context
+  | "CASUAL_CHAT"            // "Hi", "Thanks", small talk
+  | "CONTEXT_SHARING"        // General life info without clear intent
+  | "BURNOUT_SIGNAL"         // "I'm exhausted", "I can't keep going"
+  | "UNKNOWN";               // Can't classify
+
+export interface UserIntent {
+  type: UserIntentType;
+  confidence: number;        // 0-1 how certain we are about the classification
+  reasoning?: string;        // brief explanation of why this intent was chosen
+}
+
+// ===== Context Richness (how much we know about this user) =====
+export type ContextRichnessLevel = "LOW" | "MODERATE" | "HIGH";
+
+export interface ContextRichness {
+  score: number;             // 0-1
+  level: ContextRichnessLevel;
+  hasGoals: boolean;
+  hasCommitments: boolean;
+  hasTasks: boolean;
+  hasRelationships: boolean;
+}
 
 // ===== LLM Tiers =====
 export type ModelTier = "cheap" | "standard" | "premium";
@@ -241,15 +268,11 @@ export interface EmergencyResource {
 export interface UserProfile {
   id: string;
   fullName?: string;
-  therapyGoals?: string[];
   vision?: string;
   founderMode?: boolean;
   coachingStyle?: "balanced" | "push" | "gentle" | "strategic";
   preferredTone?: "warm" | "direct" | "gentle" | "professional";
-  anxietyTriggers?: string[];
-  copingPreferences?: string[];
   sessionCount: number;
-  lastEmotionalState?: string;
 }
 
 // ===== Orchestrator Pipeline =====
@@ -281,6 +304,8 @@ export interface PipelineContext {
   memory: MemoryContext;
   lifeContext?: LifeContext;
   state: ConversationState;
+  intent: UserIntent;
+  contextRichness: ContextRichness;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   conversationId: string;
   modelConfig: ModelConfig;

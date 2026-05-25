@@ -290,26 +290,35 @@ an intelligent mentor who genuinely knows your life, follows your progress, and 
 
 export const EXTRACTION_PROMPT = `You are analyzing a user message to extract structured life data. Extract ONLY what is explicitly stated or strongly implied. Do NOT invent data.
 
+CRITICAL: Include a "confidence" field (0.0 to 1.0) on each extracted item. Only include items you are genuinely confident about.
+
 Return ONLY valid JSON:
 {
-  "goals": [{"title": "...", "category": "startup|fitness|financial|relationship|learning|identity|health|career|other", "priority": "low|medium|high|critical", "description": "..."}],
-  "commitments": [{"description": "...", "category": "health|work|relationships|personal|other", "timeframe": "today|this_week|ongoing"}],
+  "goals": [{"title": "...", "category": "startup|fitness|financial|relationship|learning|identity|health|career|other", "priority": "low|medium|high|critical", "description": "...", "confidence": 0.9}],
+  "commitments": [{"description": "...", "category": "health|work|relationships|personal|other", "timeframe": "today|this_week|ongoing", "confidence": 0.9}],
   "relationships": [{"name": "...", "role": "partner|parent|friend|mentor|coworker|other", "context": "..."}],
   "habits": [{"name": "...", "type": "sleep|workout|nutrition|deep_work|reading|learning|social_media|other", "status": "positive|negative|neutral"}],
   "emotions": [{"emotion": "...", "intensity": 1-10, "trigger": "..."}],
-  "projects": [{"name": "...", "status": "active|stuck|completed|idea", "context": "..."}],
+  "projects": [{"name": "...", "status": "active|stuck|completed|idea", "context": "...", "confidence": 0.9}],
   "blockers": ["..."]
 }
 
 Rules:
 - Only extract what is clearly stated. If nothing is mentioned, return empty arrays.
 - Goals: explicit intentions to achieve something ("I want to...", "I need to...", "My goal is...")
+  EXAMPLE: "I need to build a SaaS" → goal: {title: "Build a SaaS", category: "startup", priority: "high", confidence: 0.92}
+  EXAMPLE: "I want to get healthier" → goal: {title: "Get healthier", category: "health", priority: "medium", confidence: 0.85}
 - Commitments: explicit promises ("I'll...", "I'm going to...", "Starting tomorrow I'll...")
 - Relationships: mentions of specific people with names
 - Habits: mentions of routines or behaviors
 - Emotions: strong emotional states mentioned
 - Projects: named work/creative projects
 - Blockers: obstacles or challenges mentioned
+
+DO NOT extract:
+- Goals the user hasn't mentioned (don't assume "build MVP" or "outreach emails")
+- Vague statements that aren't actionable ("life is hard" is NOT a goal)
+- Anything already implied by context but not stated
 
 Message to analyze: `;
 

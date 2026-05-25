@@ -19,19 +19,96 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { runSafetyPipeline } from "./safety-engine";
 import { detectEmotion } from "./emotion-engine";
-import { determineState } from "./state-machine";
+import { determineState, classifyIntent } from "./state-machine";
 import { getMemoryContext, storeMemory, summarizeConversation, compressMemories } from "./memory-engine";
 import { selectModel, callLLM, callLLMStreaming } from "./router";
 import { buildPrompt } from "./prompt-builder";
 import { validateResponse } from "./response-validator";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { getLifeContext } from "./accountability-engine";
-import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext } from "./types";
+import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext, ContextRichness } from "./types";
+
+// ===== GRACEFUL FALLBACK RESPONSES =====
+// These are used when ANY part of the pipeline fails.
+// The user should NEVER see internal errors.
+const GRACEFUL_FALLBACKS = [
+  "That sounds like something worth exploring deeper. What's been on your mind about this?",
+  "I want to make sure I understand what you're saying. Could you tell me a bit more about what's driving this?",
+  "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?",
+  "I'm here and listening. What's the most important thing you want to talk through right now?",
+  "That's worth sitting with for a moment. What part of this feels most urgent to you?",
+];
+
+function getGracefulFallback(userMessage: string): string {
+  // Try to create a contextual fallback based on the user's message
+  const lower = userMessage.toLowerCase().trim();
+
+  // Detect common intents even in fallback mode
+  if (/plan my (day|week)/i.test(lower)) {
+    return "I'd love to help you plan. What are the main things you want to move forward today?";
+  }
+  if (/i (want|need) to (build|create|start|launch)/i.test(lower)) {
+    return `That sounds like something that's been sitting seriously on your mind lately. Are you still exploring ideas right now, or do you already have something specific you want to build?`;
+  }
+  if (/i('m| am) (stuck|lost|confused)/i.test(lower)) {
+    return "Being stuck is frustrating, but it usually means you're at the edge of something new. What's the thing that feels most unclear right now?";
+  }
+  if (/i('m| am) (tired|exhausted|burned out|drained)/i.test(lower)) {
+    return "That kind of tiredness isn't just physical — your mind and heart are both carrying weight right now. What's been draining you the most?";
+  }
+
+  // Generic but warm fallback
+  return GRACEFUL_FALLBACKS[Math.floor(Math.random() * GRACEFUL_FALLBACKS.length)];
+}
+
+/**
+ * Compute how much structured context we have about this user.
+ * Prevents hallucinated plans when we don't know their goals.
+ */
+function computeContextRichness(lifeContext: LifeContext | null): ContextRichness {
+  if (!lifeContext) {
+    return { score: 0, level: "LOW", hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false };
+  }
+
+  const hasGoals = (lifeContext.activeGoals?.length || 0) > 0;
+  const hasCommitments = (lifeContext.activeCommitments?.length || 0) > 0;
+  const hasTasks = (lifeContext.pendingTasks?.length || 0) > 0;
+  const hasRelationships = (lifeContext.recentRelationships?.length || 0) > 0;
+
+  let score = 0;
+  if (hasGoals) score += 0.35;
+  if (hasCommitments) score += 0.25;
+  if (hasTasks) score += 0.25;
+  if (hasRelationships) score += 0.15;
+
+  const level = score >= 0.7 ? "HIGH" : score >= 0.3 ? "MODERATE" : "LOW";
+
+  return { score, level, hasGoals, hasCommitments, hasTasks, hasRelationships };
+}
 
 /**
  * Main orchestrator — process a user message through the full pipeline
+ * Wrapped in graceful error handling — users NEVER see internal errors.
  */
 export async function orchestrate(input: OrchestratorInput): Promise<OrchestratorOutput> {
+  try {
+    return await _orchestrateInternal(input);
+  } catch (error) {
+    console.error("Orchestrator top-level failure:", error);
+    // Return a graceful fallback instead of crashing
+    return {
+      response: getGracefulFallback(input.message),
+      conversationId: input.conversationId || "",
+      crisis: false,
+      emotion: null,
+      state: "LISTENING",
+      modelUsed: "fallback",
+      tokensUsed: 0,
+    };
+  }
+}
+
+async function _orchestrateInternal(input: OrchestratorInput): Promise<OrchestratorOutput> {
   const serviceClient = await createServiceRoleClient();
 
   // ===== STEP 1: Safety Check (fastest, runs first) =====
@@ -97,7 +174,10 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     content: input.message,
   });
 
-  // ===== STEP 4: Load Context (parallel: history, memory, profile, life context, extraction) =====
+  // ===== STEP 4a: Classify Intent (fast, no LLM) =====
+  const intent = classifyIntent(input.message);
+
+  // ===== STEP 4b: Load Context (parallel: history, memory, profile, life context, extraction) =====
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [] as string[], longTerm: [] as string[], episodic: [] as string[], emotional: [] as string[], formatted: "" };
 
@@ -133,7 +213,10 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     sessionCount: conversationHistory.length,
   };
 
-  // ===== STEP 5: Determine Conversation State =====
+  // ===== STEP 4c: Compute Context Richness =====
+  const contextRichness = computeContextRichness(lifeContext);
+
+  // ===== STEP 5: Determine Conversation State (intent-aware + context-aware) =====
   const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
   const state = determineState({
     emotion,
@@ -141,6 +224,8 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     messageCount: conversationHistory.length,
     userMessage: input.message,
     hasAccountabilityItems: hasAccountability,
+    intent,
+    contextRichness,
   });
 
   // ===== STEP 6: Select Model =====
@@ -160,6 +245,8 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
     memory,
     lifeContext: lifeContext || undefined,
     state,
+    intent,
+    contextRichness,
     conversationHistory: conversationHistory.slice(0, -1), // Exclude just-added message
     conversationId,
     modelConfig,
@@ -297,8 +384,46 @@ function buildExtractionSummary(data: import("./types").ExtractedLifeData): stri
 /**
  * Streaming orchestrator — runs the full pipeline but streams the LLM response.
  * Returns metadata + a ReadableStream for progressive rendering.
+ * Wrapped in graceful error handling.
  */
 export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
+  stream: ReadableStream<Uint8Array>;
+  metadata: {
+    conversationId: string;
+    crisis: boolean;
+    crisisLevel?: string;
+    emotion: EmotionAnalysis | null;
+    state: string;
+    modelUsed: string;
+    resources?: Array<{ name: string; phone: string; text?: string; url?: string; available: string }>;
+  };
+}> {
+  try {
+    return await _orchestrateStreamingInternal(input);
+  } catch (error) {
+    console.error("Streaming orchestrator top-level failure:", error);
+    // Return a graceful streamed fallback
+    const encoder = new TextEncoder();
+    const fallbackText = getGracefulFallback(input.message);
+    return {
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(fallbackText));
+          controller.close();
+        },
+      }),
+      metadata: {
+        conversationId: input.conversationId || "",
+        crisis: false,
+        emotion: null,
+        state: "LISTENING",
+        modelUsed: "fallback",
+      },
+    };
+  }
+}
+
+async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<{
   stream: ReadableStream<Uint8Array>;
   metadata: {
     conversationId: string;
@@ -379,7 +504,10 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     content: input.message,
   });
 
-  // ===== STEP 4: Load Context (parallel) =====
+  // ===== STEP 4a: Classify Intent =====
+  const intent = classifyIntent(input.message);
+
+  // ===== STEP 4b: Load Context (parallel) =====
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [], longTerm: [], episodic: [], emotional: [], formatted: "" };
 
@@ -415,6 +543,9 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     sessionCount: conversationHistory.length,
   };
 
+  // ===== STEP 4c: Compute Context Richness =====
+  const contextRichness = computeContextRichness(lifeContext);
+
   // ===== STEP 5: State + Model + Prompt =====
   const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
   const state = determineState({
@@ -423,6 +554,8 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     messageCount: conversationHistory.length,
     userMessage: input.message,
     hasAccountabilityItems: hasAccountability,
+    intent,
+    contextRichness,
   });
 
   const modelConfig = selectModel({ emotion, safety, state, messageLength: input.message.length });
@@ -435,6 +568,8 @@ export async function orchestrateStreaming(input: OrchestratorInput): Promise<{
     memory,
     lifeContext: lifeContext || undefined,
     state,
+    intent,
+    contextRichness,
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
     modelConfig,

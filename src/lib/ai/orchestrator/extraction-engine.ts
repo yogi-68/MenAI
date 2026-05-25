@@ -28,6 +28,7 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
  * Extract structured life data from a user message.
  * Uses cheap LLM for fast classification.
  * Returns empty if nothing meaningful is found.
+ * Includes confidence scoring — low-confidence items are filtered out.
  */
 export async function extractLifeData(message: string): Promise<ExtractedLifeData> {
   // Skip extraction for very short or casual messages
@@ -44,13 +45,22 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
     // Parse the JSON response
     const parsed = JSON.parse(raw);
 
+    // Apply confidence filtering — only keep items above threshold
+    const CONFIDENCE_THRESHOLD = 0.7;
+
     return {
-      goals: Array.isArray(parsed.goals) ? parsed.goals.map(sanitizeGoal) : [],
-      commitments: Array.isArray(parsed.commitments) ? parsed.commitments.map(sanitizeCommitment) : [],
+      goals: Array.isArray(parsed.goals)
+        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number }) => (g.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        : [],
+      commitments: Array.isArray(parsed.commitments)
+        ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number }) => (c.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        : [],
       relationships: Array.isArray(parsed.relationships) ? parsed.relationships.map(sanitizeRelationship) : [],
       habits: Array.isArray(parsed.habits) ? parsed.habits.map(sanitizeHabit) : [],
       emotions: Array.isArray(parsed.emotions) ? parsed.emotions.map(sanitizeEmotion) : [],
-      projects: Array.isArray(parsed.projects) ? parsed.projects.map(sanitizeProject) : [],
+      projects: Array.isArray(parsed.projects)
+        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number }) => (p.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        : [],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers.filter((b: unknown) => typeof b === "string") : [],
     };
   } catch (e) {
@@ -65,8 +75,8 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
 function shouldSkipExtraction(message: string): boolean {
   const lower = message.trim().toLowerCase();
 
-  // Too short
-  if (lower.length < 15) return true;
+  // Too short (lowered from 15 to 10 to catch "I need to build a SaaS" etc.)
+  if (lower.length < 10) return true;
 
   // Casual patterns
   const casualPatterns = [
@@ -182,7 +192,8 @@ function sanitizeGoal(goal: Record<string, unknown>) {
     priority: validPriorities.includes(String(goal.priority)) ? String(goal.priority) : "medium",
     description: goal.description ? String(goal.description).slice(0, 500) : undefined,
     targetDate: goal.targetDate ? String(goal.targetDate) : undefined,
-  } as ExtractedLifeData["goals"][number];
+    confidence: typeof goal.confidence === "number" ? goal.confidence : 0.8,
+  } as ExtractedLifeData["goals"][number] & { confidence: number };
 }
 
 function sanitizeCommitment(commitment: Record<string, unknown>) {
@@ -191,7 +202,8 @@ function sanitizeCommitment(commitment: Record<string, unknown>) {
     description: String(commitment.description || "").slice(0, 300),
     category: validCategories.includes(String(commitment.category)) ? String(commitment.category) : "other",
     timeframe: commitment.timeframe ? String(commitment.timeframe) : undefined,
-  } as ExtractedLifeData["commitments"][number];
+    confidence: typeof commitment.confidence === "number" ? commitment.confidence : 0.8,
+  } as ExtractedLifeData["commitments"][number] & { confidence: number };
 }
 
 function sanitizeRelationship(rel: Record<string, unknown>) {
@@ -227,5 +239,6 @@ function sanitizeProject(project: Record<string, unknown>) {
     name: String(project.name || "").slice(0, 100),
     status: validStatuses.includes(String(project.status)) ? String(project.status) : "active",
     context: project.context ? String(project.context).slice(0, 300) : undefined,
-  } as ExtractedLifeData["projects"][number];
+    confidence: typeof project.confidence === "number" ? project.confidence : 0.8,
+  } as ExtractedLifeData["projects"][number] & { confidence: number };
 }
