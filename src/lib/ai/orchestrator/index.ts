@@ -242,6 +242,19 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const lifeSnapshot = getLifeSnapshot(input.userId, lifeContext, user, memory);
   const inferenceConfidence = computeInferenceConfidence(contextRichness, lifeContext, memory, user);
 
+  // Session Context Injection - Log for observability
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[Session Context]", {
+      userId: input.userId,
+      conversationId,
+      hasLifeContext: !!lifeContext,
+      memoryCount: memory.longTerm.length + memory.episodic.length + memory.emotional.length,
+      snapshotAge: lifeSnapshot.snapshotAge,
+      contextRichness: contextRichness.level,
+      inferenceConfidence: inferenceConfidence.overall,
+    });
+  }
+
   const ctx: PipelineContext = {
     input,
     user,
@@ -383,6 +396,15 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
         memoryType: "insight",
         importance: 0.9,
         metadata: { conversation_id: conversationId, type: "session_summary" },
+      });
+    }).catch(() => {});
+  }
+  
+  // Detect and record behavioral patterns (every 10 messages)
+  if (conversationHistory.length > 0 && conversationHistory.length % 10 === 0) {
+    import("./pattern-detector").then(({ detectAndRecordPatterns }) => {
+      detectAndRecordPatterns(input.userId).catch(() => {
+        // Non-critical - pattern detection failure shouldn't break the app
       });
     }).catch(() => {});
   }
@@ -620,6 +642,19 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
   const lifeSnapshot = getLifeSnapshot(input.userId, lifeContext, user, memory);
   const inferenceConfidence = computeInferenceConfidence(contextRichness, lifeContext, memory, user);
+
+  // Session Context Injection - Log for observability (streaming path)
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[Session Context] Streaming", {
+      userId: input.userId,
+      conversationId,
+      hasLifeContext: !!lifeContext,
+      memoryCount: memory.longTerm.length + memory.episodic.length + memory.emotional.length,
+      snapshotAge: lifeSnapshot.snapshotAge,
+      contextRichness: contextRichness.level,
+      inferenceConfidence: inferenceConfidence.overall,
+    });
+  }
 
   const ctx: PipelineContext = {
     input,

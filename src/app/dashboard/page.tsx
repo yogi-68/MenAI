@@ -157,7 +157,7 @@ export default function DashboardOverview() {
   };
   const tasks = data?.tasks || [];
   const commitments = data?.commitments || [];
-  const latestInsight = data?.latestInsight || "Your execution momentum is building. Focus on shipping micro-updates daily to maintain progress.";
+  const latestInsight = data?.latestInsight || null;
   const accountabilityItem = data?.accountabilityItem;
 
   const greeting = () => {
@@ -174,14 +174,35 @@ export default function DashboardOverview() {
     .filter(t => !t.due_date || t.due_date <= todayStr)
     .slice(0, 4);
 
-  const momentumScore = Math.round(
-    (stats.avgProgress * 0.4) +
-    (stats.avgConsistency * 0.4) +
-    ((1 - (stats.overdueTasks / Math.max(stats.pendingTasks, 1))) * 100 * 0.2)
-  );
-
-  const momentumColor = momentumScore > 70 ? "var(--accent-secondary)" : momentumScore > 40 ? "var(--accent-warm)" : "var(--accent-tertiary)";
-  const momentumLabel = momentumScore > 70 ? "Strong Focus" : momentumScore > 40 ? "Building Pace" : "Restructuring Needed";
+  // Generate qualitative current direction state instead of fake momentum score
+  const generateCurrentDirection = () => {
+    if (loading) return "Loading your current state...";
+    
+    const hasGoals = stats.activeGoals > 0;
+    const hasTasks = stats.pendingTasks > 0;
+    const hasOverdue = stats.overdueTasks > 0;
+    const hasCommitments = stats.activeCommitments > 0;
+    
+    // Real qualitative observations based on actual data
+    if (!hasGoals && !hasTasks) {
+      return "Just getting started. Share what you're working on to build your operating system.";
+    }
+    
+    if (hasOverdue) {
+      return "Some tasks need attention. Focus on clearing overdue items to regain momentum.";
+    }
+    
+    if (hasGoals && !hasTasks) {
+      return "Direction set, execution needs clarity. Break your goals into concrete next steps.";
+    }
+    
+    if (hasTasks && !hasCommitments) {
+      return "Building execution muscle. Track commitments to strengthen accountability.";
+    }
+    
+    // Default state for active users
+    return "System operational. Continue building momentum through consistent execution.";
+  };
 
   return (
     <div style={{ padding: "40px 32px", maxWidth: "900px", margin: "0 auto" }}>
@@ -192,7 +213,7 @@ export default function DashboardOverview() {
             Life OS • Command Center
           </span>
           <h1 style={{ fontSize: "2.2rem", fontWeight: 800, marginTop: "6px", letterSpacing: "-0.02em" }}>
-            {greeting()}, <span className="gradient-text">{user?.full_name?.split(" ")[0] || "Builder"}</span>
+            {greeting()}, <span className="gradient-text">{user?.full_name?.split(" ")[0] || "there"}</span>
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "1rem", marginTop: "4px" }}>
             Here is your focus roadmap for today.
@@ -275,11 +296,17 @@ export default function DashboardOverview() {
                   );
                 })}
               </div>
+            ) : stats.pendingTasks === 0 ? (
+              <div style={{ textAlign: "center", padding: "36px 20px", color: "var(--text-muted)" }}>
+                <Target size={36} style={{ opacity: 0.2, marginBottom: "10px" }} />
+                <p style={{ fontSize: "0.88rem", fontWeight: 500 }}>No tasks yet.</p>
+                <p style={{ fontSize: "0.78rem", marginTop: "4px" }}>Chat with your AI mentor about what you&apos;re working on to get started.</p>
+              </div>
             ) : (
               <div style={{ textAlign: "center", padding: "36px 20px", color: "var(--text-muted)" }}>
                 <ShieldCheck size={36} style={{ opacity: 0.2, marginBottom: "10px" }} />
                 <p style={{ fontSize: "0.88rem", fontWeight: 500 }}>All priority tasks for today completed.</p>
-                <p style={{ fontSize: "0.78rem", marginTop: "4px" }}>Talk to your AI mentor to plan your next sprints.</p>
+                <p style={{ fontSize: "0.78rem", marginTop: "4px" }}>Great work! Talk to your AI mentor to plan your next sprints.</p>
               </div>
             )}
           </div>
@@ -305,49 +332,46 @@ export default function DashboardOverview() {
           </div>
         </div>
 
-        {/* Momentum Gauge */}
-        <div className="glass-card" style={{ padding: "28px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: "16px" }}>
-            Execution Momentum
-          </span>
-
-          <div style={{
-            width: 130,
-            height: 130,
-            borderRadius: "50%",
-            background: `conic-gradient(${momentumColor} ${momentumScore * 3.6}deg, var(--bg-glass) 0deg)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            position: "relative",
-            marginBottom: "16px",
-            boxShadow: "var(--shadow-sm)",
-          }}>
-            <div style={{
-              width: 108,
-              height: 108,
-              borderRadius: "50%",
-              background: "var(--bg-secondary)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}>
-              <span style={{ fontSize: "2rem", fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>
-                {loading ? "—" : momentumScore}
-              </span>
-              <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "4px", textTransform: "uppercase", fontWeight: 600 }}>
-                Score
+        {/* Current Direction - Qualitative State */}
+        <div className="glass-card" style={{ padding: "28px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+              <Compass size={18} style={{ color: "var(--accent-primary)" }} />
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+                Current Direction
               </span>
             </div>
-          </div>
 
-          <div style={{ fontSize: "0.95rem", fontWeight: 700, color: momentumColor }}>
-            {momentumLabel}
+            <p style={{ 
+              fontSize: "0.95rem", 
+              fontWeight: 500, 
+              color: "var(--text-primary)", 
+              lineHeight: 1.6,
+              marginBottom: "20px"
+            }}>
+              {generateCurrentDirection()}
+            </p>
           </div>
           
-          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "6px", maxWidth: "160px", lineHeight: 1.4 }}>
-            Active goals: {stats.activeGoals} • Commitments: {stats.activeCommitments}
+          <div style={{ 
+            borderTop: "1px solid var(--border-color)", 
+            paddingTop: "12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px"
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+              <span style={{ color: "var(--text-muted)" }}>Active goals</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{stats.activeGoals}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+              <span style={{ color: "var(--text-muted)" }}>Pending tasks</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{stats.pendingTasks}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+              <span style={{ color: "var(--text-muted)" }}>Commitments</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{stats.activeCommitments}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -361,9 +385,15 @@ export default function DashboardOverview() {
             <Lightbulb size={16} style={{ color: "var(--accent-primary)" }} />
             <h3 style={{ fontSize: "0.95rem", fontWeight: 700 }}>Today&apos;s Strategist Insight</h3>
           </div>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, fontStyle: "italic" }}>
-            &ldquo;{latestInsight}&rdquo;
-          </p>
+          {latestInsight ? (
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, fontStyle: "italic" }}>
+              &ldquo;{latestInsight}&rdquo;
+            </p>
+          ) : (
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
+              Your AI mentor will surface insights as you chat and build your goals.
+            </p>
+          )}
         </div>
 
         {/* One Accountability */}
@@ -384,10 +414,16 @@ export default function DashboardOverview() {
                 Resolve with AI Mentor <ArrowRight size={12} />
               </Link>
             </div>
+          ) : stats.activeCommitments === 0 ? (
+            <div>
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
+                No commitments tracked yet. Make promises in chat to build accountability.
+              </p>
+            </div>
           ) : (
             <div>
               <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                Radar clear. All active commitments and task deadlines are currently consistent and tracked. No bottlenecks detected.
+                All commitments on track. No bottlenecks detected.
               </p>
             </div>
           )}

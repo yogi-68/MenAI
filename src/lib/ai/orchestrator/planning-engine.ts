@@ -1,10 +1,20 @@
 /**
  * Planning Engine — Context-Aware Daily Planning
  * 
- * Generates daily execution plans ONLY when sufficient context exists.
- * Prevents hallucinated plans by validating context before generation.
+ * STATUS: NOT CURRENTLY USED IN PRODUCTION
+ * This module is defined but not called from the main orchestrator.
+ * Daily planning is currently handled inline in the main chat flow via state machine.
  * 
- * Core principle: NEVER invent tasks/goals the user hasn't mentioned.
+ * This engine was designed to:
+ * - Generate daily execution plans ONLY when sufficient context exists
+ * - Prevent hallucinated plans by validating context before generation
+ * - Follow principle: NEVER invent tasks/goals the user hasn't mentioned
+ * 
+ * If you want to use this as a separate planning endpoint, wire it to:
+ * - A dedicated /api/planning route
+ * - The main orchestrator as an alternative to inline planning
+ * 
+ * Otherwise, this can be safely removed if not needed.
  */
 
 import { classifyWithLLM } from "./router";

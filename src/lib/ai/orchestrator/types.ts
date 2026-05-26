@@ -267,17 +267,26 @@ export interface LifeContext {
   todaysPlan?: DailyPlan;
   accountabilityItems: AccountabilityItem[];
   momentumScore: number; // 0-100
+  identitySignals?: IdentitySignal[]; // NEW: from DB
+  executionPatterns?: ExecutionPattern[]; // NEW: from DB
 }
 
 // ===== Life Snapshot Cache (compact user operating state) =====
 export interface LifeSnapshot {
+  // Stable identity (slow-changing)
   identity: string;                // "founder", "student", "executive", "creator", "unknown"
+  identitySignals: IdentitySignal[]; // NEW: actual signals from DB
+  persistentPatterns: ExecutionPattern[]; // NEW: established patterns
+  
+  // Current state (ephemeral)
   currentFocus: string;            // Primary thing they're working on
   activeGoalTitles: string[];      // Just titles, not full objects
   topPriority: string | null;      // Single most important thing
   momentum: "rising" | "stable" | "declining" | "unknown";
   dominantPattern: string | null;  // "overplanning", "procrastination", etc.
   energyTrend: "high" | "moderate" | "low" | "unknown";
+  
+  // Metadata
   lastActiveAt: string;            // ISO timestamp
   snapshotAge: number;             // minutes since last update
 }

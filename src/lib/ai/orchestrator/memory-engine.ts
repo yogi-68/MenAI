@@ -10,6 +10,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/ai/openai";
 import { classifyWithLLM } from "./router";
+import { invalidateSnapshot } from "./snapshot-engine";
 import type { MemoryContext } from "./types";
 
 /**
@@ -135,6 +136,7 @@ function formatMemoryNaturally(
 /**
  * Extract emotional themes and patterns from memories
  * Returns companion-like narrative statements
+ * IMPROVED: Only surfaces themes with strong signals (frequency + recency)
  */
 function extractEmotionalThemes(
   longTerm: string[],
@@ -142,35 +144,65 @@ function extractEmotionalThemes(
   emotional: string[]
 ): string[] {
   const themes: string[] = [];
-  const allMemories = [...longTerm, ...episodic, ...emotional].map(cleanMemoryDate).join(" ").toLowerCase();
+  const allMemories = [...longTerm, ...episodic, ...emotional];
+  
+  // Parse memory dates and content
+  const parsedMemories = allMemories.map(mem => {
+    const dateMatch = mem.match(/^\[(\d{1,2}\/\d{1,2}\/\d{4})\]/);
+    const date = dateMatch ? new Date(dateMatch[1]) : new Date(0);
+    const content = cleanMemoryDate(mem).toLowerCase();
+    return { date, content, age: Date.now() - date.getTime() };
+  });
+  
+  // Helper: count occurrences with recency weighting
+  const countTheme = (keywords: string[]): { count: number; recentMention: boolean } => {
+    let count = 0;
+    let recentMention = false;
+    const fourteenDaysAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+    
+    for (const mem of parsedMemories) {
+      if (keywords.some(kw => mem.content.includes(kw))) {
+        count++;
+        if (mem.date.getTime() > fourteenDaysAgo) {
+          recentMention = true;
+        }
+      }
+    }
+    return { count, recentMention };
+  };
 
-  // Detect loneliness theme
-  if (allMemories.includes("lonely") || allMemories.includes("alone") || allMemories.includes("friends") || allMemories.includes("disconnected")) {
+  // Detect loneliness theme (only if mentioned 3+ times AND recently)
+  const loneliness = countTheme(["lonely", "alone", "isolated", "disconnected"]);
+  if (loneliness.count >= 3 && loneliness.recentMention) {
     themes.push("You remember this person has been feeling isolated - missing emotional connection and the comfort of having people to turn to.");
   }
 
   // Detect exhaustion/burnout theme
-  if (allMemories.includes("exhausted") || allMemories.includes("tired") || allMemories.includes("drained") || allMemories.includes("overwhelm")) {
+  const exhaustion = countTheme(["exhausted", "tired", "drained", "overwhelm", "burned out", "burnt out"]);
+  if (exhaustion.count >= 3 && exhaustion.recentMention) {
     themes.push("They've mentioned feeling emotionally exhausted lately, like carrying weight that doesn't seem to lighten.");
   }
 
   // Detect anxiety/stress theme
-  if (allMemories.includes("anxiety") || allMemories.includes("anxious") || allMemories.includes("stress") || allMemories.includes("worry")) {
+  const anxiety = countTheme(["anxiety", "anxious", "stress", "worry", "panic"]);
+  if (anxiety.count >= 3 && anxiety.recentMention) {
     themes.push("Anxiety has been a recurring presence - their mind seems to race often, making it hard to find calm.");
   }
 
   // Detect relationship struggles
-  if (allMemories.includes("relationship") || allMemories.includes("partner") || allMemories.includes("family")) {
+  const relationships = countTheme(["relationship", "partner", "family", "conflict", "argument"]);
+  if (relationships.count >= 3 && relationships.recentMention) {
     themes.push("Relationships have been a tender topic - there's been some emotional weight there.");
   }
 
   // Detect work/productivity stress
-  if (allMemories.includes("work") || allMemories.includes("job") || allMemories.includes("school")) {
+  const work = countTheme(["work", "job", "school", "pressure", "deadline"]);
+  if (work.count >= 4 && work.recentMention) {
     themes.push("Work has been grinding them down, adding to the overall sense of pressure.");
   }
 
-  // If no specific themes, create a general connection statement
-  if (themes.length === 0 && (longTerm.length > 0 || emotional.length > 0)) {
+  // If no specific themes meet threshold, create a general connection statement only if we have substantial history
+  if (themes.length === 0 && allMemories.length >= 5) {
     themes.push("You've gotten to know this person across several conversations - you sense their emotional patterns and what weighs on them.");
   }
 
@@ -205,6 +237,9 @@ export async function storeMemory(params: {
       metadata: { ...(params.metadata || {}), importance: params.importance || 0.5 },
       embedding: JSON.stringify(embedding),
     });
+    
+    // Invalidate snapshot cache after storing new memory
+    invalidateSnapshot(params.userId);
   } catch (e) {
     console.error("Memory store error:", e);
   }
@@ -293,4 +328,7 @@ export async function compressMemories(userId: string): Promise<void> {
   // Delete old individual memories
   const idsToDelete = oldMemories.map((m) => m.id);
   await supabase.from("memories").delete().in("id", idsToDelete);
+  
+  // Invalidate snapshot cache after memory compression
+  invalidateSnapshot(userId);
 }

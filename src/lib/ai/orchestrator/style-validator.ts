@@ -47,6 +47,43 @@ const BANNED_GENERIC_PHRASES: Array<{ pattern: RegExp; severity: "low" | "medium
     severity: "high",
     description: "Assumed outreach activity without user confirmation"
   },
+  // NEW: Additional generic founder advice patterns
+  {
+    pattern: /research (your )?competitors?|competitive analysis/i,
+    severity: "high",
+    description: "Generic 'research competitors' advice without user context"
+  },
+  {
+    pattern: /validate (your |the )?idea|idea validation/i,
+    severity: "high",
+    description: "Generic 'validate your idea' advice without user context"
+  },
+  {
+    pattern: /build (an? |your )?mvp|minimum viable product/i,
+    severity: "high",
+    description: "Generic 'build an MVP' advice without user context"
+  },
+  {
+    pattern: /define (your )?target (user|audience|customer)/i,
+    severity: "high",
+    description: "Generic 'define target user' advice without user context"
+  },
+  {
+    pattern: /talk to (potential )?customers?|customer interviews?/i,
+    severity: "high",
+    description: "Generic 'talk to customers' advice without user context"
+  },
+  {
+    pattern: /find product[- ]market fit|pmf/i,
+    severity: "high",
+    description: "Generic product-market fit advice without user context"
+  },
+  {
+    pattern: /start with a landing page|build a landing page/i,
+    severity: "high",
+    description: "Generic landing page advice without user confirmation"
+  },
+  // Existing patterns
   {
     pattern: /i'm here to help|i'm here for you/i,
     severity: "medium",

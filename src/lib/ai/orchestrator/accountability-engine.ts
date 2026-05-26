@@ -34,6 +34,8 @@ export async function getLifeContext(userId: string): Promise<LifeContext | null
     const activeCommitments = data.active_commitments || [];
     const relationships = data.relationships || [];
     const todaysPlan = data.todays_plan || undefined;
+    const identitySignals = data.identity_signals || [];
+    const executionPatterns = data.execution_patterns || [];
 
     // Build accountability items
     const accountabilityItems = buildAccountabilityItems(pendingTasks, activeCommitments);
@@ -49,6 +51,8 @@ export async function getLifeContext(userId: string): Promise<LifeContext | null
       todaysPlan,
       accountabilityItems,
       momentumScore,
+      identitySignals,
+      executionPatterns,
     };
   } catch (e) {
     console.error("Life context error:", e);
@@ -88,6 +92,8 @@ async function getLifeContextFallback(
     todaysPlan,
     accountabilityItems,
     momentumScore,
+    identitySignals: [], // Fallback: will need separate query if RPC unavailable
+    executionPatterns: [], // Fallback: will need separate query if RPC unavailable
   };
 }
 

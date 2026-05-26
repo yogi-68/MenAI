@@ -1,15 +1,18 @@
 /**
  * Emotional Insight Engine — Pattern Recognition Across Conversations
  * 
- * This engine detects:
+ * STATUS: NOT CURRENTLY USED IN PRODUCTION
+ * This module is defined but not imported by any active code path.
+ * It was designed for advanced emotional pattern detection.
+ * 
+ * This engine is designed to detect:
  * - Recurring emotional themes (loneliness, exhaustion, anxiety)
  * - Emotional triggers (work → stress, weekends → loneliness)
  * - Emotional arcs (mood declining/improving over time)
  * - Behavioral patterns (isolation cycles, avoidance)
  * 
- * Generates natural insights like:
- * "You've mentioned missing friends a few times this week - that disconnection 
- *  seems to be weighing on you more than usual"
+ * If you want to use this, import and call from the orchestrator.
+ * Otherwise, this can be safely removed if not needed.
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/server";

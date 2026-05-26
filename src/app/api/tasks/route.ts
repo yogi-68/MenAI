@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -72,6 +73,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache so AI gets fresh task context
+  invalidateUserCache(user.id, "task created");
+  
   return NextResponse.json({ task: data }, { status: 201 });
 }
 
@@ -133,6 +138,10 @@ export async function PATCH(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache after task update (completion, status change, etc.)
+  invalidateUserCache(user.id, "task updated");
+  
   return NextResponse.json({ task: data });
 }
 
@@ -153,6 +162,10 @@ export async function DELETE(req: NextRequest) {
     .eq("user_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache after task deletion
+  invalidateUserCache(user.id, "task deleted");
+  
   return NextResponse.json({ success: true });
 }
 

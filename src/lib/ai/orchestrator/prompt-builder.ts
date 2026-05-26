@@ -20,6 +20,75 @@ import { formatLifeContextForPrompt } from "./accountability-engine";
 import { formatSnapshotForPrompt, formatInferenceGuidance } from "./snapshot-engine";
 
 /**
+ * Detect if observation mode should be triggered
+ * Observation mode: reflect patterns without coaching/questioning
+ */
+function shouldTriggerObservationMode(ctx: PipelineContext): boolean {
+  const msg = ctx.input.message.toLowerCase();
+  
+  // Trigger 1: User asks meta questions about themselves
+  const metaQuestions = [
+    /why do i (keep|always|constantly)/i,
+    /why can't i/i,
+    /what('s| is) wrong with me/i,
+    /am i (just|being|too)/i,
+    /is it (just )?me/i,
+  ];
+  if (metaQuestions.some(pattern => pattern.test(msg))) {
+    return true;
+  }
+  
+  // Trigger 2: Pattern is clear from repeated mentions in memory
+  // Check if any execution pattern has high frequency
+  const hasHighFrequencyPattern = ctx.lifeContext?.executionPatterns?.some(
+    p => p.frequency === "frequent" || p.frequency === "constant"
+  );
+  if (hasHighFrequencyPattern) {
+    return true;
+  }
+  
+  // Trigger 3: User emotion is reflective (not crisis or urgent)
+  const isReflective = 
+    ctx.emotion.primaryEmotion === "anticipation" ||
+    ctx.emotion.sentiment === "neutral" ||
+    (ctx.emotion.intensity <= 6 && !ctx.emotion.needsSupport);
+  
+  const hasPattern = (ctx.memory.longTerm.length + ctx.memory.episodic.length) >= 5;
+  
+  if (isReflective && hasPattern) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Build observation mode guidance for prompt
+ */
+function buildObservationModeGuidance(ctx: PipelineContext): string {
+  return `## OBSERVATION MODE ACTIVE
+
+The user is ready for pattern reflection. Your job is to OBSERVE and INTERPRET, not to coach or question.
+
+Instead of asking "Why do you think that is?" or "What would help?" — just state what you observe:
+
+GOOD:
+"I notice most of your questions are about direction and identity, not technical capability. That usually means the friction isn't skill — it's commitment clarity."
+
+"You shift into planning mode whenever execution starts feeling emotionally risky. That's not procrastination — it's protection."
+
+"Every time you get close to shipping, you find a new reason to redesign. That pattern is usually about fear of judgment, not perfectionism about craft."
+
+Keep it:
+- Direct observation
+- Pattern interpretation
+- No coaching language
+- No questions unless absolutely needed to sharpen the observation
+
+This creates premium intelligence feeling. The user wants to be SEEN, not COACHED in this moment.`;
+}
+
+/**
  * Build context confidence alert based on what we know about the user
  * This is critical for preventing hallucinated plans and fake personalization
  */
@@ -31,25 +100,30 @@ function buildContextConfidenceAlert(ctx: PipelineContext): string {
   const commitmentsCount = lifeContext?.activeCommitments?.length || 0;
 
   if (contextRichness.level === "LOW") {
-    return `## CONTEXT CONFIDENCE: LOW — Use Soft Inference
+    return `## CONTEXT CONFIDENCE: LOW — Intelligent Inference Without Hallucination
 
 You have LIMITED structured data about this user:
 - ${goalsCount} goal(s), ${tasksCount} task(s), ${commitmentsCount} commitment(s)
 
 YOUR BEHAVIOR:
-1. Use EVERYTHING you have — conversation history, memories, and what they just said
+1. Use EVERYTHING you have — conversation history, memories, identity signals, and what they just said
 2. If they ask for a plan, GENERATE one using whatever signals you have:
    - Their message content (what they're talking about IS their priority)
-   - Memory context (past conversations reveal goals)
+   - Memory context (past conversations reveal direction)
+   - Identity signals from DB (founder ambition, execution patterns)
    - Their profile (founder mode, vision, coaching style)
-3. Mark AI-inferred items as suggestions: "Based on what you've shared..."
-4. Add 1 natural question that deepens understanding WITHOUT blocking action
+3. Mark AI-inferred items clearly: "Based on what you've shared..." or "You seem focused on..."
+4. NEVER invent specific tasks (like "outreach emails", "MVP features") unless they mentioned them
 5. NEVER say "I need to know your goals first" or "What are your priorities?"
 
-INSTEAD OF: "What are your goals?"
-SAY: "Based on what you've been working through, here's what I'd prioritize today: [inferred plan]. Adjust however you need."
+DO: Infer direction from identity signals and memory
+DON'T: Invent specific tasks or refuse to plan
 
-The user chose an AI Life OS — not a form. Act like a mentor who pays attention, not a system that demands input.`;
+GOOD: "Based on your AI SaaS direction, today should focus on one shipping decision rather than more exploration."
+BAD: "Research competitors, build MVP, validate idea" (generic hallucination)
+BAD: "What are your goals?" (refusing to use available context)
+
+The user chose an AI Life OS — not a form. Be a mentor who interprets signals, not a system that demands structured input.`;
   }
   
   if (contextRichness.level === "MODERATE") {
@@ -102,7 +176,8 @@ Don't just respond — interpret their trajectory. Surface insights they haven't
 }
 
 /**
- * Get inference guidance for planning — NEVER blocks, always suggests
+ * Validate if we have sufficient context for the user's request
+ * Now provides real validation instead of always returning true
  */
 export function validateSufficientContext(
   lifeContext: PipelineContext["lifeContext"],
@@ -116,13 +191,27 @@ export function validateSufficientContext(
   const hasGoals = (lifeContext?.activeGoals?.length || 0) > 0;
   const hasTasks = (lifeContext?.pendingTasks?.length || 0) > 0;
   const hasCommitments = (lifeContext?.activeCommitments?.length || 0) > 0;
+  const hasIdentitySignals = (lifeContext?.identitySignals?.length || 0) > 0;
+  const hasAnyData = hasGoals || hasTasks || hasCommitments || hasIdentitySignals;
   
   const missingInfo: string[] = [];
   if (!hasGoals) missingInfo.push("goals");
   if (!hasCommitments) missingInfo.push("commitments");
   
-  // Always sufficient — the AI should infer, not block
-  // The context confidence alert handles how to behave at each level
+  // Absolutely zero data + planning request = insufficient
+  const isPlanningRequest = /plan my (day|week|life)|create a plan|what should i (do|focus)/i.test(userMessage);
+  
+  if (!hasAnyData && isPlanningRequest) {
+    return {
+      sufficient: false,
+      missingInfo: ["goals", "priorities", "context"],
+      shouldAsk: true,
+      suggestedQuestions: ["What's the one thing that would make today feel like a win?"],
+    };
+  }
+  
+  // Any identity signal or goal exists → sufficient for basic planning
+  // The context confidence system (LOW/MODERATE/HIGH) will guide how the AI behaves
   return {
     sufficient: true,
     missingInfo,
@@ -181,6 +270,11 @@ Instructed behavior: ${styleText}`);
 
   // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
+
+  // ===== OBSERVATION MODE (when appropriate) =====
+  if (shouldTriggerObservationMode(ctx)) {
+    parts.push(buildObservationModeGuidance(ctx));
+  }
 
   // ===== EMOTIONAL REGULATION LAYER =====
   const regulationPrompt = buildRegulationPrompt(

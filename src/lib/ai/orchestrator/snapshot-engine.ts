@@ -34,6 +34,9 @@ export function getLifeSnapshot(
   const now = Date.now();
   
   if (cached && (now - cached.cachedAt) < CACHE_TTL_MS) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[LifeSnapshot Cache] HIT for user ${userId} (age: ${Math.round((now - cached.cachedAt) / 1000)}s)`);
+    }
     return {
       ...cached.snapshot,
       snapshotAge: Math.round((now - cached.cachedAt) / 60000),
@@ -41,6 +44,9 @@ export function getLifeSnapshot(
   }
 
   // Generate fresh snapshot
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[LifeSnapshot Cache] MISS for user ${userId} - generating fresh snapshot`);
+  }
   const snapshot = generateSnapshot(lifeContext, user, memory);
   
   // Cache it
@@ -57,18 +63,33 @@ function generateSnapshot(
   user: UserProfile,
   memory: MemoryContext
 ): LifeSnapshot {
-  // Identity detection
+  // === STABLE IDENTITY (slow-changing) ===
+  
+  // Use actual identity signals from DB instead of keyword heuristics
+  const identitySignals = lifeContext?.identitySignals || [];
+  
+  // Determine primary identity from explicit signals
   let identity = "unknown";
   if (user.founderMode) {
     identity = "founder";
+  } else if (identitySignals.length > 0) {
+    // Use highest confidence signal
+    const primarySignal = identitySignals.sort((a, b) => b.confidence - a.confidence)[0];
+    identity = primarySignal.type;
   } else if (memory.formatted.toLowerCase().includes("startup") || memory.formatted.toLowerCase().includes("my product")) {
+    // Fallback to keyword detection only if no DB signals
     identity = "founder";
   } else if (memory.formatted.toLowerCase().includes("student") || memory.formatted.toLowerCase().includes("studying")) {
     identity = "student";
   } else if (memory.formatted.toLowerCase().includes("team") || memory.formatted.toLowerCase().includes("manage")) {
     identity = "executive";
   }
+  
+  // Get established execution patterns from DB
+  const persistentPatterns = lifeContext?.executionPatterns || [];
 
+  // === CURRENT STATE (ephemeral) ===
+  
   // Current focus (from highest-priority goal or recent memory)
   let currentFocus = "";
   if (lifeContext?.activeGoals?.length) {
@@ -93,15 +114,29 @@ function generateSnapshot(
   else if (momentumScore >= 40) momentum = "stable";
   else if (momentumScore > 0) momentum = "declining";
 
-  // Dominant execution pattern (from accountability items)
+  // Dominant execution pattern (from accountability items OR persistent patterns)
   let dominantPattern: string | null = null;
-  const overdue = lifeContext?.accountabilityItems?.filter(a => a.status === "overdue") || [];
-  const missed = lifeContext?.accountabilityItems?.filter(a => a.status === "missed") || [];
-  if (overdue.length >= 3) dominantPattern = "procrastination";
-  else if (missed.length >= 2) dominantPattern = "avoidance";
+  
+  // First check for persistent patterns from DB
+  if (persistentPatterns.length > 0) {
+    const highSeverityPattern = persistentPatterns.find(p => p.severity === "high");
+    if (highSeverityPattern) {
+      dominantPattern = highSeverityPattern.pattern;
+    }
+  }
+  
+  // Fall back to immediate accountability signals
+  if (!dominantPattern) {
+    const overdue = lifeContext?.accountabilityItems?.filter(a => a.status === "overdue") || [];
+    const missed = lifeContext?.accountabilityItems?.filter(a => a.status === "missed") || [];
+    if (overdue.length >= 3) dominantPattern = "procrastination";
+    else if (missed.length >= 2) dominantPattern = "avoidance";
+  }
 
   return {
     identity,
+    identitySignals,
+    persistentPatterns,
     currentFocus,
     activeGoalTitles,
     topPriority,
@@ -130,10 +165,15 @@ export function computeInferenceConfidence(
     goals = "inferred";
   }
 
-  // Identity: explicit if founder_mode set, inferred from signals
+  // Identity: explicit if founder_mode set OR identity_signals exist, inferred from memory
   let identity: InferenceType = "weakly_inferred";
+  const hasIdentitySignals = (lifeContext?.identitySignals?.length || 0) > 0;
   if (user.founderMode) {
     identity = "explicit";
+  } else if (hasIdentitySignals) {
+    // Check confidence of identity signals
+    const highConfidenceSignal = lifeContext?.identitySignals?.find(s => s.confidence >= 0.85);
+    identity = highConfidenceSignal ? "explicit" : "inferred";
   } else if (memory.formatted.toLowerCase().includes("startup") || memory.formatted.toLowerCase().includes("founder")) {
     identity = "inferred";
   }
@@ -166,32 +206,65 @@ export function computeInferenceConfidence(
 
 /**
  * Format snapshot for prompt injection (compact, efficient)
+ * Separates stable identity from ephemeral state
  */
 export function formatSnapshotForPrompt(snapshot: LifeSnapshot): string {
-  const parts: string[] = [];
+  const stableParts: string[] = [];
+  const sessionParts: string[] = [];
 
+  // === STABLE IDENTITY (Learned Over Time) ===
   if (snapshot.identity !== "unknown") {
-    parts.push(`Identity: ${snapshot.identity}`);
+    stableParts.push(`Identity: ${snapshot.identity}`);
   }
+  
+  if (snapshot.identitySignals.length > 0) {
+    const signals = snapshot.identitySignals
+      .slice(0, 3)
+      .map(s => `${s.description} (${s.longTermDirection})`)
+      .join("; ");
+    stableParts.push(`Identity signals: ${signals}`);
+  }
+  
+  if (snapshot.persistentPatterns.length > 0) {
+    const patterns = snapshot.persistentPatterns
+      .filter(p => p.severity === "high" || p.severity === "medium")
+      .slice(0, 2)
+      .map(p => `${p.pattern}: ${p.behavioralImpact}`)
+      .join("; ");
+    if (patterns) {
+      stableParts.push(`Established patterns: ${patterns}`);
+    }
+  }
+
+  // === ACTIVE SESSION STATE (This Week) ===
   if (snapshot.currentFocus) {
-    parts.push(`Current focus: ${snapshot.currentFocus}`);
+    sessionParts.push(`Current focus: ${snapshot.currentFocus}`);
   }
   if (snapshot.activeGoalTitles.length > 0) {
-    parts.push(`Active goals: ${snapshot.activeGoalTitles.join(", ")}`);
+    sessionParts.push(`Active goals: ${snapshot.activeGoalTitles.join(", ")}`);
   }
   if (snapshot.topPriority) {
-    parts.push(`Top priority: ${snapshot.topPriority}`);
+    sessionParts.push(`Top priority: ${snapshot.topPriority}`);
   }
   if (snapshot.momentum !== "unknown") {
-    parts.push(`Momentum: ${snapshot.momentum}`);
+    sessionParts.push(`Momentum: ${snapshot.momentum}`);
   }
   if (snapshot.dominantPattern) {
-    parts.push(`Watch for: ${snapshot.dominantPattern}`);
+    sessionParts.push(`Recent pattern: ${snapshot.dominantPattern}`);
   }
 
-  if (parts.length === 0) return "";
+  // Build formatted output
+  const parts: string[] = [];
+  
+  if (stableParts.length > 0) {
+    parts.push(`## Stable Identity (Learned Over Time)\n${stableParts.join("\n")}`);
+  }
+  
+  if (sessionParts.length > 0) {
+    parts.push(`## Active Session State (This Week)\n${sessionParts.join("\n")}`);
+  }
 
-  return `## User Operating Snapshot\n${parts.join("\n")}`;
+  return parts.join("\n\n");
 }
 
 /**
@@ -229,5 +302,10 @@ export function formatInferenceGuidance(confidence: InferenceConfidence): string
  * Invalidate a user's cached snapshot (call after data changes)
  */
 export function invalidateSnapshot(userId: string): void {
+  const existed = snapshotCache.has(userId);
   snapshotCache.delete(userId);
+  
+  if (existed && process.env.NODE_ENV !== "production") {
+    console.log(`[LifeSnapshot Cache] INVALIDATED for user ${userId}`);
+  }
 }

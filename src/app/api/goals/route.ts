@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -55,6 +56,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache so AI gets fresh context immediately
+  invalidateUserCache(user.id, "goal created");
+  
   return NextResponse.json({ goal: data }, { status: 201 });
 }
 
@@ -77,6 +82,10 @@ export async function PATCH(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache so AI sees updated goal
+  invalidateUserCache(user.id, "goal updated");
+  
   return NextResponse.json({ goal: data });
 }
 
@@ -97,5 +106,9 @@ export async function DELETE(req: NextRequest) {
     .eq("user_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  // Invalidate cache after deletion
+  invalidateUserCache(user.id, "goal deleted");
+  
   return NextResponse.json({ success: true });
 }
