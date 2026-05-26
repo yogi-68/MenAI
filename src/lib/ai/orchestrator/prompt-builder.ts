@@ -200,26 +200,13 @@ export function validateSufficientContext(
   const hasTasks = (lifeContext?.pendingTasks?.length || 0) > 0;
   const hasCommitments = (lifeContext?.activeCommitments?.length || 0) > 0;
   const hasIdentitySignals = (lifeContext?.identitySignals?.length || 0) > 0;
-  const hasAnyData = hasGoals || hasTasks || hasCommitments || hasIdentitySignals;
   
   const missingInfo: string[] = [];
   if (!hasGoals) missingInfo.push("goals");
   if (!hasCommitments) missingInfo.push("commitments");
   
-  // Absolutely zero data + planning request = insufficient
-  const isPlanningRequest = /plan my (day|week|life)|create a plan|what should i (do|focus)/i.test(userMessage);
-  
-  if (!hasAnyData && isPlanningRequest) {
-    return {
-      sufficient: false,
-      missingInfo: ["goals", "priorities", "context"],
-      shouldAsk: true,
-      suggestedQuestions: ["What's the one thing that would make today feel like a win?"],
-    };
-  }
-  
-  // Any identity signal or goal exists → sufficient for basic planning
-  // The context confidence system (LOW/MODERATE/HIGH) will guide how the AI behaves
+  // Always return sufficient — the context confidence system (LOW/MODERATE/HIGH) 
+  // will guide how the AI behaves. The AI should NEVER refuse to engage.
   return {
     sufficient: true,
     missingInfo,
