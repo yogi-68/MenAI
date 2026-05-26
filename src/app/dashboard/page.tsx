@@ -83,21 +83,10 @@ export default function DashboardOverview() {
         latestInsight = memoriesRes.data[0].content;
       }
 
-      // Calculate stats
-      const avgProgress = goals.length > 0
-        ? Math.round(goals.reduce((sum, g) => sum + (g.progress || 0), 0) / goals.length)
-        : 0;
-
-      const avgConsistency = commitments.length > 0
-        ? Math.round(commitments.reduce((sum, c) => sum + (Number(c.consistency_score) || 0), 0) / commitments.length)
-        : 0;
-
       const overdueTasks = tasks.filter(t => {
         if (!t.due_date) return false;
         return t.due_date < todayStr;
       });
-
-
 
       // Extract one accountability issue
       let accountabilityItem = null;
@@ -122,8 +111,6 @@ export default function DashboardOverview() {
           pendingTasks: tasks.length,
           overdueTasks: overdueTasks.length,
           activeCommitments: commitments.length,
-          avgConsistency,
-          avgProgress,
         },
         goals,
         tasks,
@@ -153,7 +140,7 @@ export default function DashboardOverview() {
 
   const stats = data?.stats || {
     activeGoals: 0, pendingTasks: 0, overdueTasks: 0,
-    activeCommitments: 0, avgConsistency: 0, avgProgress: 0,
+    activeCommitments: 0,
   };
   const tasks = data?.tasks || [];
   const commitments = data?.commitments || [];

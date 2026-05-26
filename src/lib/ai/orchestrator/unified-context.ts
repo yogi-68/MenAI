@@ -171,7 +171,7 @@ async function buildUnifiedContext(
   ]);
 
   // Extract data
-  const profile = profileResult.data || {};
+  const profile = profileResult.data || ({} as any);
   const goals = (goalsResult.data || []) as Goal[];
   const commitments = (commitmentsResult.data || []) as Commitment[];
   const tasks = (tasksResult.data || []) as Task[];
