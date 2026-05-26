@@ -357,6 +357,53 @@ export interface UserProfile {
   sessionCount: number;
 }
 
+// ===== UNIFIED SESSION CONTEXT (Single Source of Truth) =====
+/**
+ * UnifiedSessionContext is the complete operating state for a user session.
+ * All AI systems should consume THIS instead of loading pieces separately.
+ * 
+ * This prevents:
+ * - Inconsistent context between systems
+ * - Missing profile data (name disappearing)
+ * - Snapshot/context misalignment
+ * - Multiple queries for the same data
+ * 
+ * CRITICAL: Load this ONCE per request, cache in Redis, invalidate on updates.
+ */
+export interface UnifiedSessionContext {
+  // === USER IDENTITY ===
+  userId: string;
+  profile: {
+    fullName?: string;
+    vision?: string;
+    founderMode: boolean;
+    coachingStyle: "balanced" | "push" | "gentle" | "strategic";
+  };
+  
+  // === OPERATING STATE (cached snapshot) ===
+  lifeSnapshot: LifeSnapshot;
+  
+  // === STRUCTURED DATA (goals, commitments, patterns) ===
+  activeGoals: Goal[];
+  activeCommitments: Commitment[];
+  pendingTasks: Task[];
+  identitySignals: IdentitySignal[];
+  executionPatterns: ExecutionPattern[];
+  activePredictions: BehavioralPrediction[];
+  
+  // === MEMORY & CONTEXT ===
+  recentInsights: string[];           // Last 3 AI-generated insights
+  recentMemorySummary: string;        // Compact memory for fast retrieval
+  
+  // === INFERENCE CONFIDENCE ===
+  inferenceConfidence: InferenceConfidence;
+  contextRichness: ContextRichness;
+  
+  // === METADATA ===
+  lastUpdated: string;                // ISO timestamp
+  cacheAge: number;                   // seconds since last update
+}
+
 // ===== Orchestrator Pipeline =====
 export interface OrchestratorInput {
   userId: string;

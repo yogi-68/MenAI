@@ -27,14 +27,24 @@ interface Message {
 }
 
 export default function ChatPage() {
-  const { user } = useAppStore();
+  const { 
+    user,
+    messages,
+    streamingContent,
+    currentConversationId,
+    crisisAlert,
+    setMessages,
+    addMessage,
+    updateStreamingContent,
+    setCurrentConversationId,
+    setIsAiTyping,
+    setCrisisAlert,
+    clearChat,
+  } = useAppStore();
+  
   const queryClient = useQueryClient();
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [crisisAlert, setCrisisAlert] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -72,16 +82,13 @@ export default function ChatPage() {
           created_at: m.created_at,
         }))
       );
-      setConversationId(convId);
+      setCurrentConversationId(convId);
       setSidebarOpen(false);
     }
-  }, []);
+  }, [setMessages, setCurrentConversationId]);
 
   const startNewChat = () => {
-    setMessages([]);
-    setConversationId(null);
-    setCrisisAlert(false);
-    setStreamingContent("");
+    clearChat();
     setInput("");
     setSidebarOpen(false);
   };
@@ -93,7 +100,7 @@ export default function ChatPage() {
     const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
     if (res.ok) {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      if (conversationId === convId) {
+      if (currentConversationId === convId) {
         startNewChat();
       }
     }
@@ -109,10 +116,12 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    // Optimistically add user message to store
+    addMessage(userMessage);
     setInput("");
     setLoading(true);
-    setStreamingContent("");
+    setIsAiTyping(true);
+    updateStreamingContent("");
 
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
@@ -124,7 +133,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
-          conversationId,
+          conversationId: currentConversationId,
         }),
       });
 
@@ -139,8 +148,8 @@ export default function ChatPage() {
         setCrisisAlert(true);
       }
 
-      if (newConvId && !conversationId) {
-        setConversationId(newConvId);
+      if (newConvId && !currentConversationId) {
+        setCurrentConversationId(newConvId);
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
 
@@ -155,7 +164,7 @@ export default function ChatPage() {
         if (done) break;
         const text = decoder.decode(value, { stream: true });
         accumulated += text;
-        setStreamingContent(accumulated);
+        updateStreamingContent(accumulated);
       }
 
       const aiMessage: Message = {
@@ -166,8 +175,9 @@ export default function ChatPage() {
         crisis: isCrisis,
       };
 
-      setMessages((prev) => [...prev, aiMessage]);
-      setStreamingContent("");
+      addMessage(aiMessage);
+      updateStreamingContent("");
+      setIsAiTyping(false);
     } catch {
       // Context-aware fallback — NEVER expose internal errors
       const lastUserMsg = input.trim().toLowerCase();
@@ -190,8 +200,9 @@ export default function ChatPage() {
         content: fallbackContent,
         created_at: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, errorMessage]);
-      setStreamingContent("");
+      addMessage(errorMessage);
+      updateStreamingContent("");
+      setIsAiTyping(false);
     } finally {
       setLoading(false);
     }
@@ -313,18 +324,18 @@ export default function ChatPage() {
               cursor: "pointer",
               marginBottom: "4px",
               transition: "all 0.2s",
-              background: conversationId === conv.id ? "rgba(124, 92, 252, 0.1)" : "transparent",
+              background: currentConversationId === conv.id ? "rgba(124, 92, 252, 0.1)" : "transparent",
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   fontSize: "0.85rem",
-                  fontWeight: conversationId === conv.id ? 600 : 400,
+                  fontWeight: currentConversationId === conv.id ? 600 : 400,
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  color: conversationId === conv.id ? "var(--accent-primary)" : "var(--text-secondary)",
+                  color: currentConversationId === conv.id ? "var(--accent-primary)" : "var(--text-secondary)",
                 }}
               >
                 {conv.title || "Untitled"}
