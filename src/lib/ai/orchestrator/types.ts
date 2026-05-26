@@ -103,11 +103,31 @@ export interface MemoryContext {
 export interface ExtractedLifeData {
   goals: ExtractedGoal[];
   commitments: ExtractedCommitment[];
+  identitySignals: IdentitySignal[];
+  executionPatterns: ExecutionPattern[];
   relationships: ExtractedRelationship[];
   habits: ExtractedHabit[];
   emotions: ExtractedEmotion[];
   projects: ExtractedProject[];
   blockers: string[];
+}
+
+export interface IdentitySignal {
+  type: "founder" | "creator" | "self-discipline" | "leadership" | "other";
+  description: string;
+  longTermDirection: string;
+  confidence: number;
+  extractedFrom?: string;
+}
+
+export interface ExecutionPattern {
+  pattern: "burnout" | "procrastination" | "avoidance" | "perfectionism" | "scattered_focus" | "inconsistency" | "overthinking";
+  trigger?: string;
+  frequency: "rare" | "occasional" | "frequent" | "constant";
+  severity: "low" | "medium" | "high";
+  behavioralImpact: string;
+  confidence: number;
+  extractedFrom?: string;
 }
 
 export interface ExtractedGoal {
@@ -116,12 +136,14 @@ export interface ExtractedGoal {
   priority: "low" | "medium" | "high" | "critical";
   description?: string;
   targetDate?: string;
+  confidence: number;
 }
 
 export interface ExtractedCommitment {
   description: string;
   category: "health" | "work" | "relationships" | "personal" | "other";
   timeframe?: string; // "today", "this week", "ongoing"
+  confidence: number;
 }
 
 export interface ExtractedRelationship {
@@ -146,6 +168,7 @@ export interface ExtractedProject {
   name: string;
   status: "active" | "stuck" | "completed" | "idea";
   context?: string;
+  confidence: number;
 }
 
 export type GoalCategory =

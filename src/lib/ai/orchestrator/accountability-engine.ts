@@ -249,6 +249,192 @@ export function formatLifeContextForPrompt(context: LifeContext): string {
 }
 
 /**
+ * Detect behavioral patterns from task and goal history
+ */
+export interface AccountabilityPattern {
+  type: "procrastination" | "overplanning" | "perfectionism" | "idea_switching" | "fear_based_avoidance";
+  evidence: string[];
+  frequency: number;
+  lastDetected: Date;
+  severity: "low" | "medium" | "high";
+}
+
+export async function detectAccountabilityPatterns(userId: string): Promise<AccountabilityPattern[]> {
+  const supabase = await createServiceRoleClient();
+  const patterns: AccountabilityPattern[] = [];
+
+  // Get user's goals, tasks, and commitments for pattern detection
+  const [goalsRes, tasksRes, commitmentsRes] = await Promise.allSettled([
+    supabase.from("goals").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("tasks").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
+    supabase.from("commitments").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(20),
+  ]);
+
+  const goals = goalsRes.status === "fulfilled" ? (goalsRes.value.data || []) : [];
+  const tasks = tasksRes.status === "fulfilled" ? (tasksRes.value.data || []) : [];
+  const commitments = commitmentsRes.status === "fulfilled" ? (commitmentsRes.value.data || []) : [];
+
+  // Pattern 1: Procrastination
+  // Tasks created but never completed, high overdue count
+  const pendingTasks = tasks.filter(t => t.status === "pending" || t.status === "in_progress");
+  const completedTasks = tasks.filter(t => t.status === "completed");
+  const overdueTasks = pendingTasks.filter(t => {
+    if (!t.due_date) return false;
+    return new Date(t.due_date) < new Date();
+  });
+
+  if (overdueTasks.length >= 3) {
+    patterns.push({
+      type: "procrastination",
+      evidence: overdueTasks.slice(0, 3).map(t => `"${t.title}" overdue since ${t.due_date}`),
+      frequency: overdueTasks.length,
+      lastDetected: new Date(),
+      severity: overdueTasks.length >= 5 ? "high" : overdueTasks.length >= 3 ? "medium" : "low",
+    });
+  }
+
+  // Pattern 2: Overplanning
+  // High ratio of pending tasks to completed tasks, many goals with low progress
+  const taskCreationRate = tasks.length;
+  const taskCompletionRate = completedTasks.length;
+  const completionRatio = taskCreationRate > 0 ? taskCompletionRate / taskCreationRate : 1;
+
+  if (completionRatio < 0.3 && taskCreationRate >= 10) {
+    patterns.push({
+      type: "overplanning",
+      evidence: [
+        `${taskCreationRate} tasks created, only ${taskCompletionRate} completed`,
+        `${(completionRatio * 100).toFixed(0)}% completion rate`,
+        "High planning activity, low execution activity",
+      ],
+      frequency: taskCreationRate,
+      lastDetected: new Date(),
+      severity: completionRatio < 0.2 ? "high" : "medium",
+    });
+  }
+
+  // Pattern 3: Idea Switching
+  // Multiple goals created and abandoned without completion
+  const abandonedGoals = goals.filter(g => g.status === "abandoned" || g.status === "paused");
+  const activeGoals = goals.filter(g => g.status === "active");
+  const lowProgressGoals = activeGoals.filter(g => (g.progress || 0) < 10);
+
+  if (abandonedGoals.length >= 2 || lowProgressGoals.length >= 3) {
+    patterns.push({
+      type: "idea_switching",
+      evidence: [
+        `${abandonedGoals.length} abandoned goals`,
+        `${lowProgressGoals.length} active goals with <10% progress`,
+        "Multiple goal shifts without completion",
+      ],
+      frequency: abandonedGoals.length + lowProgressGoals.length,
+      lastDetected: new Date(),
+      severity: abandonedGoals.length >= 3 ? "high" : "medium",
+    });
+  }
+
+  // Pattern 4: Perfectionism
+  // Goals or tasks that are repeatedly updated but never completed
+  // High progress goals that never reach 100%
+  const highProgressStuckGoals = activeGoals.filter(g => {
+    const progress = g.progress || 0;
+    const createdAt = new Date(g.created_at);
+    const daysSinceCreated = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    return progress >= 80 && progress < 100 && daysSinceCreated >= 14;
+  });
+
+  if (highProgressStuckGoals.length >= 1) {
+    patterns.push({
+      type: "perfectionism",
+      evidence: highProgressStuckGoals.map(g => `"${g.title}" stuck at ${g.progress}% for weeks`),
+      frequency: highProgressStuckGoals.length,
+      lastDetected: new Date(),
+      severity: highProgressStuckGoals.length >= 2 ? "high" : "medium",
+    });
+  }
+
+  // Pattern 5: Fear-based avoidance
+  // Commitments with very low consistency scores, high "times_broken"
+  const brokenCommitments = commitments.filter(c => {
+    const score = Number(c.consistency_score) || 0;
+    const broken = Number(c.times_broken) || 0;
+    return broken >= 3 && score < 30;
+  });
+
+  if (brokenCommitments.length >= 2) {
+    patterns.push({
+      type: "fear_based_avoidance",
+      evidence: brokenCommitments.slice(0, 3).map(c => `"${c.description}" broken ${c.times_broken} times`),
+      frequency: brokenCommitments.length,
+      lastDetected: new Date(),
+      severity: brokenCommitments.length >= 3 ? "high" : "medium",
+    });
+  }
+
+  return patterns;
+}
+
+/**
+ * Generate follow-up questions based on commitments and patterns
+ */
+export async function generateFollowUpQuestions(
+  userId: string,
+  lifeContext: LifeContext
+): Promise<string[]> {
+  const questions: string[] = [];
+
+  // Follow up on overdue tasks
+  const overdueTasks = lifeContext.accountabilityItems.filter(
+    item => item.type === "task" && item.status === "overdue"
+  );
+
+  if (overdueTasks.length > 0) {
+    const task = overdueTasks[0];
+    questions.push(
+      `You mentioned wanting to ${task.description}${task.daysOverdue ? ` ${task.daysOverdue} days ago` : ""}. What blocked progress?`
+    );
+  }
+
+  // Follow up on missed commitments
+  const missedCommitments = lifeContext.accountabilityItems.filter(
+    item => item.type === "commitment" && item.status === "missed"
+  );
+
+  if (missedCommitments.length > 0 && questions.length < 2) {
+    questions.push(
+      `You've missed some commitments recently. What's making it hard to follow through?`
+    );
+  }
+
+  // Detect patterns and generate questions
+  const patterns = await detectAccountabilityPatterns(userId);
+  
+  for (const pattern of patterns) {
+    if (pattern.severity === "high" && questions.length < 3) {
+      switch (pattern.type) {
+        case "procrastination":
+          questions.push("You seem to shift into planning mode whenever execution becomes uncomfortable. What's really holding you back?");
+          break;
+        case "overplanning":
+          questions.push("You've spent more time creating plans than completing them. What would it take to just start?");
+          break;
+        case "perfectionism":
+          questions.push("You keep refining instead of shipping. What would 'good enough' look like here?");
+          break;
+        case "idea_switching":
+          questions.push("You've started several things without finishing. What makes you jump to the next idea?");
+          break;
+        case "fear_based_avoidance":
+          questions.push("You keep avoiding this commitment. What are you afraid will happen if you do it?");
+          break;
+      }
+    }
+  }
+
+  return questions.slice(0, 3); // Maximum 3 follow-up questions
+}
+
+/**
  * Record an accountability event (follow-through or miss)
  */
 export async function recordAccountabilityEvent(params: {

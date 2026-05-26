@@ -19,6 +19,178 @@ import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine
 import { formatLifeContextForPrompt } from "./accountability-engine";
 
 /**
+ * Build context confidence alert based on what we know about the user
+ * This is critical for preventing hallucinated plans and fake personalization
+ */
+function buildContextConfidenceAlert(ctx: PipelineContext): string {
+  const { contextRichness, lifeContext } = ctx;
+  
+  if (contextRichness.level === "LOW") {
+    const goalsCount = lifeContext?.activeGoals?.length || 0;
+    const tasksCount = lifeContext?.pendingTasks?.length || 0;
+    const commitmentsCount = lifeContext?.activeCommitments?.length || 0;
+    
+    const missingInfo: string[] = [];
+    if (!contextRichness.hasGoals) missingInfo.push("goals");
+    if (!contextRichness.hasCommitments) missingInfo.push("commitments");
+    if (!contextRichness.hasTasks) missingInfo.push("tasks");
+    
+    return `## ⚠️ CONTEXT CONFIDENCE: LOW
+
+CRITICAL SITUATION: You have INSUFFICIENT context about this user.
+
+What you know:
+- ${goalsCount} goal(s)
+- ${tasksCount} task(s)
+- ${commitmentsCount} commitment(s)
+
+Missing: ${missingInfo.join(", ")}
+
+STRICT RULES — NEVER VIOLATE:
+1. DO NOT invent goals, routines, projects, or plans
+2. DO NOT assume they're a founder/student/entrepreneur unless they said so
+3. DO NOT generate schedules with made-up tasks like:
+   - "Work on your SaaS MVP"
+   - "Send outreach emails"
+   - "Deep work on landing page"
+   - "Morning workout routine"
+4. DO NOT create detailed plans without knowing their priorities
+
+WHAT TO DO INSTEAD:
+- Ask strategic clarification questions
+- Example: "What are the main things you're trying to move forward right now?"
+- Example: "What matters most to you currently?"
+- Gather context naturally through conversation
+- Extract information progressively
+
+If they ask "Plan my day":
+DO NOT respond with: "Here's your plan: 1. Work on MVP 2. Send emails..."
+DO respond with: "I can help structure your day well, but I want to make sure it actually fits your priorities. What are the main things you're trying to move forward right now?"
+
+Trust is built by ASKING, not ASSUMING.
+This is the MOST IMPORTANT RULE in the entire system.`;
+  }
+  
+  if (contextRichness.level === "MODERATE") {
+    const goalsCount = lifeContext?.activeGoals?.length || 0;
+    const tasksCount = lifeContext?.pendingTasks?.length || 0;
+    const commitmentsCount = lifeContext?.activeCommitments?.length || 0;
+    
+    return `## ⚠️ CONTEXT CONFIDENCE: MODERATE
+
+You have SOME context about this user, but not comprehensive understanding.
+
+What you know:
+- ${goalsCount} goal(s)
+- ${tasksCount} task(s)  
+- ${commitmentsCount} commitment(s)
+
+RULES FOR MODERATE CONTEXT:
+1. You CAN reference the specific goals/tasks/commitments you know about
+2. You MUST verify assumptions before giving detailed advice
+3. If they ask for plans, use ONLY their known goals/tasks
+4. If they mention something new, confirm before treating it as established
+5. Ask clarifying questions when you need more detail
+
+Example:
+- User: "Plan my day"
+- Good response: "Based on your goal to [specific known goal], here's what would make sense: [tasks from their actual task list]. Is there anything else you need to prioritize today?"
+
+You have enough to be useful, but be careful not to overextend beyond what you actually know.`;
+  }
+  
+  if (contextRichness.level === "HIGH") {
+    const goalsCount = lifeContext?.activeGoals?.length || 0;
+    const tasksCount = lifeContext?.pendingTasks?.length || 0;
+    const commitmentsCount = lifeContext?.activeCommitments?.length || 0;
+    const momentum = lifeContext?.momentumScore || 50;
+    
+    return `## ✅ CONTEXT CONFIDENCE: HIGH
+
+You have RICH context about this user's life.
+
+What you know:
+- ${goalsCount} active goal(s)
+- ${tasksCount} pending task(s)
+- ${commitmentsCount} active commitment(s)
+- Momentum score: ${momentum}/100
+
+YOUR ADVANTAGE:
+- You can provide deeply personalized guidance
+- Reference specific goals and commitments naturally
+- Follow up on accountability items
+- Generate plans grounded in THEIR actual priorities
+- Detect patterns in their behavior over time
+
+USE THIS CONTEXT:
+- Don't just acknowledge their goals — weave them into your responses
+- Call out when they're avoiding commitments
+- Connect current challenges to past patterns
+- Make strategic recommendations based on their trajectory
+
+This is what makes you different from a generic chatbot.
+This is when you deliver the most value — be strategic, be personal, be accountable.`;
+  }
+  
+  return "";
+}
+
+/**
+ * Validate if we have sufficient context for planning/scheduling requests
+ */
+export function validateSufficientContext(
+  lifeContext: PipelineContext["lifeContext"],
+  userMessage: string
+): {
+  sufficient: boolean;
+  missingInfo: string[];
+  shouldAsk: boolean;
+  suggestedQuestions?: string[];
+} {
+  const planningKeywords = [
+    "plan my day",
+    "plan my week", 
+    "schedule",
+    "what should i do today",
+    "help me prioritize",
+    "daily plan",
+    "weekly plan"
+  ];
+  
+  const isPlanningRequest = planningKeywords.some(keyword => 
+    userMessage.toLowerCase().includes(keyword)
+  );
+  
+  if (!isPlanningRequest) {
+    return { sufficient: true, missingInfo: [], shouldAsk: false };
+  }
+  
+  const missingInfo: string[] = [];
+  const hasGoals = (lifeContext?.activeGoals?.length || 0) > 0;
+  const hasTasks = (lifeContext?.pendingTasks?.length || 0) > 0;
+  const hasCommitments = (lifeContext?.activeCommitments?.length || 0) > 0;
+  
+  if (!hasGoals) missingInfo.push("goals");
+  if (!hasCommitments) missingInfo.push("commitments");
+  
+  const sufficient = hasGoals && (hasTasks || hasCommitments);
+  const shouldAsk = !sufficient;
+  
+  const suggestedQuestions = shouldAsk ? [
+    "What are the main things you're trying to move forward right now?",
+    "What matters most to you currently?",
+    "What do you want to accomplish in the next few weeks?"
+  ] : undefined;
+  
+  return {
+    sufficient,
+    missingInfo,
+    shouldAsk,
+    suggestedQuestions
+  };
+}
+
+/**
  * Build the complete prompt messages array for the LLM
  */
 export function buildPrompt(
@@ -93,28 +265,9 @@ Use this naturally. Reference their goals and commitments when relevant. Follow 
     }
   }
 
-  // ===== CONTEXT AWARENESS (prevents hallucination) =====
-  if (ctx.contextRichness.level === "LOW") {
-    parts.push(`## ⚠ CONTEXT AWARENESS: LOW
-You do NOT have enough structured context about this person's goals, tasks, or commitments yet.
-
-CRITICAL RULES:
-- DO NOT invent goals, tasks, or plans for them
-- DO NOT generate schedules with tasks like "Deep Work on MVP" or "Outreach Emails" unless THEY specifically mentioned those
-- DO NOT assume they are a founder, student, or any specific role unless they told you
-- Instead: ask what they're working on, what matters to them, what they want to move forward
-- Your job right now is to LEARN about them, not to output plans
-
-If they ask you to plan their day, respond with:
-"I'd love to help structure your day — but first, what are the main things you're trying to move forward right now?"
-
-This is how trust is built — by asking before assuming.`);
-  } else if (ctx.contextRichness.level === "HIGH") {
-    parts.push(`## CONTEXT AWARENESS: HIGH
-You have rich context about this person's life — goals, tasks, commitments, relationships.
-USE IT. Reference specific goals, follow up on commitments, and make plans grounded in THEIR actual priorities.
-This is what makes you different from a generic chatbot.`);
-  }
+  // ===== CONTEXT CONFIDENCE SYSTEM (prevents hallucination) =====
+  const contextDetails = buildContextConfidenceAlert(ctx);
+  parts.push(contextDetails);
 
   // Emotional context — drives tone
   if (ctx.emotion) {

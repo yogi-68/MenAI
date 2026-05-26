@@ -17,6 +17,8 @@ import type { ExtractedLifeData } from "./types";
 const EMPTY_EXTRACTION: ExtractedLifeData = {
   goals: [],
   commitments: [],
+  identitySignals: [],
+  executionPatterns: [],
   relationships: [],
   habits: [],
   emotions: [],
@@ -54,6 +56,12 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
         : [],
       commitments: Array.isArray(parsed.commitments)
         ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number }) => (c.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        : [],
+      identitySignals: Array.isArray(parsed.identitySignals)
+        ? parsed.identitySignals.map(sanitizeIdentitySignal).filter((i: { confidence?: number }) => (i.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        : [],
+      executionPatterns: Array.isArray(parsed.executionPatterns)
+        ? parsed.executionPatterns.map(sanitizeExecutionPattern).filter((e: { confidence?: number }) => (e.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
         : [],
       relationships: Array.isArray(parsed.relationships) ? parsed.relationships.map(sanitizeRelationship) : [],
       habits: Array.isArray(parsed.habits) ? parsed.habits.map(sanitizeHabit) : [],
@@ -132,6 +140,62 @@ export async function persistExtractedData(
     }
   }
 
+  // Persist identity signals
+  if (data.identitySignals.length > 0) {
+    for (const signal of data.identitySignals) {
+      tasks.push(
+        supabase.from("identity_signals").insert({
+          user_id: userId,
+          type: signal.type,
+          description: signal.description,
+          long_term_direction: signal.longTermDirection,
+          confidence: signal.confidence,
+          extracted_from: conversationId,
+        }).then(() => {})
+      );
+    }
+  }
+
+  // Persist execution patterns (upsert by pattern type)
+  if (data.executionPatterns.length > 0) {
+    for (const pattern of data.executionPatterns) {
+      // Check if pattern already exists
+      const { data: existing } = await supabase
+        .from("execution_patterns")
+        .select("id, occurrences")
+        .eq("user_id", userId)
+        .eq("pattern", pattern.pattern)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        // Update existing pattern
+        tasks.push(
+          supabase.from("execution_patterns").update({
+            trigger: pattern.trigger || null,
+            frequency: pattern.frequency,
+            severity: pattern.severity,
+            behavioral_impact: pattern.behavioralImpact,
+            confidence: pattern.confidence,
+            last_detected: new Date().toISOString(),
+            occurrences: (existing[0].occurrences || 0) + 1,
+          }).eq("id", existing[0].id).then(() => {})
+        );
+      } else {
+        tasks.push(
+          supabase.from("execution_patterns").insert({
+            user_id: userId,
+            pattern: pattern.pattern,
+            trigger: pattern.trigger || null,
+            frequency: pattern.frequency,
+            severity: pattern.severity,
+            behavioral_impact: pattern.behavioralImpact,
+            confidence: pattern.confidence,
+          }).then(() => {})
+        );
+      }
+    }
+  }
+
   // Persist relationships (upsert by name)
   if (data.relationships.length > 0) {
     for (const rel of data.relationships) {
@@ -175,6 +239,8 @@ export function hasExtractedData(data: ExtractedLifeData): boolean {
   return (
     data.goals.length > 0 ||
     data.commitments.length > 0 ||
+    data.identitySignals.length > 0 ||
+    data.executionPatterns.length > 0 ||
     data.relationships.length > 0 ||
     data.projects.length > 0 ||
     data.blockers.length > 0
@@ -241,4 +307,30 @@ function sanitizeProject(project: Record<string, unknown>) {
     context: project.context ? String(project.context).slice(0, 300) : undefined,
     confidence: typeof project.confidence === "number" ? project.confidence : 0.8,
   } as ExtractedLifeData["projects"][number] & { confidence: number };
+}
+
+function sanitizeIdentitySignal(signal: Record<string, unknown>) {
+  const validTypes = ["founder", "creator", "self-discipline", "leadership", "other"];
+  return {
+    type: validTypes.includes(String(signal.type)) ? String(signal.type) : "other",
+    description: String(signal.description || "").slice(0, 300),
+    longTermDirection: String(signal.longTermDirection || "").slice(0, 200),
+    confidence: typeof signal.confidence === "number" ? signal.confidence : 0.8,
+    extractedFrom: signal.extractedFrom ? String(signal.extractedFrom) : undefined,
+  } as ExtractedLifeData["identitySignals"][number];
+}
+
+function sanitizeExecutionPattern(pattern: Record<string, unknown>) {
+  const validPatterns = ["burnout", "procrastination", "avoidance", "perfectionism", "scattered_focus", "inconsistency", "overthinking"];
+  const validFrequencies = ["rare", "occasional", "frequent", "constant"];
+  const validSeverities = ["low", "medium", "high"];
+  return {
+    pattern: validPatterns.includes(String(pattern.pattern)) ? String(pattern.pattern) : "procrastination",
+    trigger: pattern.trigger ? String(pattern.trigger).slice(0, 200) : undefined,
+    frequency: validFrequencies.includes(String(pattern.frequency)) ? String(pattern.frequency) : "occasional",
+    severity: validSeverities.includes(String(pattern.severity)) ? String(pattern.severity) : "medium",
+    behavioralImpact: String(pattern.behavioralImpact || "").slice(0, 300),
+    confidence: typeof pattern.confidence === "number" ? pattern.confidence : 0.8,
+    extractedFrom: pattern.extractedFrom ? String(pattern.extractedFrom) : undefined,
+  } as ExtractedLifeData["executionPatterns"][number];
 }

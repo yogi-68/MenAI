@@ -24,6 +24,7 @@ import { getMemoryContext, storeMemory, summarizeConversation, compressMemories 
 import { selectModel, callLLM, callLLMStreaming } from "./router";
 import { buildPrompt } from "./prompt-builder";
 import { validateResponse } from "./response-validator";
+import { validateResponseStyle } from "./style-validator";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { getLifeContext } from "./accountability-engine";
 import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext, ContextRichness } from "./types";
@@ -253,7 +254,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
 
   // ===== STEP 8: Build Prompt & Call LLM =====
   const promptMessages = buildPrompt(ctx);
-  const llmResult = await callLLM(promptMessages, modelConfig);
+  let llmResult = await callLLM(promptMessages, modelConfig);
 
   // ===== STEP 9: Validate Response =====
   const validated = validateResponse(llmResult.content, {
@@ -265,12 +266,56 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     console.warn("Response validation flags:", validated.flags);
   }
 
+  // ===== STEP 9b: Style Validation with Regeneration =====
+  const styleValidation = validateResponseStyle(validated.content, {
+    lifeContext,
+    contextRichness,
+    userMessage: input.message,
+  });
+
+  // If style validation fails badly, regenerate with feedback
+  if (styleValidation.shouldRegenerate && styleValidation.feedback) {
+    console.warn("Style validation failed, regenerating:", {
+      score: styleValidation.score,
+      violations: styleValidation.violations,
+    });
+
+    // Add regeneration instructions to the prompt
+    const regenerationMessages = [
+      ...promptMessages,
+      { role: "assistant" as const, content: validated.content },
+      { role: "user" as const, content: styleValidation.feedback },
+    ];
+
+    // Regenerate
+    llmResult = await callLLM(regenerationMessages, modelConfig);
+    
+    // Validate again (no second regeneration to avoid loops)
+    const revalidated = validateResponse(llmResult.content, {
+      crisisMode: safety.level !== "safe",
+      emotionIntensity: emotion.intensity,
+    });
+    
+    llmResult.content = revalidated.content;
+  }
+
+  // Log context confidence
+  await serviceClient.from("context_confidence_log").insert({
+    user_id: input.userId,
+    conversation_id: conversationId,
+    richness_level: contextRichness.level,
+    goals_count: lifeContext?.activeGoals?.length || 0,
+    tasks_count: lifeContext?.pendingTasks?.length || 0,
+    commitments_count: lifeContext?.activeCommitments?.length || 0,
+    sufficient_for_planning: styleValidation.score >= 70,
+  }).catch(() => {});
+
   // ===== STEP 10: Save AI Response =====
   await serviceClient.from("messages").insert({
     conversation_id: conversationId,
     user_id: input.userId,
     role: "assistant",
-    content: validated.content,
+    content: llmResult.content,
     emotion_data: emotion,
     token_count: llmResult.tokensUsed,
   });
@@ -331,7 +376,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   }
 
   return {
-    response: validated.content,
+    response: llmResult.content,
     conversationId,
     crisis: false,
     emotion,
@@ -602,6 +647,34 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           crisisMode: safety.level !== "safe",
           emotionIntensity: emotion.intensity,
         });
+
+        // Style validation (monitoring only for streaming - can't regenerate after stream)
+        const styleValidation = validateResponseStyle(validated.content, {
+          lifeContext,
+          contextRichness,
+          userMessage: input.message,
+        });
+
+        if (!styleValidation.valid) {
+          console.warn("Style validation issues detected:", {
+            score: styleValidation.score,
+            violations: styleValidation.violations,
+            conversationId,
+          });
+          
+          // Log to database for monitoring
+          Promise.resolve(
+            serviceClient.from("context_confidence_log").insert({
+              user_id: input.userId,
+              conversation_id: conversationId,
+              richness_level: contextRichness.level,
+              goals_count: lifeContext?.activeGoals?.length || 0,
+              tasks_count: lifeContext?.pendingTasks?.length || 0,
+              commitments_count: lifeContext?.activeCommitments?.length || 0,
+              sufficient_for_planning: styleValidation.score >= 70,
+            })
+          ).catch(() => {});
+        }
 
         Promise.resolve(
           serviceClient.from("messages").insert({
