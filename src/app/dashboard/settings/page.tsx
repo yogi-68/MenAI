@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
-import { Settings, CheckCircle, ChevronDown } from "lucide-react";
+import { Settings, CheckCircle, ChevronDown, Sun, Moon } from "lucide-react";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [founderMode, setFounderMode] = useState(false);
   const [coachingStyle, setCoachingStyle] = useState("balanced");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -36,6 +37,11 @@ export default function SettingsPage() {
         setFounderMode(profile.founder_mode || false);
         setCoachingStyle(profile.coaching_style || "balanced");
       }
+      
+      // Load theme from localStorage
+      const savedTheme = localStorage.getItem("menai-theme") as "light" | "dark" | null;
+      setTheme(savedTheme || "light");
+      
       setLoading(false);
     };
 
@@ -82,6 +88,18 @@ export default function SettingsPage() {
     }
   };
 
+  const toggleTheme = () => {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    localStorage.setItem("menai-theme", newTheme);
+    
+    if (newTheme === "light") {
+      document.documentElement.classList.add("light");
+    } else {
+      document.documentElement.classList.remove("light");
+    }
+  };
+
   // Map internal values to display labels
   const coachingOptions = [
     { value: "gentle", label: "Supportive" },
@@ -114,6 +132,44 @@ export default function SettingsPage() {
       {/* Main Form */}
       <form onSubmit={handleSave} className="animate-slide-up" style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
         
+        {/* Section 0 — Theme Toggle */}
+        <div className="glass-card" style={{ padding: "28px" }}>
+          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
+            Theme
+          </label>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.4 }}>
+            Switch between light and dark mode.
+          </p>
+          
+          <button
+            type="button"
+            onClick={toggleTheme}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "14px 18px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--bg-glass)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: "0.9rem",
+              fontWeight: 500,
+              transition: "all 0.2s ease",
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {theme === "light" ? <Sun size={18} /> : <Moon size={18} />}
+              {theme === "light" ? "Light Mode" : "Dark Mode"}
+            </span>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              Click to toggle
+            </span>
+          </button>
+        </div>
+
         {/* Section 1 — Profile */}
         <div className="glass-card" style={{ padding: "28px" }}>
           <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "8px" }}>

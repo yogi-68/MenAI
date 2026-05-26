@@ -67,6 +67,7 @@ interface AppState {
   setCurrentConversationId: (id: string | null) => void;
   
   conversationStates: Record<string, ConversationState>;
+  clearConversationState: (conversationId: string) => void;
   
   // Actions for the ACTIVE conversation
   setMessages: (conversationId: string, msgs: Message[]) => void;
@@ -110,6 +111,12 @@ export const useAppStore = create<AppState>()(
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
       
       conversationStates: {},
+      
+      clearConversationState: (conversationId) => set((state) => {
+        const newStates = { ...state.conversationStates };
+        delete newStates[conversationId];
+        return { conversationStates: newStates };
+      }),
 
       setMessages: (conversationId, msgs) => set((state) => ({
         conversationStates: {

@@ -38,6 +38,7 @@ export default function ChatPage() {
     setCurrentConversationId,
     setIsAiTyping,
     setCrisisAlert,
+    clearConversationState,
   } = useAppStore();
   
   const queryClient = useQueryClient();
@@ -73,20 +74,23 @@ export default function ChatPage() {
   };
 
   const loadConversation = useCallback(async (convId: string) => {
-    // Only load if we don't have it in state already (or to refresh)
-    const res = await fetch(`/api/conversations/${convId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setMessages(convId, 
-        (data.messages || []).map((m: Record<string, string>) => ({
+    try {
+      const res = await fetch(`/api/conversations/${convId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const loadedMessages = (data.messages || []).map((m: Record<string, string>) => ({
           id: m.id,
           role: m.role,
           content: m.content,
           created_at: m.created_at,
-        }))
-      );
-      setCurrentConversationId(convId);
-      setSidebarOpen(false);
+        }));
+        
+        setMessages(convId, loadedMessages);
+        setCurrentConversationId(convId);
+        setSidebarOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to load conversation:", error);
     }
   }, [setMessages, setCurrentConversationId]);
 
@@ -100,22 +104,34 @@ export default function ChatPage() {
     e.stopPropagation();
     if (!confirm("Delete this conversation? This cannot be undone.")) return;
 
-    const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
-    if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      if (currentConversationId === convId) {
-        startNewChat();
+    try {
+      const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
+      if (res.ok) {
+        // Remove from Zustand store
+        clearConversationState(convId);
+        
+        // Remove from query cache
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        
+        // If this was the active conversation, clear it
+        if (currentConversationId === convId) {
+          startNewChat();
+        }
       }
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+      alert("Failed to delete conversation. Please try again.");
     }
   };
 
   const sendMessage = async () => {
     if (!input.trim() || isAiTyping) return;
 
+    const messageText = input.trim();
     let targetConvId = currentConversationId;
+    
     if (!targetConvId) {
-      // If it's a new chat, generate a local ID for optimistic UI.
-      // A real ID will be assigned by the server response header.
+      // Generate temporary ID for new conversations
       targetConvId = crypto.randomUUID();
       setCurrentConversationId(targetConvId);
     }
@@ -123,10 +139,11 @@ export default function ChatPage() {
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input.trim(),
+      content: messageText,
       created_at: new Date().toISOString(),
     };
 
+    // Add message optimistically
     addMessage(targetConvId, userMessage);
     setInput("");
     setIsAiTyping(targetConvId, true);
@@ -141,7 +158,7 @@ export default function ChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: userMessage.content,
+          message: messageText,
           conversationId: currentConversationId,
         }),
       });
@@ -159,8 +176,9 @@ export default function ChatPage() {
 
       if (serverConvId && serverConvId !== targetConvId) {
         // Migration from optimistic ID to server ID
+        const currentMessages = conversationStates[targetConvId]?.messages || [];
         setCurrentConversationId(serverConvId);
-        setMessages(serverConvId, conversationStates[targetConvId]?.messages || []);
+        setMessages(serverConvId, currentMessages);
         targetConvId = serverConvId;
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
@@ -190,8 +208,12 @@ export default function ChatPage() {
       addMessage(targetConvId, aiMessage);
       updateStreamingContent(targetConvId, "");
       setIsAiTyping(targetConvId, false);
-    } catch {
-      // Fallback
+      
+      // Refresh conversations list
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    } catch (error) {
+      console.error("Chat error:", error);
+      
       const fallbackContent = "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?";
       const errorMessage: Message = {
         id: crypto.randomUUID(),
