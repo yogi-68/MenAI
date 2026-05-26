@@ -85,7 +85,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
     };
     console.log("[Extraction] Summary:", extractionSummary);
     if (result.goals.length > 0) {
-      console.log("[Extraction] Goals extracted:", result.goals.map(g => g.title));
+      console.log("[Extraction] Goals extracted:", result.goals.map((g: any) => g.title));
     }
 
     return result;
