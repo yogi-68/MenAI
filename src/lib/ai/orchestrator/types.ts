@@ -47,6 +47,17 @@ export interface ContextRichness {
   hasRelationships: boolean;
 }
 
+// ===== Inference Confidence (how much to trust each context source) =====
+export type InferenceType = "explicit" | "inferred" | "weakly_inferred";
+
+export interface InferenceConfidence {
+  goals: InferenceType;       // explicit if user stated goals, inferred from memory
+  identity: InferenceType;    // founder/creator signals
+  priorities: InferenceType;  // what matters most
+  patterns: InferenceType;    // execution patterns detected
+  overall: InferenceType;     // aggregate
+}
+
 // ===== LLM Tiers =====
 export type ModelTier = "cheap" | "standard" | "premium";
 
@@ -258,6 +269,19 @@ export interface LifeContext {
   momentumScore: number; // 0-100
 }
 
+// ===== Life Snapshot Cache (compact user operating state) =====
+export interface LifeSnapshot {
+  identity: string;                // "founder", "student", "executive", "creator", "unknown"
+  currentFocus: string;            // Primary thing they're working on
+  activeGoalTitles: string[];      // Just titles, not full objects
+  topPriority: string | null;      // Single most important thing
+  momentum: "rising" | "stable" | "declining" | "unknown";
+  dominantPattern: string | null;  // "overplanning", "procrastination", etc.
+  energyTrend: "high" | "moderate" | "low" | "unknown";
+  lastActiveAt: string;            // ISO timestamp
+  snapshotAge: number;             // minutes since last update
+}
+
 export interface AccountabilityItem {
   type: "commitment" | "task";
   description: string;
@@ -326,6 +350,8 @@ export interface PipelineContext {
   emotion: EmotionAnalysis;
   memory: MemoryContext;
   lifeContext?: LifeContext;
+  lifeSnapshot?: LifeSnapshot;
+  inferenceConfidence: InferenceConfidence;
   state: ConversationState;
   intent: UserIntent;
   contextRichness: ContextRichness;
