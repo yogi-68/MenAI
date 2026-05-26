@@ -44,8 +44,9 @@ export interface Message {
 
 export interface ConversationState {
   messages: Message[];
-  streamingContent: string;
-  isAiTyping: boolean;
+  // Streaming state - NOT persisted
+  streamingContent?: string;
+  isAiTyping?: boolean;
 }
 
 interface AppState {
@@ -86,8 +87,15 @@ interface AppState {
 
 const defaultConversationState: ConversationState = {
   messages: [],
+  // Streaming state defaults
   streamingContent: "",
   isAiTyping: false,
+};
+
+// Separate: what gets persisted vs what's ephemeral
+const persistedConversationState: ConversationState = {
+  messages: [],
+  // Don't persist streaming state
 };
 
 export const useAppStore = create<AppState>()(
@@ -130,12 +138,14 @@ export const useAppStore = create<AppState>()(
 
       addMessage: (conversationId, msg) => set((state) => {
         const convState = state.conversationStates[conversationId] || defaultConversationState;
+        // Immutable append - NEVER replace array
+        const newMessages = [...convState.messages, msg];
         return {
           conversationStates: {
             ...state.conversationStates,
             [conversationId]: {
               ...convState,
-              messages: [...convState.messages, msg],
+              messages: newMessages,
             }
           }
         };
@@ -174,7 +184,13 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
         conversations: state.conversations,
-        conversationStates: state.conversationStates,
+        // Only persist messages, NOT streaming state
+        conversationStates: Object.fromEntries(
+          Object.entries(state.conversationStates).map(([id, convState]) => [
+            id,
+            { messages: convState.messages }, // Only persist messages
+          ])
+        ),
       }),
     }
   )

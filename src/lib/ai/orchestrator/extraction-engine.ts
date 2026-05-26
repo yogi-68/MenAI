@@ -35,6 +35,7 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
 export async function extractLifeData(message: string): Promise<ExtractedLifeData> {
   // Skip extraction for very short or casual messages
   if (shouldSkipExtraction(message)) {
+    console.log("[Extraction] Skipped:", message.slice(0, 50));
     return EMPTY_EXTRACTION;
   }
 
@@ -44,13 +45,15 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
       message
     );
 
+    console.log("[Extraction] Raw LLM response:", raw.slice(0, 200));
+
     // Parse the JSON response
     const parsed = JSON.parse(raw);
 
     // Apply confidence filtering — only keep items above threshold
     const CONFIDENCE_THRESHOLD = 0.7;
 
-    return {
+    const result = {
       goals: Array.isArray(parsed.goals)
         ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number }) => (g.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
         : [],
@@ -71,8 +74,23 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
         : [],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers.filter((b: unknown) => typeof b === "string") : [],
     };
+
+    // Log extraction summary
+    const extractionSummary = {
+      goals: result.goals.length,
+      commitments: result.commitments.length,
+      identitySignals: result.identitySignals.length,
+      executionPatterns: result.executionPatterns.length,
+      projects: result.projects.length,
+    };
+    console.log("[Extraction] Summary:", extractionSummary);
+    if (result.goals.length > 0) {
+      console.log("[Extraction] Goals extracted:", result.goals.map(g => g.title));
+    }
+
+    return result;
   } catch (e) {
-    console.error("Extraction engine error:", e);
+    console.error("[Extraction] Error:", e);
     return EMPTY_EXTRACTION;
   }
 }

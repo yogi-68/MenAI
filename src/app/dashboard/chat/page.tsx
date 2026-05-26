@@ -44,13 +44,19 @@ export default function ChatPage() {
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Fix hydration: only render persisted state after client mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const activeState = currentConversationId ? conversationStates[currentConversationId] : null;
-  const messages = activeState?.messages || [];
-  const streamingContent = activeState?.streamingContent || "";
-  const isAiTyping = activeState?.isAiTyping || false;
+  const messages = mounted ? (activeState?.messages || []) : [];
+  const streamingContent = mounted ? (activeState?.streamingContent || "") : "";
+  const isAiTyping = mounted ? (activeState?.isAiTyping || false) : false;
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],

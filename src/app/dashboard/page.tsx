@@ -106,7 +106,9 @@ export default function DashboardOverview() {
   const generateCurrentDirection = () => {
     if (isLoading) return "Synthesizing current direction...";
     const goals = data?.goals || [];
-    if (goals.length === 0) return "Your direction is still forming. Conversations with MenAI will help clarify it.";
+    if (goals.length === 0) {
+      return "Your trajectory emerges through conversation. Share what you're working toward, and MenAI will help you maintain focus.";
+    }
     return `You are currently focusing on ${goals.map(g => g.title.toLowerCase()).join(", ")}.`;
   };
 
@@ -119,7 +121,7 @@ export default function DashboardOverview() {
     <div style={{ padding: "64px 48px", maxWidth: "1000px", margin: "0 auto", width: "100%" }}>
       {/* ===== HEADER ===== */}
       <div className="animate-fade-in" style={{ marginBottom: "64px" }}>
-        <h1 style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em" }}>
+        <h1 suppressHydrationWarning style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em" }}>
           {greeting()}, {user?.full_name?.split(" ")[0] || "there"}.
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem", marginTop: "8px", fontWeight: 300 }}>
@@ -159,7 +161,7 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.6, fontWeight: 300 }}>
-                MenAI is quietly observing your patterns. Insights will appear as you interact more.
+                Patterns emerge through sustained interaction. Keep engaging, and insights will crystallize here.
               </p>
             )}
           </section>
@@ -194,7 +196,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300 }}>
-                No active focus defined. The space is clear.
+                No active tasks yet. Define your focus in conversation, and execution items will appear here.
               </p>
             )}
           </section>
@@ -222,7 +224,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300 }}>
-                No active commitments. When you're ready, state them in your conversations.
+                No commitments tracked. Declare what you're committing to, and MenAI will hold the space for it.
               </p>
             )}
           </section>
@@ -246,7 +248,7 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.6, fontWeight: 300 }}>
-                A synthesis of your journey over time will appear here.
+                Reflections emerge from sustained dialogue. Share your journey, and deeper synthesis will appear here.
               </p>
             )}
           </section>
@@ -259,7 +261,7 @@ export default function DashboardOverview() {
               </h2>
             </div>
             <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, fontWeight: 300, flex: 1 }}>
-              Based on your current trajectory, continue exploring your direction with MenAI.
+              Continue deepening your trajectory through conversation. The system learns and adapts as you engage.
             </p>
             <Link 
               href="/dashboard/chat" 
