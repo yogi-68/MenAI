@@ -196,7 +196,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
       .eq("id", input.userId)
       .single(),
     getLifeContext(input.userId).catch(() => null),
-    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [] })),
+    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [], identitySignals: [], executionPatterns: [] })),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -299,16 +299,20 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     llmResult.content = revalidated.content;
   }
 
-  // Log context confidence
-  await serviceClient.from("context_confidence_log").insert({
-    user_id: input.userId,
-    conversation_id: conversationId,
-    richness_level: contextRichness.level,
-    goals_count: lifeContext?.activeGoals?.length || 0,
-    tasks_count: lifeContext?.pendingTasks?.length || 0,
-    commitments_count: lifeContext?.activeCommitments?.length || 0,
-    sufficient_for_planning: styleValidation.score >= 70,
-  }).catch(() => {});
+  // Log context confidence (fire-and-forget, non-critical)
+  try {
+    await serviceClient.from("context_confidence_log").insert({
+      user_id: input.userId,
+      conversation_id: conversationId,
+      richness_level: contextRichness.level,
+      goals_count: lifeContext?.activeGoals?.length || 0,
+      tasks_count: lifeContext?.pendingTasks?.length || 0,
+      commitments_count: lifeContext?.activeCommitments?.length || 0,
+      sufficient_for_planning: styleValidation.score >= 70,
+    });
+  } catch {
+    // Non-critical logging — silently ignore
+  }
 
   // ===== STEP 10: Save AI Response =====
   await serviceClient.from("messages").insert({
@@ -353,7 +357,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
         memoryType: extractedData.goals.length > 0 ? "goal" : "commitment",
         importance: 0.85,
         metadata: { conversation_id: conversationId, type: "extraction" },
-      }).catch(() => {});
+      }).catch(() => { /* non-critical */ });
     }
   }
 
@@ -569,7 +573,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
       .eq("id", input.userId)
       .single(),
     getLifeContext(input.userId).catch(() => null),
-    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [] })),
+    extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [], identitySignals: [], executionPatterns: [] })),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
