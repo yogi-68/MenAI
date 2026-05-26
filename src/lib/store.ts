@@ -1,7 +1,21 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
+import { persist, StateStorage, createJSONStorage } from "zustand/middleware";
+import { get, set, del } from "idb-keyval";
 
-interface UserProfile {
+// IndexedDB storage implementation for Zustand
+const idbStorage: StateStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    return (await get(name)) || null;
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    await set(name, value);
+  },
+  removeItem: async (name: string): Promise<void> => {
+    await del(name);
+  },
+};
+
+export interface UserProfile {
   id: string;
   full_name: string;
   avatar_url: string;
@@ -10,7 +24,7 @@ interface UserProfile {
   onboarding_completed: boolean;
 }
 
-interface Conversation {
+export interface Conversation {
   id: string;
   title: string;
   summary: string;
@@ -19,13 +33,19 @@ interface Conversation {
   message_count: number;
 }
 
-interface Message {
+export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
   emotion_data?: Record<string, unknown>;
   crisis?: boolean;
+}
+
+export interface ConversationState {
+  messages: Message[];
+  streamingContent: string;
+  isAiTyping: boolean;
 }
 
 interface AppState {
@@ -38,28 +58,36 @@ interface AppState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 
-  // Chat - PERSISTED STATE
-  currentConversationId: string | null;
+  // Global Chat State
   conversations: Conversation[];
-  messages: Message[];
-  streamingContent: string;
-  isAiTyping: boolean;
-  crisisAlert: boolean;
-  
-  // Chat Actions
-  setCurrentConversationId: (id: string | null) => void;
   setConversations: (convs: Conversation[]) => void;
-  setMessages: (msgs: Message[]) => void;
-  addMessage: (msg: Message) => void;
-  updateStreamingContent: (content: string) => void;
-  setIsAiTyping: (typing: boolean) => void;
+  
+  // Isolated Conversation States
+  currentConversationId: string | null;
+  setCurrentConversationId: (id: string | null) => void;
+  
+  conversationStates: Record<string, ConversationState>;
+  
+  // Actions for the ACTIVE conversation
+  setMessages: (conversationId: string, msgs: Message[]) => void;
+  addMessage: (conversationId: string, msg: Message) => void;
+  updateStreamingContent: (conversationId: string, content: string) => void;
+  setIsAiTyping: (conversationId: string, typing: boolean) => void;
+  
+  // Legacy global alert
+  crisisAlert: boolean;
   setCrisisAlert: (crisis: boolean) => void;
-  clearChat: () => void;
 
   // UI
   activeView: string;
   setActiveView: (view: string) => void;
 }
+
+const defaultConversationState: ConversationState = {
+  messages: [],
+  streamingContent: "",
+  isAiTyping: false,
+};
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -73,40 +101,73 @@ export const useAppStore = create<AppState>()(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-      // Chat - PERSISTED
-      currentConversationId: null,
+      // Global Chat State
       conversations: [],
-      messages: [],
-      streamingContent: "",
-      isAiTyping: false,
-      crisisAlert: false,
-      
-      setCurrentConversationId: (id) => set({ currentConversationId: id }),
       setConversations: (convs) => set({ conversations: convs }),
-      setMessages: (msgs) => set({ messages: msgs }),
-      addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
-      updateStreamingContent: (content) => set({ streamingContent: content }),
-      setIsAiTyping: (typing) => set({ isAiTyping: typing }),
-      setCrisisAlert: (crisis) => set({ crisisAlert: crisis }),
-      clearChat: () => set({ 
-        messages: [], 
-        currentConversationId: null, 
-        streamingContent: "", 
-        crisisAlert: false 
+
+      // Isolated Conversation States
+      currentConversationId: null,
+      setCurrentConversationId: (id) => set({ currentConversationId: id }),
+      
+      conversationStates: {},
+
+      setMessages: (conversationId, msgs) => set((state) => ({
+        conversationStates: {
+          ...state.conversationStates,
+          [conversationId]: {
+            ...(state.conversationStates[conversationId] || defaultConversationState),
+            messages: msgs,
+          }
+        }
+      })),
+
+      addMessage: (conversationId, msg) => set((state) => {
+        const convState = state.conversationStates[conversationId] || defaultConversationState;
+        return {
+          conversationStates: {
+            ...state.conversationStates,
+            [conversationId]: {
+              ...convState,
+              messages: [...convState.messages, msg],
+            }
+          }
+        };
       }),
+
+      updateStreamingContent: (conversationId, content) => set((state) => ({
+        conversationStates: {
+          ...state.conversationStates,
+          [conversationId]: {
+            ...(state.conversationStates[conversationId] || defaultConversationState),
+            streamingContent: content,
+          }
+        }
+      })),
+
+      setIsAiTyping: (conversationId, typing) => set((state) => ({
+        conversationStates: {
+          ...state.conversationStates,
+          [conversationId]: {
+            ...(state.conversationStates[conversationId] || defaultConversationState),
+            isAiTyping: typing,
+          }
+        }
+      })),
+
+      crisisAlert: false,
+      setCrisisAlert: (crisis) => set({ crisisAlert: crisis }),
 
       // UI
       activeView: "chat",
       setActiveView: (view) => set({ activeView: view }),
     }),
     {
-      name: "menai-chat-storage", // localStorage key
-      storage: createJSONStorage(() => localStorage),
-      // Only persist chat-related state
+      name: "menai-db-storage", // IDB key
+      storage: createJSONStorage(() => idbStorage),
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
-        messages: state.messages,
         conversations: state.conversations,
+        conversationStates: state.conversationStates,
       }),
     }
   )

@@ -29,8 +29,7 @@ interface Message {
 export default function ChatPage() {
   const { 
     user,
-    messages,
-    streamingContent,
+    conversationStates,
     currentConversationId,
     crisisAlert,
     setMessages,
@@ -39,15 +38,18 @@ export default function ChatPage() {
     setCurrentConversationId,
     setIsAiTyping,
     setCrisisAlert,
-    clearChat,
   } = useAppStore();
   
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const activeState = currentConversationId ? conversationStates[currentConversationId] : null;
+  const messages = activeState?.messages || [];
+  const streamingContent = activeState?.streamingContent || "";
+  const isAiTyping = activeState?.isAiTyping || false;
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["conversations"],
@@ -71,10 +73,11 @@ export default function ChatPage() {
   };
 
   const loadConversation = useCallback(async (convId: string) => {
+    // Only load if we don't have it in state already (or to refresh)
     const res = await fetch(`/api/conversations/${convId}`);
     if (res.ok) {
       const data = await res.json();
-      setMessages(
+      setMessages(convId, 
         (data.messages || []).map((m: Record<string, string>) => ({
           id: m.id,
           role: m.role,
@@ -88,7 +91,7 @@ export default function ChatPage() {
   }, [setMessages, setCurrentConversationId]);
 
   const startNewChat = () => {
-    clearChat();
+    setCurrentConversationId(null);
     setInput("");
     setSidebarOpen(false);
   };
@@ -107,7 +110,15 @@ export default function ChatPage() {
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || isAiTyping) return;
+
+    let targetConvId = currentConversationId;
+    if (!targetConvId) {
+      // If it's a new chat, generate a local ID for optimistic UI.
+      // A real ID will be assigned by the server response header.
+      targetConvId = crypto.randomUUID();
+      setCurrentConversationId(targetConvId);
+    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -116,12 +127,10 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically add user message to store
-    addMessage(userMessage);
+    addMessage(targetConvId, userMessage);
     setInput("");
-    setLoading(true);
-    setIsAiTyping(true);
-    updateStreamingContent("");
+    setIsAiTyping(targetConvId, true);
+    updateStreamingContent(targetConvId, "");
 
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
@@ -141,15 +150,18 @@ export default function ChatPage() {
         throw new Error("Chat request failed");
       }
 
-      const newConvId = res.headers.get("X-Conversation-Id");
+      const serverConvId = res.headers.get("X-Conversation-Id");
       const isCrisis = res.headers.get("X-Crisis") === "true";
 
       if (isCrisis) {
         setCrisisAlert(true);
       }
 
-      if (newConvId && !currentConversationId) {
-        setCurrentConversationId(newConvId);
+      if (serverConvId && serverConvId !== targetConvId) {
+        // Migration from optimistic ID to server ID
+        setCurrentConversationId(serverConvId);
+        setMessages(serverConvId, conversationStates[targetConvId]?.messages || []);
+        targetConvId = serverConvId;
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
 
@@ -164,7 +176,7 @@ export default function ChatPage() {
         if (done) break;
         const text = decoder.decode(value, { stream: true });
         accumulated += text;
-        updateStreamingContent(accumulated);
+        updateStreamingContent(targetConvId, accumulated);
       }
 
       const aiMessage: Message = {
@@ -175,36 +187,21 @@ export default function ChatPage() {
         crisis: isCrisis,
       };
 
-      addMessage(aiMessage);
-      updateStreamingContent("");
-      setIsAiTyping(false);
+      addMessage(targetConvId, aiMessage);
+      updateStreamingContent(targetConvId, "");
+      setIsAiTyping(targetConvId, false);
     } catch {
-      // Context-aware fallback — NEVER expose internal errors
-      const lastUserMsg = input.trim().toLowerCase();
-      let fallbackContent = "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?";
-
-      // Generate context-sensitive fallback based on what user said
-      if (/plan my (day|week)/i.test(lastUserMsg)) {
-        fallbackContent = "I'd love to help you plan. What are the main things you want to move forward today?";
-      } else if (/i (want|need) to (build|create|start|launch)/i.test(lastUserMsg)) {
-        fallbackContent = "That sounds like something that's been sitting seriously on your mind. Are you still exploring ideas, or do you already have something specific you want to build?";
-      } else if (/i('m| am) (stuck|lost|confused)/i.test(lastUserMsg)) {
-        fallbackContent = "Being stuck usually means you're at the edge of something new. What's the thing that feels most unclear right now?";
-      } else if (/i('m| am) (tired|exhausted|burned out)/i.test(lastUserMsg)) {
-        fallbackContent = "That kind of tiredness isn't just physical. What's been draining you the most?";
-      }
-
+      // Fallback
+      const fallbackContent = "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?";
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: fallbackContent,
         created_at: new Date().toISOString(),
       };
-      addMessage(errorMessage);
-      updateStreamingContent("");
-      setIsAiTyping(false);
-    } finally {
-      setLoading(false);
+      addMessage(targetConvId, errorMessage);
+      updateStreamingContent(targetConvId, "");
+      setIsAiTyping(targetConvId, false);
     }
   };
 
@@ -216,15 +213,15 @@ export default function ChatPage() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh", position: "relative" }}>
+    <div style={{ display: "flex", height: "100vh", position: "relative", width: "100%" }}>
       {/* Mobile sidebar toggle */}
       <button
         onClick={() => setSidebarOpen(true)}
         className="chat-sidebar-toggle"
         style={{
           position: "absolute",
-          top: "12px",
-          left: "12px",
+          top: "16px",
+          left: "16px",
           zIndex: 20,
           background: "var(--bg-glass)",
           border: "1px solid var(--border-color)",
@@ -257,17 +254,17 @@ export default function ChatPage() {
       <div
         className="chat-sidebar"
         style={{
-          width: "260px",
+          width: "280px",
           borderRight: "1px solid var(--border-color)",
           background: "var(--bg-secondary)",
           display: "flex",
           flexDirection: "column",
-          padding: "16px",
+          padding: "24px 16px",
           overflowY: "auto",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
           <button
             onClick={startNewChat}
             style={{
@@ -288,7 +285,7 @@ export default function ChatPage() {
             }}
           >
             <Plus size={18} />
-            New Conversation
+            New Thread
           </button>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -307,8 +304,8 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-          Recent Chats
+        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Threads
         </div>
 
         {conversations.map((conv: { id: string; title: string; updated_at: string }) => (
@@ -318,30 +315,27 @@ export default function ChatPage() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "8px",
-              padding: "10px 12px",
+              gap: "10px",
+              padding: "12px 14px",
               borderRadius: "var(--radius-md)",
               cursor: "pointer",
-              marginBottom: "4px",
+              marginBottom: "6px",
               transition: "all 0.2s",
-              background: currentConversationId === conv.id ? "rgba(124, 92, 252, 0.1)" : "transparent",
+              background: currentConversationId === conv.id ? "rgba(255, 255, 255, 0.04)" : "transparent",
             }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: "0.85rem",
-                  fontWeight: currentConversationId === conv.id ? 600 : 400,
+                  fontSize: "0.9rem",
+                  fontWeight: currentConversationId === conv.id ? 500 : 400,
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  color: currentConversationId === conv.id ? "var(--accent-primary)" : "var(--text-secondary)",
+                  color: currentConversationId === conv.id ? "var(--text-primary)" : "var(--text-secondary)",
                 }}
               >
                 {conv.title || "Untitled"}
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                {formatTime(conv.updated_at)}
               </div>
             </div>
             <button
@@ -354,12 +348,11 @@ export default function ChatPage() {
                 cursor: "pointer",
                 padding: "4px",
                 borderRadius: "4px",
-                opacity: 0.4,
+                opacity: 0,
                 transition: "all 0.2s",
                 flexShrink: 0,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.color = "var(--accent-tertiary)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; e.currentTarget.style.color = "var(--text-muted)"; }}
+              className="delete-conv-btn"
             >
               <Trash2 size={14} />
             </button>
@@ -367,10 +360,9 @@ export default function ChatPage() {
         ))}
 
         {conversations.length === 0 && (
-          <div style={{ textAlign: "center", padding: "24px", color: "var(--text-muted)", fontSize: "0.85rem" }}>
-            <MessageSquare size={24} style={{ opacity: 0.3, marginBottom: "8px" }} />
-            <p>No conversations yet.</p>
-            <p>Start chatting!</p>
+          <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)", fontSize: "0.9rem" }}>
+            <MessageSquare size={24} style={{ opacity: 0.3, marginBottom: "12px" }} />
+            <p>No threads yet.</p>
           </div>
         )}
       </div>
@@ -381,7 +373,7 @@ export default function ChatPage() {
         {crisisAlert && (
           <div
             style={{
-              padding: "12px 20px",
+              padding: "12px 24px",
               background: "rgba(252, 92, 156, 0.1)",
               borderBottom: "1px solid rgba(252, 92, 156, 0.2)",
               display: "flex",
@@ -391,21 +383,21 @@ export default function ChatPage() {
             }}
           >
             <AlertTriangle size={18} style={{ color: "var(--accent-tertiary)", flexShrink: 0 }} />
-            <span style={{ fontSize: "0.85rem", color: "var(--accent-tertiary)" }}>
-              If you&apos;re in crisis, please call <strong>988</strong> or text <strong>HELLO</strong> to <strong>741741</strong>
+            <span style={{ fontSize: "0.9rem", color: "var(--accent-tertiary)" }}>
+              If you're in crisis, please call <strong>988</strong> or text <strong>HELLO</strong> to <strong>741741</strong>
             </span>
             <a
               href="tel:988"
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "4px",
-                padding: "6px 12px",
+                gap: "6px",
+                padding: "8px 16px",
                 borderRadius: "var(--radius-full)",
                 background: "rgba(252, 92, 156, 0.2)",
                 color: "var(--accent-tertiary)",
                 textDecoration: "none",
-                fontSize: "0.8rem",
+                fontSize: "0.85rem",
                 fontWeight: 600,
                 marginLeft: "auto",
                 flexShrink: 0,
@@ -422,10 +414,10 @@ export default function ChatPage() {
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "24px",
+            padding: "32px",
             display: "flex",
             flexDirection: "column",
-            gap: "16px",
+            gap: "24px",
           }}
         >
           {messages.length === 0 && !streamingContent && (
@@ -441,29 +433,15 @@ export default function ChatPage() {
                 animation: "fadeIn 0.5s ease-out",
               }}
             >
-              <div
-                className="animate-float"
-                style={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: "50%",
-                  background: "var(--gradient-primary)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Brain size={40} color="white" />
-              </div>
-              <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-                Hi, I&apos;m <span className="gradient-text">MenAI</span>
+              <h2 style={{ fontSize: "1.8rem", fontWeight: 400, letterSpacing: "-0.02em" }}>
+                What is your <span className="gradient-text">focus</span> today?
               </h2>
-              <p style={{ color: "var(--text-secondary)", maxWidth: "400px", lineHeight: 1.6 }}>
-                I&apos;m your AI mentor, execution coach, and accountability partner. Talk to me about
-                your goals, what&apos;s blocking you, or what you want to build next.
+              <p style={{ color: "var(--text-secondary)", maxWidth: "440px", lineHeight: 1.6, fontWeight: 300 }}>
+                MenAI is an adaptive intelligence system. It learns your patterns and helps you maintain your trajectory. 
+                Start by sharing what you want to achieve or what's currently blocking you.
               </p>
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center", marginTop: "8px" }}>
-                {["Plan my day", "Review my goals", "I need clarity", "Focus reset"].map((suggestion) => (
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center", marginTop: "16px" }}>
+                {["Define my trajectory", "Review my active focus", "I am stuck"].map((suggestion) => (
                   <button
                     key={suggestion}
                     onClick={() => {
@@ -471,15 +449,17 @@ export default function ChatPage() {
                       inputRef.current?.focus();
                     }}
                     style={{
-                      padding: "8px 16px",
+                      padding: "10px 20px",
                       borderRadius: "var(--radius-full)",
                       background: "var(--bg-glass)",
                       border: "1px solid var(--border-color)",
                       color: "var(--text-secondary)",
                       cursor: "pointer",
-                      fontSize: "0.85rem",
+                      fontSize: "0.9rem",
                       transition: "all 0.2s",
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)" }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-secondary)" }}
                   >
                     {suggestion}
                   </button>
@@ -495,92 +475,36 @@ export default function ChatPage() {
                 display: "flex",
                 justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
                 alignItems: "flex-start",
-                gap: "12px",
+                gap: "16px",
               }}
             >
-              {msg.role === "assistant" && (
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    background: "var(--gradient-primary)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    marginTop: "4px",
-                  }}
-                >
-                  <Brain size={16} color="white" />
-                </div>
-              )}
-
               <div className={msg.role === "user" ? "chat-bubble-user" : "chat-bubble-ai"}>
                 {msg.role === "assistant" ? (
                   <ReactMarkdown
                     components={{
-                      p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.7, fontSize: "0.95rem" }}>{children}</p>,
-                      strong: ({ children }) => <strong style={{ color: "var(--accent-primary)", fontWeight: 600 }}>{children}</strong>,
-                      ul: ({ children }) => <ul style={{ paddingLeft: "16px", margin: "8px 0" }}>{children}</ul>,
-                      li: ({ children }) => <li style={{ marginBottom: "4px", fontSize: "0.95rem" }}>{children}</li>,
+                      p: ({ children }) => <p style={{ margin: "0 0 12px", fontWeight: 300 }}>{children}</p>,
+                      strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
+                      ul: ({ children }) => <ul style={{ paddingLeft: "20px", margin: "12px 0", fontWeight: 300 }}>{children}</ul>,
+                      li: ({ children }) => <li style={{ marginBottom: "6px" }}>{children}</li>,
                     }}
                   >
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
-                  <p style={{ margin: 0, lineHeight: 1.7, fontSize: "0.95rem" }}>{msg.content}</p>
+                  <p style={{ margin: 0, fontWeight: 400 }}>{msg.content}</p>
                 )}
-                <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "8px" }}>
-                  {formatTime(msg.created_at)}
-                </div>
               </div>
-
-              {msg.role === "user" && (
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    background: "var(--gradient-warm)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    marginTop: "4px",
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                    color: "white",
-                  }}
-                >
-                  {user?.full_name?.charAt(0)?.toUpperCase() || "U"}
-                </div>
-              )}
             </div>
           ))}
 
           {/* Streaming response */}
           {streamingContent && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  background: "var(--gradient-primary)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Brain size={16} color="white" />
-              </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
               <div className="chat-bubble-ai">
                 <ReactMarkdown
                   components={{
-                    p: ({ children }) => <p style={{ margin: "0 0 8px", lineHeight: 1.7, fontSize: "0.95rem" }}>{children}</p>,
-                    strong: ({ children }) => <strong style={{ color: "var(--accent-primary)", fontWeight: 600 }}>{children}</strong>,
+                    p: ({ children }) => <p style={{ margin: "0 0 12px", fontWeight: 300 }}>{children}</p>,
+                    strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
                   }}
                 >
                   {streamingContent}
@@ -589,23 +513,9 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Typing indicator (pre-stream) */}
-          {loading && !streamingContent && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  background: "var(--gradient-primary)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                <Brain size={16} color="white" />
-              </div>
+          {/* Typing indicator */}
+          {isAiTyping && !streamingContent && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
               <div className="chat-bubble-ai">
                 <div className="typing-indicator">
                   <span />
@@ -622,16 +532,16 @@ export default function ChatPage() {
         {/* Input Area */}
         <div
           style={{
-            padding: "16px 24px",
+            padding: "24px",
             borderTop: "1px solid var(--border-color)",
-            background: "var(--bg-secondary)",
+            background: "var(--bg-primary)",
           }}
         >
           <div
             style={{
               display: "flex",
               alignItems: "flex-end",
-              gap: "12px",
+              gap: "16px",
               maxWidth: "800px",
               margin: "0 auto",
             }}
@@ -641,32 +551,32 @@ export default function ChatPage() {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="What's on your mind? Goals, blockers, ideas..."
+              placeholder="What are you focusing on?"
               rows={1}
               style={{
                 flex: 1,
                 background: "var(--bg-glass)",
                 border: "1px solid var(--border-color)",
                 borderRadius: "var(--radius-lg)",
-                padding: "14px 18px",
+                padding: "16px 20px",
                 color: "var(--text-primary)",
                 fontFamily: "var(--font-sans)",
-                fontSize: "0.95rem",
+                fontSize: "1rem",
                 resize: "none",
                 outline: "none",
                 transition: "border-color 0.3s",
                 lineHeight: 1.5,
-                maxHeight: "120px",
+                maxHeight: "150px",
               }}
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || isAiTyping}
               style={{
-                width: 48,
-                height: 48,
+                width: 54,
+                height: 54,
                 borderRadius: "50%",
-                background: input.trim() ? "var(--gradient-primary)" : "var(--bg-glass)",
+                background: input.trim() ? "var(--text-primary)" : "var(--bg-glass)",
                 border: "none",
                 cursor: input.trim() ? "pointer" : "not-allowed",
                 display: "flex",
@@ -676,20 +586,25 @@ export default function ChatPage() {
                 flexShrink: 0,
               }}
             >
-              {loading ? (
-                <Loader2 size={20} color="white" className="animate-spin" />
+              {isAiTyping ? (
+                <Loader2 size={24} color="var(--bg-primary)" className="animate-spin" />
               ) : (
-                <Send size={20} color={input.trim() ? "white" : "var(--text-muted)"} />
+                <Send size={24} color={input.trim() ? "var(--bg-primary)" : "var(--text-muted)"} />
               )}
             </button>
           </div>
-          <p style={{ textAlign: "center", fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "8px" }}>
-            MenAI is an AI companion, not a substitute for professional help. In crisis, call 988.
-          </p>
         </div>
       </div>
 
       <style jsx global>{`
+        .chat-sidebar > div:hover .delete-conv-btn {
+          opacity: 0.5 !important;
+        }
+        .delete-conv-btn:hover {
+          opacity: 1 !important;
+          color: var(--text-primary) !important;
+        }
+
         @media (max-width: 768px) {
           .chat-sidebar-toggle { display: block !important; }
           .chat-sidebar-overlay { display: block !important; }
