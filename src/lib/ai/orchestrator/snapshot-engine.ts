@@ -87,6 +87,9 @@ function generateSnapshot(
   
   // Get established execution patterns from DB
   const persistentPatterns = lifeContext?.executionPatterns || [];
+  
+  // Get active predictions
+  const activePredictions = lifeContext?.activePredictions || [];
 
   // === CURRENT STATE (ephemeral) ===
   
@@ -137,6 +140,7 @@ function generateSnapshot(
     identity,
     identitySignals,
     persistentPatterns,
+    activePredictions,
     currentFocus,
     activeGoalTitles,
     topPriority,
@@ -233,6 +237,16 @@ export function formatSnapshotForPrompt(snapshot: LifeSnapshot): string {
       .join("; ");
     if (patterns) {
       stableParts.push(`Established patterns: ${patterns}`);
+    }
+  }
+
+  if (snapshot.activePredictions.length > 0) {
+    const predictions = snapshot.activePredictions
+      .slice(0, 2)
+      .map(p => `If [${p.trigger_condition}], expect [${p.predicted_behavior}]`)
+      .join("\n");
+    if (predictions) {
+      stableParts.push(`**PREDICTIVE INTELLIGENCE (Watch for this):**\n${predictions}`);
     }
   }
 

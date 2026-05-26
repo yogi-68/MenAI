@@ -28,6 +28,7 @@ import { validateResponseStyle } from "./style-validator";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { getLifeContext } from "./accountability-engine";
 import { getLifeSnapshot, computeInferenceConfidence, invalidateSnapshot } from "./snapshot-engine";
+import { evaluatePredictions } from "./prediction-engine";
 import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext, ContextRichness } from "./types";
 
 // ===== GRACEFUL FALLBACK RESPONSES =====
@@ -384,6 +385,14 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
           metadata: { conversation_id: conversationId, type: "extraction" },
         }).catch(() => { /* non-critical */ });
       }
+      
+      // Evaluate predictions in background
+      evaluatePredictions({
+        userId: input.userId,
+        extractedData: data,
+        conversationId,
+        serviceClient,
+      }).catch(() => {});
     }
   }).catch(() => {});
 
@@ -775,6 +784,14 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
                 metadata: { conversation_id: conversationId, type: "extraction" },
               }).catch(() => {});
             }
+
+            // Evaluate predictions in background
+            evaluatePredictions({
+              userId: input.userId,
+              extractedData: data,
+              conversationId,
+              serviceClient,
+            }).catch(() => {});
           }
         }).catch(() => {});
 

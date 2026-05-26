@@ -258,6 +258,30 @@ export interface DailyPlan {
   energyLevel?: number;
 }
 
+// ===== Predictive Behavioral Intelligence =====
+export interface BehavioralPrediction {
+  id: string;
+  prediction_type: "abandonment_risk" | "burnout_risk" | "momentum_collapse" | "avoidance_loop" | "motivation_spike" | "execution_drift";
+  trigger_condition: string;
+  predicted_behavior: string;
+  status: "active" | "validated" | "invalidated";
+  confidence: number; // 0-1
+  created_at: string;
+}
+
+export interface WeeklyReport {
+  id: string;
+  report_date: string;
+  period_start: string;
+  period_end: string;
+  report_content: {
+    momentum_shift: "improving" | "declining" | "stagnant";
+    key_insights: string[];
+    validated_predictions: string[];
+    upcoming_risks: string[];
+  };
+}
+
 // ===== Life Context (for prompt injection) =====
 export interface LifeContext {
   activeGoals: Goal[];
@@ -269,6 +293,7 @@ export interface LifeContext {
   momentumScore: number; // 0-100
   identitySignals?: IdentitySignal[]; // NEW: from DB
   executionPatterns?: ExecutionPattern[]; // NEW: from DB
+  activePredictions?: BehavioralPrediction[]; // NEW: from Prediction Engine
 }
 
 // ===== Life Snapshot Cache (compact user operating state) =====
@@ -277,6 +302,7 @@ export interface LifeSnapshot {
   identity: string;                // "founder", "student", "executive", "creator", "unknown"
   identitySignals: IdentitySignal[]; // NEW: actual signals from DB
   persistentPatterns: ExecutionPattern[]; // NEW: established patterns
+  activePredictions: BehavioralPrediction[]; // NEW: active behavioral predictions
   
   // Current state (ephemeral)
   currentFocus: string;            // Primary thing they're working on

@@ -179,7 +179,7 @@ async function upsertObservation(
     confidence: number;
     metadata?: Record<string, unknown>;
   },
-  existingObservations?: Array<Record<string, unknown>>
+  existingObservations?: any[] | null
 ): Promise<void> {
   const supabase = await createServiceRoleClient();
   
@@ -312,7 +312,7 @@ export async function generateWeeklySummary(userId: string): Promise<string | nu
   const summary = `Over the last 7 days: ${patternSummary}`;
   
   // Store as high-importance insight memory
-  const { default: { storeMemory } } = await import("./memory-engine");
+  const { storeMemory } = await import("./memory-engine");
   await storeMemory({
     userId,
     content: `[Weekly Intelligence Summary] ${summary}`,
