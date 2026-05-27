@@ -86,8 +86,11 @@ export async function POST(request: NextRequest) {
       // Mark onboarding as completed in profile
       await supabase
         .from("profiles")
-        .update({ onboarding_completed: true })
-        .eq("id", user.id);
+        .upsert({ 
+          id: user.id, 
+          onboarding_completed: true,
+          updated_at: new Date().toISOString()
+        });
     }
 
     await supabase

@@ -5,8 +5,9 @@
  * Multi-stage questionnaire with one-question-at-a-time flow
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ONBOARDING_QUESTIONS,
   QUESTION_ORDER,
@@ -34,7 +35,11 @@ export default function OnboardingPage() {
   const totalQuestions = getTotalQuestions();
   const progress = (questionNumber / totalQuestions) * 100;
 
+  // Prevent hydration errors with a mounted check
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
+    setIsMounted(true);
     // Load progress
     fetch("/api/onboarding/progress")
       .then((res) => res.json())
@@ -47,6 +52,22 @@ export default function OnboardingPage() {
       })
       .catch(console.error);
   }, [router]);
+
+  // Handle keyboard shortcuts (Enter to submit)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        // Prevent default only if we are in an input/textarea and it's not a multiline intent
+        if (currentQuestion?.type === "text" || currentQuestion?.type === "textarea" || showOther) {
+          e.preventDefault();
+          handleNext();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentQuestion, textInput, selectedOptions, showOther, otherText]);
 
   const saveResponse = async (
     questionId: string,
@@ -80,11 +101,16 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleNext = async () => {
+  const handleNext = async (autoOptionValue?: string) => {
+    if (saving) return;
+    
     const question = currentQuestion;
 
     let response: string | null = null;
     let responseData: any = null;
+
+    // Support for auto-advancing forced choice
+    const activeSelectedOptions = autoOptionValue ? [autoOptionValue] : selectedOptions;
 
     // Collect response based on question type
     if (question.type === "text" || question.type === "textarea") {
@@ -94,20 +120,20 @@ export default function OnboardingPage() {
         return;
       }
     } else if (question.type === "multiple_choice") {
-      if (selectedOptions.length === 0 && !showOther) {
+      if (activeSelectedOptions.length === 0 && !showOther) {
         setError("Please select at least one option");
         return;
       }
-      responseData = { selected: selectedOptions };
+      responseData = { selected: activeSelectedOptions };
       if (showOther && otherText.trim()) {
         response = otherText.trim();
       }
     } else if (question.type === "forced_choice") {
-      if (selectedOptions.length === 0 && !showOther) {
+      if (activeSelectedOptions.length === 0 && !showOther) {
         setError("Please select an option");
         return;
       }
-      responseData = { selected: selectedOptions[0] };
+      responseData = { selected: activeSelectedOptions[0] };
       if (showOther && otherText.trim()) {
         response = otherText.trim();
       }
@@ -135,19 +161,20 @@ export default function OnboardingPage() {
     // Move to next question
     const nextQuestionId = getNextQuestion(currentQuestionId);
     if (nextQuestionId) {
-      // Update progress
-      await fetch("/api/onboarding/progress", {
+      // Background update progress
+      fetch("/api/onboarding/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           currentQuestionId: nextQuestionId,
         }),
-      });
+      }).catch(console.error);
 
-      setCurrentQuestionId(nextQuestionId);
       resetInputs();
+      setCurrentQuestionId(nextQuestionId);
     } else {
       // Onboarding complete
+      setSaving(true);
       await fetch("/api/onboarding/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -165,28 +192,6 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleSkip = async () => {
-    if (!currentQuestion.optional) return;
-
-    // Save empty response
-    await saveResponse(currentQuestionId, null, null);
-
-    // Move to next
-    const nextQuestionId = getNextQuestion(currentQuestionId);
-    if (nextQuestionId) {
-      await fetch("/api/onboarding/progress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentQuestionId: nextQuestionId,
-        }),
-      });
-
-      setCurrentQuestionId(nextQuestionId);
-      resetInputs();
-    }
-  };
-
   const resetInputs = () => {
     setTextInput("");
     setSelectedOptions([]);
@@ -200,6 +205,8 @@ export default function OnboardingPage() {
   const handleOptionToggle = (value: string) => {
     if (currentQuestion.type === "forced_choice") {
       setSelectedOptions([value]);
+      // Auto advance for forced choice!
+      handleNext(value);
     } else {
       setSelectedOptions((prev) =>
         prev.includes(value)
@@ -209,286 +216,351 @@ export default function OnboardingPage() {
     }
   };
 
-  if (!currentQuestion) {
-    return <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ color: "var(--text-primary)" }}>Loading...</p>
-    </div>;
+  if (!isMounted || !currentQuestion) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="skeleton" style={{ height: "40px", width: "200px", borderRadius: "var(--radius-md)" }} />
+      </div>
+    );
   }
 
   const promptToShow = askingFollowUp ? currentQuestion.otherPrompt : currentQuestion.prompt;
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg-primary)", color: "var(--text-primary)", display: "flex", flexDirection: "column" }}>
-      {/* Progress Bar */}
-      <div style={{ width: "100%", height: "4px", background: "var(--bg-secondary)" }}>
-        <div
-          style={{ height: "100%", background: "var(--accent-primary)", transition: "width 0.3s" }}
-          className="transition-all duration-300"
-        />
-      </div>
-      {/* Content */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
-        <div style={{ maxWidth: "800px", width: "100%" }}>
-          {/* Question Number */}
-          <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: "8px" }}>
-            Question {questionNumber} of {totalQuestions}
-          </div>
+    <div style={{ minHeight: "100vh", background: "var(--bg-primary)", color: "var(--text-primary)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+      {/* Ambient Background Effects */}
+      <div className="ambient-bg" />
 
-          {/* Question Prompt */}
-          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, marginBottom: "32px", color: "var(--text-primary)" }}>
-            {promptToShow}
-          </h1>
-
-          {/* Question Input */}
-          <div style={{ marginBottom: "32px" }}>
-            {currentQuestion.type === "text" && (
-              <input
-                type="text"
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "var(--radius-md)",
-                  outline: "none",
-                  color: "var(--text-primary)",
-                  fontSize: "1rem",
-                }}
-                placeholder="Type your answer..."
-                autoFocus
-                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-              />
-            )}
-
-            {currentQuestion.type === "textarea" && (
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "var(--radius-md)",
-                  outline: "none",
-                  color: "var(--text-primary)",
-                  minHeight: "120px",
-                  fontSize: "1rem",
-                  resize: "vertical",
-                }}
-                placeholder="Share your thoughts..."
-                autoFocus
-                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-              />
-            )}
-
-            {(currentQuestion.type === "multiple_choice" ||
-              currentQuestion.type === "forced_choice") &&
-              !askingFollowUp && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {currentQuestion.options?.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => handleOptionToggle(option.value)}
-                      style={{
-                        width: "100%",
-                        padding: "16px 24px",
-                        borderRadius: "var(--radius-md)",
-                        border: `2px solid ${selectedOptions.includes(option.value) ? "var(--accent-primary)" : "var(--border-color)"}`,
-                        background: selectedOptions.includes(option.value) ? "rgba(59, 130, 246, 0.1)" : "var(--bg-secondary)",
-                        color: "var(--text-primary)",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        transition: "all 0.2s",
-                        fontSize: "1rem",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!selectedOptions.includes(option.value)) {
-                          e.currentTarget.style.borderColor = "var(--text-muted)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!selectedOptions.includes(option.value)) {
-                          e.currentTarget.style.borderColor = "var(--border-color)";
-                        }
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-
-                  {currentQuestion.allowOther && (
-                    <button
-                      onClick={() => setShowOther(!showOther)}
-                      style={{
-                        width: "100%",
-                        padding: "16px 24px",
-                        borderRadius: "var(--radius-md)",
-                        border: `2px solid ${showOther ? "var(--accent-primary)" : "var(--border-color)"}`,
-                        background: showOther ? "rgba(59, 130, 246, 0.1)" : "var(--bg-secondary)",
-                        color: "var(--text-primary)",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        transition: "all 0.2s",
-                        fontSize: "1rem",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!showOther) {
-                          e.currentTarget.style.borderColor = "var(--text-muted)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!showOther) {
-                          e.currentTarget.style.borderColor = "var(--border-color)";
-                        }
-                      }}
-                    >
-                      Other
-                    </button>
-                  )}
-
-                  {showOther && !askingFollowUp && (
-                    <input
-                      type="text"
-                      value={otherText}
-                      onChange={(e) => setOtherText(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "12px 16px",
-                        background: "var(--bg-secondary)",
-                        border: "1px solid var(--border-color)",
-                        borderRadius: "var(--radius-md)",
-                        outline: "none",
-                        color: "var(--text-primary)",
-                        marginTop: "8px",
-                        fontSize: "1rem",
-                      }}
-                      placeholder="Please specify..."
-                      autoFocus
-                      onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                      onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-                    />
-                  )}
-                </div>
-              )}
-
-            {currentQuestion.type === "slider" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <input
-                  type="range"
-                  min={currentQuestion.min}
-                  max={currentQuestion.max}
-                  value={sliderValue}
-                  onChange={(e) => setSliderValue(parseInt(e.target.value))}
-                  style={{
-                    width: "100%",
-                    height: "8px",
-                    background: "var(--bg-secondary)",
-                    borderRadius: "var(--radius-md)",
-                    appearance: "none",
-                    cursor: "pointer",
-                  }}
-                  className="slider"
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem", color: "var(--text-muted)" }}>
-                  <span>{currentQuestion.labels?.min}</span>
-                  <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: "1.125rem" }}>
-                    {sliderValue}
-                  </span>
-                  <span>{currentQuestion.labels?.max}</span>
-                </div>
-              </div>
-            )}
-
-            {askingFollowUp && (
-              <textarea
-                value={otherText}
-                onChange={(e) => setOtherText(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px 16px",
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--border-color)",
-                  borderRadius: "var(--radius-md)",
-                  outline: "none",
-                  color: "var(--text-primary)",
-                  minHeight: "120px",
-                  fontSize: "1rem",
-                  resize: "vertical",
-                }}
-                placeholder="Tell me more..."
-                autoFocus
-                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-              />
-            )}
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div style={{
-              marginBottom: "16px",
-              padding: "12px",
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              borderRadius: "var(--radius-md)",
-              color: "#ef4444",
-              fontSize: "0.875rem",
-            }}>
-              {error}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: "16px" }}>
-            <button
-              onClick={handleNext}
-              disabled={saving}
-              style={{
-                flex: 1,
-                padding: "14px 24px",
-                background: saving ? "var(--bg-glass)" : "var(--accent-primary)",
-                color: saving ? "var(--text-muted)" : "white",
-                borderRadius: "var(--radius-md)",
-                border: "none",
-                fontWeight: 500,
-                cursor: saving ? "not-allowed" : "pointer",
-                transition: "all 0.2s",
-                fontSize: "1rem",
-              }}
-              onMouseEnter={(e) => {
-                if (!saving) e.currentTarget.style.background = "var(--accent-primary-hover)";
-              }}
-              onMouseLeave={(e) => {
-                if (!saving) e.currentTarget.style.background = "var(--accent-primary)";
-              }}
-            >
-              {saving ? "Saving..." : questionNumber === totalQuestions ? "Complete" : "Next"}
-            </button>
-          </div>
+      {/* Progress Bar Header */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
+        <div style={{ width: "100%", height: "4px", background: "var(--bg-secondary)" }}>
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            style={{ height: "100%", background: "var(--accent-primary)" }}
+          />
         </div>
       </div>
 
+      {/* Main Content Area */}
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", position: "relative", zIndex: 10 }}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentQuestionId + (askingFollowUp ? "-followup" : "")}
+            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.98 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            style={{ width: "100%", maxWidth: "600px" }}
+          >
+            <div className="glass-card" style={{ padding: "40px", display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* Question Context */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "var(--accent-primary)", fontSize: "0.85rem", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                  Question {questionNumber} of {totalQuestions}
+                </span>
+                {currentQuestion.optional && (
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", border: "1px solid var(--border-color)", padding: "2px 8px", borderRadius: "12px" }}>
+                    Optional
+                  </span>
+                )}
+              </div>
+
+              {/* Question Prompt */}
+              <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3, margin: 0 }}>
+                {promptToShow}
+              </h1>
+
+              {/* Input Area */}
+              <div style={{ marginTop: "8px" }}>
+                {currentQuestion.type === "text" && (
+                  <input
+                    type="text"
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    className="input-field"
+                    style={{
+                      width: "100%",
+                      padding: "16px 20px",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--text-primary)",
+                      fontSize: "1.1rem",
+                      outline: "none",
+                      transition: "border-color 0.2s ease, background 0.2s ease",
+                    }}
+                    placeholder="Type your answer... (Press Enter)"
+                    autoFocus
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-active)";
+                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-color)";
+                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                    }}
+                  />
+                )}
+
+                {currentQuestion.type === "textarea" && (
+                  <textarea
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    className="input-field"
+                    style={{
+                      width: "100%",
+                      padding: "16px 20px",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--text-primary)",
+                      minHeight: "140px",
+                      fontSize: "1.1rem",
+                      resize: "vertical",
+                      outline: "none",
+                      transition: "border-color 0.2s ease, background 0.2s ease",
+                    }}
+                    placeholder="Share your thoughts..."
+                    autoFocus
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-active)";
+                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-color)";
+                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                    }}
+                  />
+                )}
+
+                {(currentQuestion.type === "multiple_choice" ||
+                  currentQuestion.type === "forced_choice") &&
+                  !askingFollowUp && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {currentQuestion.options?.map((option) => {
+                        const isSelected = selectedOptions.includes(option.value);
+                        return (
+                          <motion.button
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.98 }}
+                            key={option.value}
+                            onClick={() => handleOptionToggle(option.value)}
+                            style={{
+                              width: "100%",
+                              padding: "18px 24px",
+                              borderRadius: "var(--radius-md)",
+                              border: `1.5px solid ${isSelected ? "var(--accent-primary)" : "var(--border-color)"}`,
+                              background: isSelected ? "var(--accent-primary-transparent)" : "rgba(255,255,255,0.02)",
+                              color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              fontSize: "1.05rem",
+                              fontWeight: isSelected ? 600 : 500,
+                              boxShadow: isSelected ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "none",
+                            }}
+                          >
+                            {option.label}
+                          </motion.button>
+                        );
+                      })}
+
+                      {currentQuestion.allowOther && (
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setShowOther(!showOther)}
+                          style={{
+                            width: "100%",
+                            padding: "18px 24px",
+                            borderRadius: "var(--radius-md)",
+                            border: `1.5px solid ${showOther ? "var(--accent-primary)" : "var(--border-color)"}`,
+                            background: showOther ? "var(--accent-primary-transparent)" : "rgba(255,255,255,0.02)",
+                            color: showOther ? "var(--text-primary)" : "var(--text-secondary)",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            fontSize: "1.05rem",
+                            fontWeight: showOther ? 600 : 500,
+                          }}
+                        >
+                          Other...
+                        </motion.button>
+                      )}
+
+                      <AnimatePresence>
+                        {showOther && !askingFollowUp && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            style={{ overflow: "hidden", marginTop: "4px" }}
+                          >
+                            <input
+                              type="text"
+                              value={otherText}
+                              onChange={(e) => setOtherText(e.target.value)}
+                              style={{
+                                width: "100%",
+                                padding: "16px 20px",
+                                background: "rgba(255,255,255,0.03)",
+                                border: "1px solid var(--border-color)",
+                                borderRadius: "var(--radius-md)",
+                                color: "var(--text-primary)",
+                                fontSize: "1.05rem",
+                                outline: "none",
+                              }}
+                              placeholder="Please specify... (Press Enter)"
+                              autoFocus
+                              onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                              onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                {currentQuestion.type === "slider" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "20px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                      <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 500 }}>{currentQuestion.labels?.min}</span>
+                      <motion.div 
+                        key={sliderValue}
+                        initial={{ scale: 1.2, opacity: 0.8 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        style={{ color: "var(--accent-primary)", fontWeight: 700, fontSize: "2rem", lineHeight: 1 }}
+                      >
+                        {sliderValue}
+                      </motion.div>
+                      <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 500 }}>{currentQuestion.labels?.max}</span>
+                    </div>
+                    
+                    <input
+                      type="range"
+                      min={currentQuestion.min}
+                      max={currentQuestion.max}
+                      value={sliderValue}
+                      onChange={(e) => setSliderValue(parseInt(e.target.value))}
+                      style={{
+                        width: "100%",
+                        height: "8px",
+                        background: "rgba(255,255,255,0.1)",
+                        borderRadius: "var(--radius-md)",
+                        appearance: "none",
+                        cursor: "pointer",
+                      }}
+                      className="custom-slider"
+                    />
+                  </div>
+                )}
+
+                {askingFollowUp && (
+                  <textarea
+                    value={otherText}
+                    onChange={(e) => setOtherText(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "16px 20px",
+                      background: "rgba(255,255,255,0.03)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--text-primary)",
+                      minHeight: "140px",
+                      fontSize: "1.1rem",
+                      resize: "vertical",
+                      outline: "none",
+                    }}
+                    placeholder="Tell me more..."
+                    autoFocus
+                    onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                    onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
+                  />
+                )}
+              </div>
+
+              {/* Error Message */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    exit={{ opacity: 0 }}
+                    style={{
+                      padding: "12px 16px",
+                      background: "rgba(239, 68, 68, 0.1)",
+                      border: "1px solid rgba(239, 68, 68, 0.3)",
+                      borderRadius: "var(--radius-md)",
+                      color: "#ef4444",
+                      fontSize: "0.9rem",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", gap: "16px", marginTop: "16px", alignItems: "center" }}>
+                <motion.button
+                  whileHover={{ scale: saving ? 1 : 1.02 }}
+                  whileTap={{ scale: saving ? 1 : 0.98 }}
+                  onClick={() => handleNext()}
+                  disabled={saving}
+                  className="btn-primary"
+                  style={{
+                    flex: 1,
+                    padding: "16px 24px",
+                    opacity: saving ? 0.7 : 1,
+                    cursor: saving ? "not-allowed" : "fontSize: 1.05rem",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                  }}
+                >
+                  {saving ? "Saving..." : questionNumber === totalQuestions ? "Complete Setup" : "Continue"}
+                  {!saving && currentQuestion.type !== "forced_choice" && (
+                    <span style={{ fontSize: "0.8rem", opacity: 0.6, fontWeight: 400 }}>↵</span>
+                  )}
+                </motion.button>
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
       <style jsx>{`
-        .slider::-webkit-slider-thumb {
+        .custom-slider::-webkit-slider-thumb {
           appearance: none;
-          width: 20px;
-          height: 20px;
+          width: 24px;
+          height: 24px;
           border-radius: 50%;
           background: var(--accent-primary);
           cursor: pointer;
+          border: 4px solid var(--bg-primary);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          transition: transform 0.1s;
         }
-        .slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
+        .custom-slider::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
+        }
+        .custom-slider::-moz-range-thumb {
+          width: 24px;
+          height: 24px;
           border-radius: 50%;
           background: var(--accent-primary);
           cursor: pointer;
-          border: none;
+          border: 4px solid var(--bg-primary);
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+          transition: transform 0.1s;
+        }
+        .custom-slider::-moz-range-thumb:hover {
+          transform: scale(1.15);
         }
       `}</style>
     </div>
