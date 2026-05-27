@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Compass,
   Target,
@@ -40,6 +42,34 @@ export default function DashboardOverview() {
   const { user } = useAppStore();
   const supabase = createClient();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+
+  // Check onboarding status
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
+        router.push("/login");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", authUser.id)
+        .single();
+
+      if (!profile?.onboarding_completed) {
+        router.push("/onboarding");
+        return;
+      }
+
+      setCheckingOnboarding(false);
+    };
+
+    checkOnboarding();
+  }, [supabase, router]);
 
   const { data: intelligence, isLoading: intelligenceLoading } = useQuery({
     queryKey: ["dashboard-intelligence"],
@@ -120,6 +150,14 @@ export default function DashboardOverview() {
   const activeFocus = intelligence?.activeFocus || [];
   const nextSteps = intelligence?.suggestedNextSteps || [];
   const momentumTrend = intelligence?.momentumTrend;
+
+  if (checkingOnboarding) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="skeleton shimmer" style={{ width: "200px", height: "40px", borderRadius: "8px" }} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: "64px 48px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
