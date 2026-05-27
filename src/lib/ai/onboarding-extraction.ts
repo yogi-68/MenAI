@@ -191,13 +191,13 @@ async function extractObstacles(response: string, responseData: any): Promise<Ex
     },
     relationships: { 
       obstacle: "relationships",
-      pattern: null,
-      impact: null
+      pattern: undefined,
+      impact: undefined
     },
     health: { 
       obstacle: "health",
-      pattern: null,
-      impact: null
+      pattern: undefined,
+      impact: undefined
     },
     career_uncertainty: { 
       obstacle: "career_uncertainty", 
@@ -206,8 +206,8 @@ async function extractObstacles(response: string, responseData: any): Promise<Ex
     },
     financial_concerns: { 
       obstacle: "financial_concerns",
-      pattern: null,
-      impact: null
+      pattern: undefined,
+      impact: undefined
     },
   };
 

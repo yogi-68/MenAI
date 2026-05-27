@@ -88,6 +88,15 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure goal_id column exists even if tasks table was created by a prior migration
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS goal_id UUID REFERENCES public.goals(id) ON DELETE SET NULL;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS scheduled_time TIME;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence TEXT CHECK (recurrence IS NULL OR recurrence IN ('daily', 'weekly', 'weekdays'));
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS streak_count INTEGER DEFAULT 0;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS auto_generated BOOLEAN DEFAULT false;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS generation_reason TEXT;
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS last_completed_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_tasks_user_status_date ON public.tasks(user_id, status, due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_goal ON public.tasks(goal_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_auto_gen ON public.tasks(user_id, auto_generated, due_date) WHERE auto_generated = true;
@@ -141,7 +150,9 @@ CREATE TABLE IF NOT EXISTS public.identity_signals (
 CREATE INDEX IF NOT EXISTS idx_identity_signals_user ON public.identity_signals(user_id);
 
 ALTER TABLE public.identity_signals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own signals" ON public.identity_signals;
 CREATE POLICY "Users can view own signals" ON public.identity_signals FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages signals" ON public.identity_signals;
 CREATE POLICY "Service role manages signals" ON public.identity_signals FOR ALL USING (auth.role() = 'service_role');
 
 -- ================================================================
@@ -164,7 +175,9 @@ CREATE TABLE IF NOT EXISTS public.execution_patterns (
 CREATE INDEX IF NOT EXISTS idx_execution_patterns_user ON public.execution_patterns(user_id, pattern);
 
 ALTER TABLE public.execution_patterns ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own patterns" ON public.execution_patterns;
 CREATE POLICY "Users can view own patterns" ON public.execution_patterns FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages patterns" ON public.execution_patterns;
 CREATE POLICY "Service role manages patterns" ON public.execution_patterns FOR ALL USING (auth.role() = 'service_role');
 
 -- ================================================================
@@ -183,6 +196,7 @@ CREATE TABLE IF NOT EXISTS public.onboarding_responses (
 CREATE INDEX IF NOT EXISTS idx_onboarding_responses_user ON public.onboarding_responses(user_id, question_id);
 
 ALTER TABLE public.onboarding_responses ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own responses" ON public.onboarding_responses;
 CREATE POLICY "Users can manage own responses" ON public.onboarding_responses FOR ALL USING (auth.uid() = user_id);
 
 CREATE TABLE IF NOT EXISTS public.onboarding_progress (
@@ -198,6 +212,7 @@ CREATE TABLE IF NOT EXISTS public.onboarding_progress (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_onboarding_progress_user ON public.onboarding_progress(user_id);
 
 ALTER TABLE public.onboarding_progress ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own progress" ON public.onboarding_progress;
 CREATE POLICY "Users can manage own progress" ON public.onboarding_progress FOR ALL USING (auth.uid() = user_id);
 
 -- ================================================================
@@ -218,7 +233,9 @@ CREATE INDEX IF NOT EXISTS idx_daily_plans_user_date ON public.daily_plans(user_
 CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_plans_unique ON public.daily_plans(user_id, plan_date);
 
 ALTER TABLE public.daily_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own plans" ON public.daily_plans;
 CREATE POLICY "Users can manage own plans" ON public.daily_plans FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages plans" ON public.daily_plans;
 CREATE POLICY "Service role manages plans" ON public.daily_plans FOR ALL USING (auth.role() = 'service_role');
 
 -- ================================================================
@@ -238,7 +255,9 @@ CREATE TABLE IF NOT EXISTS public.task_generation_log (
 CREATE INDEX IF NOT EXISTS idx_task_gen_log_user ON public.task_generation_log(user_id, generation_date DESC);
 
 ALTER TABLE public.task_generation_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own task gen log" ON public.task_generation_log;
 CREATE POLICY "Users can view own task gen log" ON public.task_generation_log FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages task gen log" ON public.task_generation_log;
 CREATE POLICY "Service role manages task gen log" ON public.task_generation_log FOR ALL USING (auth.role() = 'service_role');
 
 -- ================================================================
