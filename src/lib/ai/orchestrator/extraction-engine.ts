@@ -69,7 +69,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
 
     const result = {
       goals: Array.isArray(parsed.goals)
-        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number }) => {
+        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number, title?: string }) => {
             const conf = g.confidence ?? 1;
             if (conf < GOAL_THRESHOLD) {
               console.log(`[Extraction] Filtered goal (conf=${conf.toFixed(2)}):`, g.title?.slice(0, 50));
@@ -78,7 +78,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
           })
         : [],
       commitments: Array.isArray(parsed.commitments)
-        ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number }) => {
+        ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number, description?: string }) => {
             const conf = c.confidence ?? 1;
             if (conf < COMMITMENT_THRESHOLD) {
               console.log(`[Extraction] Filtered commitment (conf=${conf.toFixed(2)}):`, c.description?.slice(0, 50));
@@ -87,7 +87,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
           })
         : [],
       identitySignals: Array.isArray(parsed.identitySignals)
-        ? parsed.identitySignals.map(sanitizeIdentitySignal).filter((i: { confidence?: number }) => {
+        ? parsed.identitySignals.map(sanitizeIdentitySignal).filter((i: { confidence?: number, type?: string }) => {
             const conf = i.confidence ?? 1;
             if (conf < IDENTITY_THRESHOLD) {
               console.log(`[Extraction] Filtered identity signal (conf=${conf.toFixed(2)}):`, i.type);
@@ -96,7 +96,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
           })
         : [],
       executionPatterns: Array.isArray(parsed.executionPatterns)
-        ? parsed.executionPatterns.map(sanitizeExecutionPattern).filter((e: { confidence?: number }) => {
+        ? parsed.executionPatterns.map(sanitizeExecutionPattern).filter((e: { confidence?: number, pattern?: string }) => {
             const conf = e.confidence ?? 1;
             if (conf < PATTERN_THRESHOLD) {
               console.log(`[Extraction] Filtered execution pattern (conf=${conf.toFixed(2)}):`, e.pattern);
@@ -108,7 +108,7 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
       habits: Array.isArray(parsed.habits) ? parsed.habits.map(sanitizeHabit) : [],
       emotions: Array.isArray(parsed.emotions) ? parsed.emotions.map(sanitizeEmotion) : [],
       projects: Array.isArray(parsed.projects)
-        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number }) => {
+        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number, name?: string }) => {
             const conf = p.confidence ?? 1;
             if (conf < PROJECT_THRESHOLD) {
               console.log(`[Extraction] Filtered project (conf=${conf.toFixed(2)}):`, p.name?.slice(0, 50));
