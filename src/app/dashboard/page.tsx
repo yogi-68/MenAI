@@ -45,23 +45,26 @@ export default function DashboardOverview() {
   const router = useRouter();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
-  // Check onboarding status
+  // Check onboarding status — use onboarding_progress as single source of truth
   useEffect(() => {
     const checkOnboarding = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .eq("id", authUser.id)
+      // Check the same table the onboarding page checks (onboarding_progress)
+      // to avoid desync between profiles.onboarding_completed and
+      // onboarding_progress.completed_at which caused redirect loops.
+      const { data: progress } = await supabase
+        .from("onboarding_progress")
+        .select("completed_at")
+        .eq("user_id", authUser.id)
         .maybeSingle();
 
-      if (!profile?.onboarding_completed) {
-        router.push("/onboarding");
+      if (!progress?.completed_at) {
+        router.replace("/onboarding");
         return;
       }
 

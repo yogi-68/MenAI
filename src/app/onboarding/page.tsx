@@ -5,7 +5,7 @@
  * Multi-stage questionnaire with one-question-at-a-time flow
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -28,6 +28,7 @@ export default function OnboardingPage() {
   const [otherText, setOtherText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const completionRedirectedRef = useRef(false);
   const [askingFollowUp, setAskingFollowUp] = useState(false);
 
   const currentQuestion = ONBOARDING_QUESTIONS[currentQuestionId];
@@ -45,7 +46,11 @@ export default function OnboardingPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.progress?.completedAt) {
-          router.push("/dashboard");
+          // Already completed — redirect to dashboard
+          if (!completionRedirectedRef.current) {
+            completionRedirectedRef.current = true;
+            router.replace("/dashboard");
+          }
         } else if (data.progress?.currentQuestionId) {
           setCurrentQuestionId(data.progress.currentQuestionId);
         }
@@ -53,21 +58,8 @@ export default function OnboardingPage() {
       .catch(console.error);
   }, [router]);
 
-  // Handle keyboard shortcuts (Enter to submit)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        // Prevent default only if we are in an input/textarea and it's not a multiline intent
-        if (currentQuestion?.type === "text" || currentQuestion?.type === "textarea" || showOther) {
-          e.preventDefault();
-          handleNext();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentQuestion, textInput, selectedOptions, showOther, otherText]);
+  // NOTE: Keyboard shortcut (Enter to advance) intentionally removed.
+  // Steps only advance when the user clicks Continue / selects a forced-choice option.
 
   const saveResponse = async (
     questionId: string,
@@ -173,7 +165,10 @@ export default function OnboardingPage() {
       resetInputs();
       setCurrentQuestionId(nextQuestionId);
     } else {
-      // Onboarding complete
+      // Onboarding complete — guard against double-fire
+      if (completionRedirectedRef.current) return;
+      completionRedirectedRef.current = true;
+
       setSaving(true);
       await fetch("/api/onboarding/progress", {
         method: "POST",
@@ -188,7 +183,7 @@ export default function OnboardingPage() {
         method: "POST",
       });
 
-      router.push("/dashboard");
+      router.replace("/dashboard");
     }
   };
 
@@ -291,7 +286,7 @@ export default function OnboardingPage() {
                       outline: "none",
                       transition: "border-color 0.2s ease, background 0.2s ease",
                     }}
-                    placeholder="Type your answer... (Press Enter)"
+                    placeholder="Type your answer..."
                     autoFocus
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = "var(--border-active)";
@@ -412,7 +407,7 @@ export default function OnboardingPage() {
                                 fontSize: "1.05rem",
                                 outline: "none",
                               }}
-                              placeholder="Please specify... (Press Enter)"
+                              placeholder="Please specify..."
                               autoFocus
                               onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
                               onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
@@ -524,9 +519,6 @@ export default function OnboardingPage() {
                   }}
                 >
                   {saving ? "Saving..." : questionNumber === totalQuestions ? "Complete Setup" : "Continue"}
-                  {!saving && currentQuestion.type !== "forced_choice" && (
-                    <span style={{ fontSize: "0.8rem", opacity: 0.6, fontWeight: 400 }}>↵</span>
-                  )}
                 </motion.button>
               </div>
             </div>
