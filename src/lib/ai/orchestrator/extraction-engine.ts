@@ -50,32 +50,76 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
     // Parse the JSON response
     const parsed = JSON.parse(raw);
 
-    // Apply confidence filtering — only keep items above threshold
-    const CONFIDENCE_THRESHOLD = 0.7;
+    // Apply confidence filtering with lowered thresholds for better extraction
+    // Thresholds lowered to capture more valid extractions
+    const GOAL_THRESHOLD = 0.60;
+    const COMMITMENT_THRESHOLD = 0.55;
+    const IDENTITY_THRESHOLD = 0.50;
+    const PROJECT_THRESHOLD = 0.60;
+    const PATTERN_THRESHOLD = 0.70; // Keep high for patterns
+
+    // Log pre-filtering counts
+    console.log("[Extraction] Pre-filter counts:", {
+      goals: Array.isArray(parsed.goals) ? parsed.goals.length : 0,
+      commitments: Array.isArray(parsed.commitments) ? parsed.commitments.length : 0,
+      identitySignals: Array.isArray(parsed.identitySignals) ? parsed.identitySignals.length : 0,
+      executionPatterns: Array.isArray(parsed.executionPatterns) ? parsed.executionPatterns.length : 0,
+      projects: Array.isArray(parsed.projects) ? parsed.projects.length : 0,
+    });
 
     const result = {
       goals: Array.isArray(parsed.goals)
-        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number }) => (g.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number }) => {
+            const conf = g.confidence ?? 1;
+            if (conf < GOAL_THRESHOLD) {
+              console.log(`[Extraction] Filtered goal (conf=${conf.toFixed(2)}):`, g.title?.slice(0, 50));
+            }
+            return conf >= GOAL_THRESHOLD;
+          })
         : [],
       commitments: Array.isArray(parsed.commitments)
-        ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number }) => (c.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number }) => {
+            const conf = c.confidence ?? 1;
+            if (conf < COMMITMENT_THRESHOLD) {
+              console.log(`[Extraction] Filtered commitment (conf=${conf.toFixed(2)}):`, c.description?.slice(0, 50));
+            }
+            return conf >= COMMITMENT_THRESHOLD;
+          })
         : [],
       identitySignals: Array.isArray(parsed.identitySignals)
-        ? parsed.identitySignals.map(sanitizeIdentitySignal).filter((i: { confidence?: number }) => (i.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        ? parsed.identitySignals.map(sanitizeIdentitySignal).filter((i: { confidence?: number }) => {
+            const conf = i.confidence ?? 1;
+            if (conf < IDENTITY_THRESHOLD) {
+              console.log(`[Extraction] Filtered identity signal (conf=${conf.toFixed(2)}):`, i.type);
+            }
+            return conf >= IDENTITY_THRESHOLD;
+          })
         : [],
       executionPatterns: Array.isArray(parsed.executionPatterns)
-        ? parsed.executionPatterns.map(sanitizeExecutionPattern).filter((e: { confidence?: number }) => (e.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        ? parsed.executionPatterns.map(sanitizeExecutionPattern).filter((e: { confidence?: number }) => {
+            const conf = e.confidence ?? 1;
+            if (conf < PATTERN_THRESHOLD) {
+              console.log(`[Extraction] Filtered execution pattern (conf=${conf.toFixed(2)}):`, e.pattern);
+            }
+            return conf >= PATTERN_THRESHOLD;
+          })
         : [],
       relationships: Array.isArray(parsed.relationships) ? parsed.relationships.map(sanitizeRelationship) : [],
       habits: Array.isArray(parsed.habits) ? parsed.habits.map(sanitizeHabit) : [],
       emotions: Array.isArray(parsed.emotions) ? parsed.emotions.map(sanitizeEmotion) : [],
       projects: Array.isArray(parsed.projects)
-        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number }) => (p.confidence ?? 1) >= CONFIDENCE_THRESHOLD)
+        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number }) => {
+            const conf = p.confidence ?? 1;
+            if (conf < PROJECT_THRESHOLD) {
+              console.log(`[Extraction] Filtered project (conf=${conf.toFixed(2)}):`, p.name?.slice(0, 50));
+            }
+            return conf >= PROJECT_THRESHOLD;
+          })
         : [],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers.filter((b: unknown) => typeof b === "string") : [],
     };
 
-    // Log extraction summary
+    // Log extraction summary with details
     const extractionSummary = {
       goals: result.goals.length,
       commitments: result.commitments.length,
@@ -83,9 +127,26 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
       executionPatterns: result.executionPatterns.length,
       projects: result.projects.length,
     };
-    console.log("[Extraction] Summary:", extractionSummary);
+    console.log("[Extraction] Post-filter summary:", extractionSummary);
+    
     if (result.goals.length > 0) {
-      console.log("[Extraction] Goals extracted:", result.goals.map((g: any) => g.title));
+      console.log("[Extraction] Goals extracted:", result.goals.map((g: any) => ({
+        title: g.title,
+        confidence: g.confidence,
+        category: g.category
+      })));
+    }
+    if (result.commitments.length > 0) {
+      console.log("[Extraction] Commitments extracted:", result.commitments.map((c: any) => ({
+        description: c.description?.slice(0, 50),
+        confidence: c.confidence
+      })));
+    }
+    if (result.identitySignals.length > 0) {
+      console.log("[Extraction] Identity signals extracted:", result.identitySignals.map((i: any) => ({
+        type: i.type,
+        confidence: i.confidence
+      })));
     }
 
     return result;

@@ -47,6 +47,8 @@ export interface ConversationState {
   // Streaming state - NOT persisted
   streamingContent?: string;
   isAiTyping?: boolean;
+  // Track optimistic messages to prevent them from being wiped
+  pendingOptimisticIds?: Set<string>;
 }
 
 interface AppState {
@@ -73,6 +75,8 @@ interface AppState {
   // Actions for the ACTIVE conversation
   setMessages: (conversationId: string, msgs: Message[]) => void;
   addMessage: (conversationId: string, msg: Message) => void;
+  addOptimisticMessage: (conversationId: string, msg: Message) => void;
+  reconcileMessages: (conversationId: string, serverMessages: Message[]) => void;
   updateStreamingContent: (conversationId: string, content: string) => void;
   setIsAiTyping: (conversationId: string, typing: boolean) => void;
   
@@ -90,6 +94,7 @@ const defaultConversationState: ConversationState = {
   // Streaming state defaults
   streamingContent: "",
   isAiTyping: false,
+  pendingOptimisticIds: new Set(),
 };
 
 // Separate: what gets persisted vs what's ephemeral
@@ -151,6 +156,66 @@ export const useAppStore = create<AppState>()(
         };
       }),
 
+      addOptimisticMessage: (conversationId, msg) => set((state) => {
+        const convState = state.conversationStates[conversationId] || defaultConversationState;
+        const newMessages = [...convState.messages, msg];
+        const newOptimisticIds = new Set(convState.pendingOptimisticIds || []);
+        newOptimisticIds.add(msg.id);
+        return {
+          conversationStates: {
+            ...state.conversationStates,
+            [conversationId]: {
+              ...convState,
+              messages: newMessages,
+              pendingOptimisticIds: newOptimisticIds,
+            }
+          }
+        };
+      }),
+
+      reconcileMessages: (conversationId, serverMessages) => set((state) => {
+        const convState = state.conversationStates[conversationId];
+        if (!convState) {
+          // No existing state, just set server messages
+          return {
+            conversationStates: {
+              ...state.conversationStates,
+              [conversationId]: {
+                ...defaultConversationState,
+                messages: serverMessages,
+              }
+            }
+          };
+        }
+
+        // Reconcile: keep optimistic messages, merge with server messages
+        const optimisticIds = convState.pendingOptimisticIds || new Set();
+        const optimisticMessages = convState.messages.filter(m => optimisticIds.has(m.id));
+        
+        // Create a map of server messages by ID for deduplication
+        const serverMessageMap = new Map(serverMessages.map(m => [m.id, m]));
+        
+        // Merge: server messages + optimistic messages not yet confirmed
+        const mergedMessages = [
+          ...serverMessages,
+          ...optimisticMessages.filter(m => !serverMessageMap.has(m.id))
+        ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        return {
+          conversationStates: {
+            ...state.conversationStates,
+            [conversationId]: {
+              ...convState,
+              messages: mergedMessages,
+              // Clear optimistic IDs that are now in server messages
+              pendingOptimisticIds: new Set(
+                Array.from(optimisticIds).filter(id => !serverMessageMap.has(id))
+              ),
+            }
+          }
+        };
+      }),
+
       updateStreamingContent: (conversationId, content) => set((state) => ({
         conversationStates: {
           ...state.conversationStates,
@@ -184,7 +249,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
         conversations: state.conversations,
-        // Only persist messages, NOT streaming state
+        // Only persist messages, NOT streaming state or optimistic IDs
         conversationStates: Object.fromEntries(
           Object.entries(state.conversationStates).map(([id, convState]) => [
             id,

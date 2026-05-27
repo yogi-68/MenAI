@@ -373,8 +373,12 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   // Persist extracted life data (after extraction completes)
   extractedData.then((data) => {
     if (hasExtractedData(data)) {
-      persistExtractedData(input.userId, data, conversationId, serviceClient).catch(() => {});
-      invalidateSnapshot(input.userId); // Bust cache so next request sees new data
+      persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
+        // After successful persistence, invalidate dashboard cache
+        invalidateSnapshot(input.userId); // Bust cache so next request sees new data
+        console.log("[Extraction] Successfully persisted data, dashboard cache invalidated");
+      }).catch(() => {});
+      
       const extractionSummary = buildExtractionSummary(data);
       if (extractionSummary) {
         storeMemory({
@@ -772,8 +776,12 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [], identitySignals: [], executionPatterns: [] }));
         bgExtraction.then((data) => {
           if (hasExtractedData(data)) {
-            persistExtractedData(input.userId, data, conversationId, serviceClient).catch(() => {});
-            invalidateSnapshot(input.userId);
+            persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
+              // After successful persistence, invalidate dashboard cache
+              invalidateSnapshot(input.userId);
+              console.log("[Extraction] Successfully persisted data (streaming), dashboard cache invalidated");
+            }).catch(() => {});
+            
             const extractionSummary = buildExtractionSummary(data);
             if (extractionSummary) {
               storeMemory({

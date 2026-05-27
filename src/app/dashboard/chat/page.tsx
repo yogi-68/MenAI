@@ -34,6 +34,8 @@ export default function ChatPage() {
     crisisAlert,
     setMessages,
     addMessage,
+    addOptimisticMessage,
+    reconcileMessages,
     updateStreamingContent,
     setCurrentConversationId,
     setIsAiTyping,
@@ -91,14 +93,15 @@ export default function ChatPage() {
           created_at: m.created_at,
         }));
         
-        setMessages(convId, loadedMessages);
+        // Use reconcileMessages instead of setMessages to preserve optimistic messages
+        reconcileMessages(convId, loadedMessages);
         setCurrentConversationId(convId);
         setSidebarOpen(false);
       }
     } catch (error) {
       console.error("Failed to load conversation:", error);
     }
-  }, [setMessages, setCurrentConversationId]);
+  }, [reconcileMessages, setCurrentConversationId]);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -149,8 +152,8 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
 
-    // Add message optimistically
-    addMessage(targetConvId, userMessage);
+    // Add message optimistically with tracking
+    addOptimisticMessage(targetConvId, userMessage);
     setInput("");
     setIsAiTyping(targetConvId, true);
     updateStreamingContent(targetConvId, "");
@@ -184,7 +187,8 @@ export default function ChatPage() {
         // Migration from optimistic ID to server ID
         const currentMessages = conversationStates[targetConvId]?.messages || [];
         setCurrentConversationId(serverConvId);
-        setMessages(serverConvId, currentMessages);
+        // Use reconcileMessages to preserve optimistic state
+        reconcileMessages(serverConvId, currentMessages);
         targetConvId = serverConvId;
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
@@ -442,10 +446,10 @@ export default function ChatPage() {
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "32px",
+            padding: "40px 48px",
             display: "flex",
             flexDirection: "column",
-            gap: "24px",
+            gap: "28px",
           }}
         >
           {messages.length === 0 && !streamingContent && (
@@ -504,22 +508,23 @@ export default function ChatPage() {
                 justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
                 alignItems: "flex-start",
                 gap: "16px",
+                animation: "fadeIn 0.5s ease-out",
               }}
             >
               <div className={msg.role === "user" ? "chat-bubble-user" : "chat-bubble-ai"}>
                 {msg.role === "assistant" ? (
                   <ReactMarkdown
                     components={{
-                      p: ({ children }) => <p style={{ margin: "0 0 12px", fontWeight: 300 }}>{children}</p>,
+                      p: ({ children }) => <p style={{ margin: "0 0 14px", fontWeight: 300, lineHeight: 1.8 }}>{children}</p>,
                       strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
-                      ul: ({ children }) => <ul style={{ paddingLeft: "20px", margin: "12px 0", fontWeight: 300 }}>{children}</ul>,
-                      li: ({ children }) => <li style={{ marginBottom: "6px" }}>{children}</li>,
+                      ul: ({ children }) => <ul style={{ paddingLeft: "22px", margin: "14px 0", fontWeight: 300, lineHeight: 1.8 }}>{children}</ul>,
+                      li: ({ children }) => <li style={{ marginBottom: "8px" }}>{children}</li>,
                     }}
                   >
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
-                  <p style={{ margin: 0, fontWeight: 400 }}>{msg.content}</p>
+                  <p style={{ margin: 0, fontWeight: 400, lineHeight: 1.7 }}>{msg.content}</p>
                 )}
               </div>
             </div>
@@ -527,11 +532,11 @@ export default function ChatPage() {
 
           {/* Streaming response */}
           {streamingContent && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", animation: "fadeIn 0.3s ease-out" }}>
               <div className="chat-bubble-ai">
                 <ReactMarkdown
                   components={{
-                    p: ({ children }) => <p style={{ margin: "0 0 12px", fontWeight: 300 }}>{children}</p>,
+                    p: ({ children }) => <p style={{ margin: "0 0 14px", fontWeight: 300, lineHeight: 1.8 }}>{children}</p>,
                     strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
                   }}
                 >
@@ -560,7 +565,7 @@ export default function ChatPage() {
         {/* Input Area */}
         <div
           style={{
-            padding: "24px",
+            padding: "28px 32px",
             borderTop: "1px solid var(--border-color)",
             background: "var(--bg-primary)",
           }}
