@@ -226,8 +226,6 @@ export default function OnboardingPage() {
           className="transition-all duration-300"
         />
       </div>
-      </div>
-
       {/* Content */}
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
         <div style={{ maxWidth: "800px", width: "100%" }}>
