@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
-import { useQuery } from "@tantml/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { FileText, TrendingUp, Calendar, Eye, Target } from "lucide-react";
 
 interface WeeklyReport {
