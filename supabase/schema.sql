@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_conversations_user ON conversations(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, created_at DESC);
 
 -- ================================================================
 -- MESSAGES
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at ASC);
 
 -- ================================================================
 -- CRISIS EVENTS (Retained for Safety)
@@ -76,8 +76,8 @@ CREATE TABLE IF NOT EXISTS crisis_events (
   resolved_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_crisis_user ON crisis_events(user_id, created_at DESC);
-CREATE INDEX idx_crisis_unresolved ON crisis_events(resolved, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crisis_user ON crisis_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crisis_unresolved ON crisis_events(resolved, created_at DESC);
 
 -- ================================================================
 -- AI MEMORIES (Vector Store)
@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_memories_user ON memories(user_id, memory_type);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, memory_type);
 
 -- ================================================================
 -- SUBSCRIPTIONS
@@ -142,7 +142,8 @@ CREATE TABLE IF NOT EXISTS habit_logs (
 -- ================================================================
 
 -- Semantic search for memories
-CREATE OR REPLACE FUNCTION match_memories(
+DROP FUNCTION IF EXISTS match_memories(VECTOR(1536), FLOAT, INT, UUID);
+CREATE FUNCTION match_memories(
   query_embedding VECTOR(1536),
   match_threshold FLOAT,
   match_count INT,
@@ -191,30 +192,43 @@ ALTER TABLE habits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE habit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: users can read/update their own
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Service role full access profiles" ON profiles;
 CREATE POLICY "Service role full access profiles" ON profiles FOR ALL USING (auth.role() = 'service_role');
 
 -- Conversations: users can CRUD their own
+DROP POLICY IF EXISTS "Users can manage own conversations" ON conversations;
 CREATE POLICY "Users can manage own conversations" ON conversations FOR ALL USING (auth.uid() = user_id);
 
 -- Messages: users can manage their own
+DROP POLICY IF EXISTS "Users can manage own messages" ON messages;
 CREATE POLICY "Users can manage own messages" ON messages FOR ALL USING (auth.uid() = user_id);
 
 -- Crisis events: service role only for writes
+DROP POLICY IF EXISTS "Users can view own crisis events" ON crisis_events;
 CREATE POLICY "Users can view own crisis events" ON crisis_events FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages crisis" ON crisis_events;
 CREATE POLICY "Service role manages crisis" ON crisis_events FOR ALL USING (auth.role() = 'service_role');
 
 -- Memories: users can view, service role manages
+DROP POLICY IF EXISTS "Users can view own memories" ON memories;
 CREATE POLICY "Users can view own memories" ON memories FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages memories" ON memories;
 CREATE POLICY "Service role manages memories" ON memories FOR ALL USING (auth.role() = 'service_role');
 
 -- Subscriptions
+DROP POLICY IF EXISTS "Users can view own subscription" ON subscriptions;
 CREATE POLICY "Users can view own subscription" ON subscriptions FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Service role manages subscriptions" ON subscriptions;
 CREATE POLICY "Service role manages subscriptions" ON subscriptions FOR ALL USING (auth.role() = 'service_role');
 
 -- Habits
+DROP POLICY IF EXISTS "Users can manage own habits" ON habits;
 CREATE POLICY "Users can manage own habits" ON habits FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can manage own habit logs" ON habit_logs;
 CREATE POLICY "Users can manage own habit logs" ON habit_logs FOR ALL USING (auth.uid() = user_id);
 
 -- ================================================================
@@ -222,7 +236,8 @@ CREATE POLICY "Users can manage own habit logs" ON habit_logs FOR ALL USING (aut
 -- ================================================================
 
 -- Auto-create profile on signup
-CREATE OR REPLACE FUNCTION handle_new_user()
+DROP FUNCTION IF EXISTS handle_new_user() CASCADE;
+CREATE FUNCTION handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
@@ -238,12 +253,14 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE TRIGGER on_auth_user_created
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
 -- Auto-update updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
+DROP FUNCTION IF EXISTS update_updated_at() CASCADE;
+CREATE FUNCTION update_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
@@ -253,6 +270,9 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS update_conversations_updated_at ON conversations;
 CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON conversations FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS update_subscriptions_updated_at ON subscriptions;
 CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions FOR EACH ROW EXECUTE FUNCTION update_updated_at();

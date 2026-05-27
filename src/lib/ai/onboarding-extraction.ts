@@ -1,5 +1,5 @@
 /**
- * Onboarding Memory Extraction Service
+ * Onboarding Memory Extraction Service - Updated for Domain-Agnostic Questions
  * Extracts memory from onboarding questionnaire responses
  */
 
@@ -12,23 +12,24 @@ interface ExtractionResult {
   identitySignals?: Array<{ type: string; description: string; longTermDirection: string; confidence: number }>;
   executionPatterns?: Array<{ pattern: string; trigger: string; frequency: string; severity: string; behavioralImpact: string; confidence: number }>;
   values?: string[];
-  lifestyleIssues?: string[];
-  stressResponse?: string[];
-  workStyle?: string;
+  obstacles?: string[];
+  supportStyle?: string;
+  reflectionFrequency?: string;
+  dailyPriorities?: string[];
 }
 
-// Question mapping to extraction logic
+// Question mapping to extraction logic for NEW questions
 const QUESTION_EXTRACTORS: Record<string, (response: string, responseData: any) => Promise<ExtractionResult>> = {
-  Q1: extractGoalsFromQ1,
-  Q2: extractLongTermVision,
-  Q3: extractExecutionBlockers,
-  Q4: extractWorkStyle,
-  Q5: extractHesitationLevel,
-  Q6: extractMotivation,
-  Q7: extractFrictionPoint,
-  Q8: extractLifestyleIssues,
-  Q9: extractStressResponse,
-  Q10: extractInitialCommitment,
+  Q1: extractPersonalGoals,        // What's most important to you right now in your life?
+  Q2: extractFutureVision,         // Where do you see yourself in a year?
+  Q3: extractObstacles,            // What obstacles are you facing?
+  Q4: extractDailyPriorities,      // What do you want to focus on daily?
+  Q5: extractSupportStyle,         // How do you prefer guidance?
+  Q6: extractLifeBalance,          // What area needs most attention?
+  Q7: extractMotivation,           // What motivates you most?
+  Q8: extractStressResponse,       // When overwhelmed, you typically...
+  Q9: extractReflectionFrequency,  // How often do you want to reflect?
+  Q10: extractInitialCommitment,   // 30-day accomplishment goal
 };
 
 /**
@@ -66,9 +67,9 @@ export async function extractOnboardingMemory(
 }
 
 /**
- * Q1: "What are you trying to build toward right now?"
+ * Q1: "What's most important to you right now in your life?"
  */
-async function extractGoalsFromQ1(response: string, _data: any): Promise<ExtractionResult> {
+async function extractPersonalGoals(response: string, _data: any): Promise<ExtractionResult> {
   if (!response || response.trim().length < 3) {
     return {};
   }
@@ -79,15 +80,19 @@ async function extractGoalsFromQ1(response: string, _data: any): Promise<Extract
     messages: [
       {
         role: "system",
-        content: `Extract primary goal from this statement. Return ONLY valid JSON:
+        content: `Extract primary goals from this statement. Return ONLY valid JSON:
 {
-  "title": "goal title (concise)",
-  "category": "startup|fitness|financial|relationship|learning|identity|health|career|other",
-  "priority": "high",
-  "confidence": 0.8-0.95
+  "goals": [
+    {
+      "title": "goal title (concise)",
+      "category": "personal_growth|health_fitness|career_work|relationships|creativity|learning|finances|other",
+      "priority": "high|medium|low",
+      "confidence": 0.8-0.95
+    }
+  ]
 }
 
-Only extract if confidence > 0.75. If unclear, return empty object {}.`
+Only extract goals with confidence > 0.75. Can return multiple goals. If unclear, return empty object {}.`
       },
       {
         role: "user",
@@ -102,8 +107,9 @@ Only extract if confidence > 0.75. If unclear, return empty object {}.`
 
   try {
     const parsed = JSON.parse(result);
-    if (parsed.confidence && parsed.confidence > 0.75) {
-      return { goals: [parsed] };
+    if (parsed.goals && parsed.goals.length > 0) {
+      const validGoals = parsed.goals.filter((g: any) => g.confidence > 0.75);
+      return validGoals.length > 0 ? { goals: validGoals } : {};
     }
   } catch (e) {
     console.error("Q1 parse error:", e);
@@ -113,9 +119,9 @@ Only extract if confidence > 0.75. If unclear, return empty object {}.`
 }
 
 /**
- * Q2: "If the next 3 years went perfectly, what would look different?"
+ * Q2: "Where do you see yourself in a year? What would success look like?"
  */
-async function extractLongTermVision(response: string, _data: any): Promise<ExtractionResult> {
+async function extractFutureVision(response: string, _data: any): Promise<ExtractionResult> {
   if (!response || response.trim().length < 10) {
     return {};
   }
@@ -128,9 +134,9 @@ async function extractLongTermVision(response: string, _data: any): Promise<Extr
         role: "system",
         content: `Extract long-term goals and values. Return ONLY valid JSON:
 {
-  "goals": [{"title": "...", "category": "startup|...", "priority": "medium", "confidence": 0.5-0.8}],
-  "identitySignals": [{"type": "founder|creator|self-discipline|leadership|other", "description": "...", "longTermDirection": "...", "confidence": 0.5-0.8}],
-  "values": ["freedom", "family", "impact", ...]
+  "goals": [{"title": "...", "category": "...", "priority": "medium", "confidence": 0.5-0.8}],
+  "identitySignals": [{"type": "growth|achievement|connection|impact|freedom", "description": "...", "longTermDirection": "...", "confidence": 0.5-0.8}],
+  "values": ["growth", "family", "impact", "balance", ...]
 }
 
 This is aspirational, so use moderate confidence (0.5-0.8). Extract key themes.`
@@ -155,41 +161,77 @@ This is aspirational, so use moderate confidence (0.5-0.8). Extract key themes.`
 }
 
 /**
- * Q3: "What usually stops your momentum?" (Multiple choice)
+ * Q3: "What obstacles are you facing?" (Multiple choice)
  */
-async function extractExecutionBlockers(response: string, responseData: any): Promise<ExtractionResult> {
+async function extractObstacles(response: string, responseData: any): Promise<ExtractionResult> {
   const selected = responseData?.selected || [];
   if (selected.length === 0 && !response) {
     return {};
   }
 
+  const obstacles: string[] = [];
   const patterns: ExtractionResult["executionPatterns"] = [];
 
   // Map choices to patterns
-  const patternMap: Record<string, { pattern: string; behavioralImpact: string }> = {
-    overthinking: { pattern: "overthinking", behavioralImpact: "Analysis paralysis prevents action" },
-    perfectionism: { pattern: "perfectionism", behavioralImpact: "Never ships until everything feels perfect" },
-    burnout: { pattern: "burnout", behavioralImpact: "Energy depletes, can't sustain pace" },
-    distraction: { pattern: "scattered_focus", behavioralImpact: "Attention shifts before completion" },
-    lack_of_clarity: { pattern: "avoidance", behavioralImpact: "Unclear direction leads to postponement" },
-    fear_of_failure: { pattern: "avoidance", behavioralImpact: "Fear prevents starting or shipping" },
+  const patternMap: Record<string, { obstacle: string; pattern?: string; impact?: string }> = {
+    time_management: { 
+      obstacle: "time_management", 
+      pattern: "scattered_focus", 
+      impact: "Struggles to manage time effectively" 
+    },
+    motivation: { 
+      obstacle: "motivation", 
+      pattern: "inconsistency", 
+      impact: "Motivation fluctuates, affecting consistency" 
+    },
+    stress: { 
+      obstacle: "stress", 
+      pattern: "burnout", 
+      impact: "Stress levels impact execution" 
+    },
+    relationships: { 
+      obstacle: "relationships",
+      pattern: null,
+      impact: null
+    },
+    health: { 
+      obstacle: "health",
+      pattern: null,
+      impact: null
+    },
+    career_uncertainty: { 
+      obstacle: "career_uncertainty", 
+      pattern: "avoidance", 
+      impact: "Career uncertainty creates paralysis" 
+    },
+    financial_concerns: { 
+      obstacle: "financial_concerns",
+      pattern: null,
+      impact: null
+    },
   };
 
   for (const choice of selected) {
-    const mapped = patternMap[choice.toLowerCase().replace(/\s+/g, "_")];
+    const key = choice.toLowerCase().replace(/\s+/g, "_");
+    const mapped = patternMap[key];
+    
     if (mapped) {
-      patterns.push({
-        pattern: mapped.pattern,
-        trigger: "self-reported",
-        frequency: "frequent",
-        severity: "medium",
-        behavioralImpact: mapped.behavioralImpact,
-        confidence: 0.85,
-      });
+      obstacles.push(mapped.obstacle);
+      
+      if (mapped.pattern && mapped.impact) {
+        patterns.push({
+          pattern: mapped.pattern,
+          trigger: "life obstacles",
+          frequency: "frequent",
+          severity: "medium",
+          behavioralImpact: mapped.impact,
+          confidence: 0.75,
+        });
+      }
     }
   }
 
-  // If "Other" response, use LLM to extract
+  // If "Other" response, use LLM
   if (response && response.trim().length > 5) {
     const openai = getOpenAI();
     const completion = await openai.chat.completions.create({
@@ -197,15 +239,18 @@ async function extractExecutionBlockers(response: string, responseData: any): Pr
       messages: [
         {
           role: "system",
-          content: `Extract execution pattern from this blocker description. Return ONLY valid JSON:
+          content: `Extract obstacle and execution pattern. Return ONLY valid JSON:
 {
+  "obstacle": "brief description",
   "pattern": "overthinking|procrastination|avoidance|perfectionism|scattered_focus|inconsistency|burnout",
   "trigger": "what triggers it",
   "frequency": "frequent",
   "severity": "medium|high",
-  "behavioralImpact": "how it affects execution",
+  "behavioralImpact": "how it affects life",
   "confidence": 0.7-0.9
-}`
+}
+
+If no clear execution pattern, omit pattern field.`
         },
         {
           role: "user",
@@ -219,7 +264,10 @@ async function extractExecutionBlockers(response: string, responseData: any): Pr
     if (result) {
       try {
         const parsed = JSON.parse(result);
-        if (parsed.confidence > 0.7) {
+        if (parsed.obstacle) {
+          obstacles.push(parsed.obstacle);
+        }
+        if (parsed.pattern && parsed.confidence > 0.7) {
           patterns.push(parsed);
         }
       } catch (e) {
@@ -228,57 +276,92 @@ async function extractExecutionBlockers(response: string, responseData: any): Pr
     }
   }
 
-  return patterns.length > 0 ? { executionPatterns: patterns } : {};
+  const extractedResult: ExtractionResult = {};
+  if (obstacles.length > 0) extractedResult.obstacles = obstacles;
+  if (patterns.length > 0) extractedResult.executionPatterns = patterns;
+  return extractedResult;
 }
 
 /**
- * Q4: "What feels more natural to you?" (Forced choice)
+ * Q4: "What do you want to focus on daily?" (Multiple choice)
  */
-async function extractWorkStyle(response: string, responseData: any): Promise<ExtractionResult> {
+async function extractDailyPriorities(response: string, responseData: any): Promise<ExtractionResult> {
+  const selected = responseData?.selected || [];
+  if (selected.length === 0 && !response) {
+    return {};
+  }
+
+  const priorities: string[] = [];
+
+  for (const choice of selected) {
+    priorities.push(choice.toLowerCase().replace(/\s+/g, "_"));
+  }
+
+  if (response && response.trim().length > 3) {
+    priorities.push(response.trim());
+  }
+
+  return priorities.length > 0 ? { dailyPriorities: priorities } : {};
+}
+
+/**
+ * Q5: "How do you prefer guidance?" (Forced choice)
+ */
+async function extractSupportStyle(response: string, responseData: any): Promise<ExtractionResult> {
   const selected = responseData?.selected;
   
   if (selected) {
     const styles: Record<string, string> = {
-      planning: "planning",
-      building: "building",
-      exploring: "exploring",
-      refining: "refining",
+      gentle: "gentle",
+      direct: "direct",
+      balanced: "balanced",
+      strategic: "strategic",
     };
     
     const style = styles[selected.toLowerCase()];
     if (style) {
-      return { workStyle: style };
+      return { supportStyle: style };
     }
-  }
-
-  // If "Other", store the custom text
-  if (response && response.trim().length > 3) {
-    return { workStyle: response.trim() };
   }
 
   return {};
 }
 
 /**
- * Q5: Hesitation slider (1-5)
+ * Q6: "What area of life needs most attention right now?"
  */
-async function extractHesitationLevel(response: string, responseData: any): Promise<ExtractionResult> {
-  const level = responseData?.value || parseInt(response);
+async function extractLifeBalance(response: string, responseData: any): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
   
-  if (isNaN(level) || level < 1 || level > 5) {
-    return {};
+  const categoryMap: Record<string, string> = {
+    career: "career_work",
+    health: "health_fitness",
+    relationships: "relationships",
+    personal_development: "personal_growth",
+    finances: "finances",
+  };
+
+  if (selected) {
+    const category = categoryMap[selected.toLowerCase().replace(/\s+/g, "_")] || "other";
+    
+    // Create a goal for this area
+    return {
+      goals: [{
+        title: `Improve ${selected}`,
+        category: category,
+        priority: "high",
+        confidence: 0.8,
+      }],
+    };
   }
 
-  // If level >= 4, flag overthinking pattern
-  if (level >= 4) {
+  if (response && response.trim().length > 3) {
     return {
-      executionPatterns: [{
-        pattern: "overthinking",
-        trigger: "decision pressure",
-        frequency: level === 5 ? "constant" : "frequent",
-        severity: level === 5 ? "high" : "medium",
-        behavioralImpact: "Delays action due to excessive planning",
-        confidence: 0.8,
+      goals: [{
+        title: `Focus on ${response.trim()}`,
+        category: "other",
+        priority: "high",
+        confidence: 0.7,
       }],
     };
   }
@@ -287,144 +370,25 @@ async function extractHesitationLevel(response: string, responseData: any): Prom
 }
 
 /**
- * Q6: "Why does building something of your own matter to you?"
+ * Q7: "What motivates you most?"
  */
-async function extractMotivation(response: string, _data: any): Promise<ExtractionResult> {
-  if (!response || response.trim().length < 10) {
-    return {};
-  }
-
-  const openai = getOpenAI();
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content: `Extract identity signals and values. Return ONLY valid JSON:
-{
-  "identitySignals": [{"type": "founder|creator|self-discipline|leadership|other", "description": "...", "longTermDirection": "...", "confidence": 0.7-0.9}],
-  "values": ["autonomy", "impact", "freedom", "challenge", ...]
-}
-
-Focus on intrinsic motivation. Extract key themes.`
-      },
-      {
-        role: "user",
-        content: response
-      }
-    ],
-    temperature: 0.3,
-  });
-
-  const result = completion.choices[0].message.content;
-  if (!result) return {};
-
-  try {
-    return JSON.parse(result);
-  } catch (e) {
-    console.error("Q6 parse error:", e);
-    return {};
-  }
-}
-
-/**
- * Q7: "What part of this process feels heaviest right now?"
- */
-async function extractFrictionPoint(response: string, responseData: any): Promise<ExtractionResult> {
+async function extractMotivation(response: string, responseData: any): Promise<ExtractionResult> {
   const selected = responseData?.selected;
-  
-  const frictionMap: Record<string, { pattern: string; impact: string }> = {
-    starting: { pattern: "avoidance", impact: "Difficulty initiating tasks" },
-    committing: { pattern: "inconsistency", impact: "Struggles with commitment" },
-    finishing: { pattern: "perfectionism", impact: "Can't complete and ship" },
-    staying_consistent: { pattern: "inconsistency", impact: "Follow-through varies" },
-    narrowing_focus: { pattern: "scattered_focus", impact: "Too many priorities" },
-  };
+  const values: string[] = [];
 
   if (selected) {
-    const key = selected.toLowerCase().replace(/\s+/g, "_");
-    const mapped = frictionMap[key];
-    
-    if (mapped) {
-      return {
-        executionPatterns: [{
-          pattern: mapped.pattern,
-          trigger: "execution stage friction",
-          frequency: "frequent",
-          severity: "medium",
-          behavioralImpact: mapped.impact,
-          confidence: 0.8,
-        }],
-      };
-    }
-  }
-
-  // Handle "Other" text response
-  if (response && response.trim().length > 5) {
-    const openai = getOpenAI();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `Extract execution pattern from friction point. Return JSON with pattern, behavioralImpact, confidence.`
-        },
-        {
-          role: "user",
-          content: response
-        }
-      ],
-      temperature: 0.3,
-    });
-
-    const result = completion.choices[0].message.content;
-    if (result) {
-      try {
-        const parsed = JSON.parse(result);
-        if (parsed.confidence > 0.7) {
-          return {
-            executionPatterns: [{
-              ...parsed,
-              trigger: "execution friction",
-              frequency: "frequent",
-              severity: "medium",
-            }],
-          };
-        }
-      } catch (e) {
-        console.error("Q7 Other parse error:", e);
-      }
-    }
-  }
-
-  return {};
-}
-
-/**
- * Q8: "What currently feels most unstable in your life?"
- */
-async function extractLifestyleIssues(response: string, responseData: any): Promise<ExtractionResult> {
-  const selected = responseData?.selected || [];
-  
-  if (selected.length === 0 && !response) {
-    return {};
-  }
-
-  const issues: string[] = [];
-
-  for (const choice of selected) {
-    issues.push(choice.toLowerCase());
+    values.push(selected.toLowerCase());
   }
 
   if (response && response.trim().length > 3) {
-    issues.push(response.trim());
+    values.push(response.trim());
   }
 
-  return issues.length > 0 ? { lifestyleIssues: issues } : {};
+  return values.length > 0 ? { values } : {};
 }
 
 /**
- * Q9: "When you feel overwhelmed, what do you usually do?"
+ * Q8: "When overwhelmed, you typically..."
  */
 async function extractStressResponse(response: string, responseData: any): Promise<ExtractionResult> {
   const selected = responseData?.selected || [];
@@ -433,16 +397,15 @@ async function extractStressResponse(response: string, responseData: any): Promi
     return {};
   }
 
-  const responses: string[] = [];
   const patterns: ExtractionResult["executionPatterns"] = [];
 
-  const responseMap: Record<string, { label: string; pattern?: string }> = {
-    avoid_tasks: { label: "avoid tasks", pattern: "avoidance" },
-    overplan: { label: "overplan", pattern: "overthinking" },
-    distract_myself: { label: "distract", pattern: "scattered_focus" },
-    work_harder: { label: "work harder", pattern: "burnout" },
-    shut_down: { label: "shut down", pattern: "burnout" },
-    start_something_new: { label: "start new", pattern: "scattered_focus" },
+  const responseMap: Record<string, { pattern: string; impact: string }> = {
+    avoid_tasks: { pattern: "avoidance", impact: "Responds to stress by avoiding tasks" },
+    overplan: { pattern: "overthinking", impact: "Responds to stress by overplanning" },
+    distract_myself: { pattern: "scattered_focus", impact: "Responds to stress with distraction" },
+    work_harder: { pattern: "burnout", impact: "Responds to stress by pushing harder" },
+    shut_down: { pattern: "burnout", impact: "Responds to overwhelm by shutting down" },
+    start_something_new: { pattern: "scattered_focus", impact: "Responds to stress by starting new things" },
   };
 
   for (const choice of selected) {
@@ -450,38 +413,49 @@ async function extractStressResponse(response: string, responseData: any): Promi
     const mapped = responseMap[key];
     
     if (mapped) {
-      responses.push(mapped.label);
-      
-      if (mapped.pattern) {
-        patterns.push({
-          pattern: mapped.pattern,
-          trigger: "overwhelm",
-          frequency: "frequent",
-          severity: "medium",
-          behavioralImpact: `Responds to stress by ${mapped.label}`,
-          confidence: 0.8,
-        });
-      }
+      patterns.push({
+        pattern: mapped.pattern,
+        trigger: "overwhelm",
+        frequency: "frequent",
+        severity: "medium",
+        behavioralImpact: mapped.impact,
+        confidence: 0.8,
+      });
     }
   }
 
   if (response && response.trim().length > 3) {
-    responses.push(response.trim());
+    // Store as additional context but don't create pattern
   }
 
-  const result: ExtractionResult = {};
-  if (responses.length > 0) {
-    result.stressResponse = responses;
-  }
-  if (patterns.length > 0) {
-    result.executionPatterns = patterns;
-  }
-
-  return result;
+  return patterns.length > 0 ? { executionPatterns: patterns } : {};
 }
 
 /**
- * Q10: "What is one thing you want to complete in the next 30 days?"
+ * Q9: "How often do you want to reflect on your progress?"
+ */
+async function extractReflectionFrequency(response: string, responseData: any): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
+  
+  if (selected) {
+    const frequencies: Record<string, string> = {
+      daily: "daily",
+      few_times_week: "few_times_week",
+      weekly: "weekly",
+      as_needed: "as_needed",
+    };
+    
+    const frequency = frequencies[selected.toLowerCase().replace(/\s+/g, "_")];
+    if (frequency) {
+      return { reflectionFrequency: frequency };
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Q10: "What's one thing you want to accomplish in the next 30 days?"
  */
 async function extractInitialCommitment(response: string, _data: any): Promise<ExtractionResult> {
   if (!response || response.trim().length < 3) {
@@ -496,13 +470,13 @@ async function extractInitialCommitment(response: string, _data: any): Promise<E
         role: "system",
         content: `Extract commitment with timeframe. Return ONLY valid JSON:
 {
-  "description": "what they want to complete",
+  "description": "what they want to accomplish",
   "category": "health|work|relationships|personal|other",
-  "timeframe": "this_week|ongoing",
+  "timeframe": "30_days",
   "confidence": 0.8-0.95
 }
 
-This is a 30-day commitment. Use timeframe "ongoing".`
+This is a 30-day commitment. Be specific.`
       },
       {
         role: "user",
@@ -547,6 +521,7 @@ async function persistExtractedMemory(
           category: goal.category,
           priority: goal.priority,
           status: "active",
+          source: "onboarding",
         });
       }
     }
@@ -559,7 +534,10 @@ async function persistExtractedMemory(
         await supabase.from("commitments").insert({
           user_id: userId,
           description: commitment.description,
+          category: commitment.category,
+          timeframe: commitment.timeframe,
           status: "active",
+          source: "onboarding",
         });
       }
     }
@@ -571,10 +549,11 @@ async function persistExtractedMemory(
       if (signal.confidence > 0.65) {
         await supabase.from("identity_signals").insert({
           user_id: userId,
-          type: signal.type,
+          signal_type: signal.type,
           description: signal.description,
           long_term_direction: signal.longTermDirection,
           confidence: signal.confidence,
+          source: "onboarding",
         });
       }
     }
@@ -620,19 +599,34 @@ async function persistExtractedMemory(
     }
   }
 
-  // Update profile with lifestyle issues, stress response, work style
+  // Update profile with extracted data
   const profileUpdates: any = {};
   
-  if (extracted.lifestyleIssues) {
-    profileUpdates.lifestyle_issues = extracted.lifestyleIssues;
+  if (extracted.supportStyle) {
+    profileUpdates.support_style = extracted.supportStyle;
+    profileUpdates.coaching_style = extracted.supportStyle; // Also set coaching_style
   }
   
-  if (extracted.stressResponse) {
-    profileUpdates.stress_response = extracted.stressResponse;
+  if (extracted.reflectionFrequency) {
+    profileUpdates.reflection_frequency = extracted.reflectionFrequency;
   }
-  
-  if (extracted.workStyle) {
-    profileUpdates.work_style = extracted.workStyle;
+
+  if (extracted.dailyPriorities) {
+    profileUpdates.daily_priorities = extracted.dailyPriorities;
+  }
+
+  if (extracted.obstacles) {
+    profileUpdates.lifestyle_issues = extracted.obstacles;
+  }
+
+  if (extracted.values) {
+    // Store values as a memory or in profile metadata
+    await supabase.from("memories").insert({
+      user_id: userId,
+      content: `User values: ${extracted.values.join(", ")}`,
+      memory_type: "preference",
+      metadata: { source: "onboarding", values: extracted.values },
+    });
   }
 
   if (Object.keys(profileUpdates).length > 0) {
@@ -647,5 +641,6 @@ async function persistExtractedMemory(
     commitments: extracted.commitments?.length || 0,
     identitySignals: extracted.identitySignals?.length || 0,
     patterns: extracted.executionPatterns?.length || 0,
+    profileUpdates: Object.keys(profileUpdates).length,
   });
 }
