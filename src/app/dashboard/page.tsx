@@ -120,8 +120,6 @@ export default function DashboardOverview() {
   const activeFocus = intelligence?.activeFocus || [];
   const nextSteps = intelligence?.suggestedNextSteps || [];
   const momentumTrend = intelligence?.momentumTrend;
-  
-  const isLoading = intelligenceLoading;
 
   return (
     <div style={{ padding: "64px 48px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
@@ -147,7 +145,7 @@ export default function DashboardOverview() {
                 Current Direction
               </h2>
             </div>
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : (
               <p style={{ fontSize: "1.05rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
@@ -163,7 +161,7 @@ export default function DashboardOverview() {
                 AI Observation
               </h2>
             </div>
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : observation ? (
               <p style={{ fontSize: "1rem", color: "var(--text-primary)", lineHeight: 1.8, fontStyle: "italic", fontWeight: 300 }}>
@@ -188,7 +186,7 @@ export default function DashboardOverview() {
               </h2>
             </div>
             
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
             ) : activeFocus.length > 0 || tasks.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -243,7 +241,7 @@ export default function DashboardOverview() {
               </h2>
             </div>
 
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
             ) : commitments.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -309,7 +307,7 @@ export default function DashboardOverview() {
                 Reflections
               </h2>
             </div>
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : reflection ? (
               <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
@@ -329,7 +327,7 @@ export default function DashboardOverview() {
                 Suggested Next Steps
               </h2>
             </div>
-            {isLoading ? (
+            {intelligenceLoading ? (
               <div className="skeleton shimmer" style={{ height: "100px", width: "100%", borderRadius: "8px" }} />
             ) : (
               <>
