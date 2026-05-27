@@ -76,14 +76,14 @@ export default function SignupPage() {
               width: 64,
               height: 64,
               borderRadius: "50%",
-              background: "rgba(92, 224, 216, 0.1)",
+              background: "rgba(59, 130, 246, 0.1)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               margin: "0 auto 20px",
             }}
           >
-            <Mail size={28} style={{ color: "var(--accent-secondary)" }} />
+            <Mail size={28} style={{ color: "var(--accent-primary)" }} />
           </div>
           <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "12px" }}>
             Check your email
@@ -132,7 +132,7 @@ export default function SignupPage() {
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
-            Build the life you want. Your AI execution coach is ready.
+            Start your journey to a better life. Your AI companion is waiting.
           </p>
         </div>
 
@@ -181,9 +181,9 @@ export default function SignupPage() {
                 style={{
                   padding: "12px 16px",
                   borderRadius: "var(--radius-md)",
-                  background: "rgba(252, 92, 156, 0.1)",
-                  border: "1px solid rgba(252, 92, 156, 0.2)",
-                  color: "var(--accent-tertiary)",
+                  background: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  color: "#ef4444",
                   fontSize: "0.85rem",
                   marginBottom: "20px",
                 }}
@@ -301,7 +301,7 @@ export default function SignupPage() {
               lineHeight: 1.5,
             }}
           >
-            By signing up, you agree that MenAI is an AI coaching tool and not a substitute for professional medical advice.
+            By signing up, you agree that MenAI is an AI companion for personal growth and not a substitute for professional medical or mental health advice.
           </p>
         </div>
 

@@ -93,10 +93,10 @@ export default function SettingsPage() {
     setTheme(newTheme);
     localStorage.setItem("menai-theme", newTheme);
     
-    if (newTheme === "light") {
-      document.documentElement.classList.add("light");
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
     } else {
-      document.documentElement.classList.remove("light");
+      document.documentElement.classList.remove("dark");
     }
   };
 

@@ -36,7 +36,7 @@ export default function RootLayout({
         {/* Inline theme script to prevent flash — runs before paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='dark')document.documentElement.classList.remove('light');else document.documentElement.classList.add('light');}catch(e){document.documentElement.classList.add('light');}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='dark')document.documentElement.classList.add('dark');else document.documentElement.classList.remove('dark');}catch(e){document.documentElement.classList.remove('dark');}})();`,
           }}
         />
       </head>

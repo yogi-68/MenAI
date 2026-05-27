@@ -36,10 +36,6 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const supabase = createClient();
 
-  useEffect(() => {
-    // Force dark theme as per new design spec
-    document.documentElement.classList.add("dark");
-  }, []);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -139,31 +135,31 @@ export default function DashboardLayout({
         </div>
 
         {/* New Chat Button */}
-        <Link
-          href="/dashboard/chat"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            padding: "10px",
-            borderRadius: "var(--radius-md)",
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid var(--border-color)",
-            color: "var(--text-primary)",
-            textDecoration: "none",
-            fontWeight: 500,
-            fontSize: "0.9rem",
-            marginBottom: "32px",
-            transition: "all 0.3s ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
-          }}
-        >
+          <Link
+            href="/dashboard/chat"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "10px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--bg-glass)",
+              border: "1px solid var(--border-color)",
+              color: "var(--text-primary)",
+              textDecoration: "none",
+              fontWeight: 500,
+              fontSize: "0.9rem",
+              marginBottom: "32px",
+              transition: "all 0.3s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg-glass-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "var(--bg-glass)";
+            }}
+          >
           <Plus size={16} />
           New Thread
         </Link>
@@ -266,7 +262,7 @@ export default function DashboardLayout({
             top: 0,
             zIndex: 30,
             padding: "16px",
-            background: "rgba(5, 5, 8, 0.8)",
+            background: "var(--bg-secondary)",
             backdropFilter: "blur(12px)",
             borderBottom: "1px solid var(--border-color)",
             alignItems: "center",
@@ -301,7 +297,7 @@ export default function DashboardLayout({
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.4)",
+            background: "rgba(0, 0, 0, 0.4)",
             backdropFilter: "blur(4px)",
             zIndex: 35,
           }}

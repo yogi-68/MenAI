@@ -61,7 +61,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MindfulAI" width={44} height={44} style={{ borderRadius: "50%" }} />
+            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} />
             <span
               style={{
                 fontSize: "1.5rem",
@@ -71,11 +71,11 @@ export default function LoginPage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              MindfulAI
+              MenAI
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
-            Welcome back. Your companion is here for you.
+            Welcome back. Let&apos;s continue your journey.
           </p>
         </div>
 
@@ -140,9 +140,9 @@ export default function LoginPage() {
                 style={{
                   padding: "12px 16px",
                   borderRadius: "var(--radius-md)",
-                  background: "rgba(252, 92, 156, 0.1)",
-                  border: "1px solid rgba(252, 92, 156, 0.2)",
-                  color: "var(--accent-tertiary)",
+                  background: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  color: "#ef4444",
                   fontSize: "0.85rem",
                   marginBottom: "20px",
                 }}

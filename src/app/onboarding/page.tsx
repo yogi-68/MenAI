@@ -210,46 +210,58 @@ export default function OnboardingPage() {
   };
 
   if (!currentQuestion) {
-    return <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-      <p className="text-white">Loading...</p>
+    return <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <p style={{ color: "var(--text-primary)" }}>Loading...</p>
     </div>;
   }
 
   const promptToShow = askingFollowUp ? currentQuestion.otherPrompt : currentQuestion.prompt;
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col">
+    <div style={{ minHeight: "100vh", background: "var(--bg-primary)", color: "var(--text-primary)", display: "flex", flexDirection: "column" }}>
       {/* Progress Bar */}
-      <div className="w-full h-1 bg-gray-800">
+      <div style={{ width: "100%", height: "4px", background: "var(--bg-secondary)" }}>
         <div
-          className="h-full bg-blue-500 transition-all duration-300"
-          style={{ width: `${progress}%` }}
+          style={{ height: "100%", background: "var(--accent-primary)", transition: "width 0.3s" }}
+          className="transition-all duration-300"
         />
+      </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full">
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+        <div style={{ maxWidth: "800px", width: "100%" }}>
           {/* Question Number */}
-          <div className="text-gray-500 text-sm mb-2">
+          <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: "8px" }}>
             Question {questionNumber} of {totalQuestions}
           </div>
 
           {/* Question Prompt */}
-          <h1 className="text-3xl font-bold mb-8 text-white">
+          <h1 style={{ fontSize: "1.875rem", fontWeight: 700, marginBottom: "32px", color: "var(--text-primary)" }}>
             {promptToShow}
           </h1>
 
           {/* Question Input */}
-          <div className="mb-8">
+          <div style={{ marginBottom: "32px" }}>
             {currentQuestion.type === "text" && (
               <input
                 type="text"
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-md)",
+                  outline: "none",
+                  color: "var(--text-primary)",
+                  fontSize: "1rem",
+                }}
                 placeholder="Type your answer..."
                 autoFocus
+                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
               />
             )}
 
@@ -257,25 +269,55 @@ export default function OnboardingPage() {
               <textarea
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white min-h-[120px]"
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-md)",
+                  outline: "none",
+                  color: "var(--text-primary)",
+                  minHeight: "120px",
+                  fontSize: "1rem",
+                  resize: "vertical",
+                }}
                 placeholder="Share your thoughts..."
                 autoFocus
+                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
               />
             )}
 
             {(currentQuestion.type === "multiple_choice" ||
               currentQuestion.type === "forced_choice") &&
               !askingFollowUp && (
-                <div className="space-y-3">
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                   {currentQuestion.options?.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => handleOptionToggle(option.value)}
-                      className={`w-full px-6 py-4 rounded-lg border-2 transition-all text-left ${
-                        selectedOptions.includes(option.value)
-                          ? "border-blue-500 bg-blue-500/10"
-                          : "border-gray-700 bg-gray-900 hover:border-gray-600"
-                      }`}
+                      style={{
+                        width: "100%",
+                        padding: "16px 24px",
+                        borderRadius: "var(--radius-md)",
+                        border: `2px solid ${selectedOptions.includes(option.value) ? "var(--accent-primary)" : "var(--border-color)"}`,
+                        background: selectedOptions.includes(option.value) ? "rgba(59, 130, 246, 0.1)" : "var(--bg-secondary)",
+                        color: "var(--text-primary)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        fontSize: "1rem",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!selectedOptions.includes(option.value)) {
+                          e.currentTarget.style.borderColor = "var(--text-muted)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!selectedOptions.includes(option.value)) {
+                          e.currentTarget.style.borderColor = "var(--border-color)";
+                        }
+                      }}
                     >
                       {option.label}
                     </button>
@@ -284,11 +326,28 @@ export default function OnboardingPage() {
                   {currentQuestion.allowOther && (
                     <button
                       onClick={() => setShowOther(!showOther)}
-                      className={`w-full px-6 py-4 rounded-lg border-2 transition-all text-left ${
-                        showOther
-                          ? "border-blue-500 bg-blue-500/10"
-                          : "border-gray-700 bg-gray-900 hover:border-gray-600"
-                      }`}
+                      style={{
+                        width: "100%",
+                        padding: "16px 24px",
+                        borderRadius: "var(--radius-md)",
+                        border: `2px solid ${showOther ? "var(--accent-primary)" : "var(--border-color)"}`,
+                        background: showOther ? "rgba(59, 130, 246, 0.1)" : "var(--bg-secondary)",
+                        color: "var(--text-primary)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        fontSize: "1rem",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!showOther) {
+                          e.currentTarget.style.borderColor = "var(--text-muted)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!showOther) {
+                          e.currentTarget.style.borderColor = "var(--border-color)";
+                        }
+                      }}
                     >
                       Other
                     </button>
@@ -299,27 +358,47 @@ export default function OnboardingPage() {
                       type="text"
                       value={otherText}
                       onChange={(e) => setOtherText(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white mt-2"
+                      style={{
+                        width: "100%",
+                        padding: "12px 16px",
+                        background: "var(--bg-secondary)",
+                        border: "1px solid var(--border-color)",
+                        borderRadius: "var(--radius-md)",
+                        outline: "none",
+                        color: "var(--text-primary)",
+                        marginTop: "8px",
+                        fontSize: "1rem",
+                      }}
                       placeholder="Please specify..."
                       autoFocus
+                      onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                      onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
                     />
                   )}
                 </div>
               )}
 
             {currentQuestion.type === "slider" && (
-              <div className="space-y-4">
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <input
                   type="range"
                   min={currentQuestion.min}
                   max={currentQuestion.max}
                   value={sliderValue}
                   onChange={(e) => setSliderValue(parseInt(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+                  style={{
+                    width: "100%",
+                    height: "8px",
+                    background: "var(--bg-secondary)",
+                    borderRadius: "var(--radius-md)",
+                    appearance: "none",
+                    cursor: "pointer",
+                  }}
+                  className="slider"
                 />
-                <div className="flex justify-between text-sm text-gray-400">
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem", color: "var(--text-muted)" }}>
                   <span>{currentQuestion.labels?.min}</span>
-                  <span className="text-white font-semibold text-lg">
+                  <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: "1.125rem" }}>
                     {sliderValue}
                   </span>
                   <span>{currentQuestion.labels?.max}</span>
@@ -331,39 +410,67 @@ export default function OnboardingPage() {
               <textarea
                 value={otherText}
                 onChange={(e) => setOtherText(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500 text-white min-h-[120px]"
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "var(--radius-md)",
+                  outline: "none",
+                  color: "var(--text-primary)",
+                  minHeight: "120px",
+                  fontSize: "1rem",
+                  resize: "vertical",
+                }}
                 placeholder="Tell me more..."
                 autoFocus
+                onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
+                onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
               />
             )}
           </div>
 
           {/* Error */}
           {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500 rounded-lg text-red-400 text-sm">
+            <div style={{
+              marginBottom: "16px",
+              padding: "12px",
+              background: "rgba(239, 68, 68, 0.1)",
+              border: "1px solid rgba(239, 68, 68, 0.3)",
+              borderRadius: "var(--radius-md)",
+              color: "#ef4444",
+              fontSize: "0.875rem",
+            }}>
               {error}
             </div>
           )}
 
           {/* Actions */}
-          <div className="flex gap-4">
+          <div style={{ display: "flex", gap: "16px" }}>
             <button
               onClick={handleNext}
               disabled={saving}
-              className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+              style={{
+                flex: 1,
+                padding: "14px 24px",
+                background: saving ? "var(--bg-glass)" : "var(--accent-primary)",
+                color: saving ? "var(--text-muted)" : "white",
+                borderRadius: "var(--radius-md)",
+                border: "none",
+                fontWeight: 500,
+                cursor: saving ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                fontSize: "1rem",
+              }}
+              onMouseEnter={(e) => {
+                if (!saving) e.currentTarget.style.background = "var(--accent-primary-hover)";
+              }}
+              onMouseLeave={(e) => {
+                if (!saving) e.currentTarget.style.background = "var(--accent-primary)";
+              }}
             >
               {saving ? "Saving..." : questionNumber === totalQuestions ? "Complete" : "Next"}
             </button>
-
-            {currentQuestion.optional && !askingFollowUp && (
-              <button
-                onClick={handleSkip}
-                disabled={saving}
-                className="px-6 py-3 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
-              >
-                Skip
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -374,14 +481,14 @@ export default function OnboardingPage() {
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: #3b82f6;
+          background: var(--accent-primary);
           cursor: pointer;
         }
         .slider::-moz-range-thumb {
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: #3b82f6;
+          background: var(--accent-primary);
           cursor: pointer;
           border: none;
         }

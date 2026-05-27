@@ -2,57 +2,7 @@
 
 /* ===== DESIGN TOKENS — CALM PREMIUM INTELLIGENCE ===== */
 :root {
-  /* Base Backgrounds (Near-black, Graphite, Charcoal) */
-  --bg-primary: #050508;
-  --bg-secondary: #0c0c12;
-  --bg-tertiary: #13131c;
-  
-  /* Glass and Depth */
-  --bg-card: rgba(12, 12, 18, 0.4);
-  --bg-glass: rgba(255, 255, 255, 0.02);
-  --bg-glass-hover: rgba(255, 255, 255, 0.04);
-  
-  /* Text (Generous contrast but calm) */
-  --text-primary: #f2f2f5;
-  --text-secondary: #9090a1;
-  --text-muted: #5e5e6e;
-  
-  /* Accent: Electric Blue system */
-  --accent-primary: #3b82f6; /* Electric blue */
-  --accent-primary-hover: #2563eb;
-  --accent-secondary: #60a5fa; /* Soft cyan-ish */
-  
-  /* Gradients (Muted, not rainbow) */
-  --gradient-primary: linear-gradient(135deg, #3b82f6, #60a5fa);
-  --gradient-dark: linear-gradient(180deg, #050508, #0c0c12);
-  
-  /* Borders (Extremely subtle) */
-  --border-color: rgba(255, 255, 255, 0.04);
-  --border-active: rgba(59, 130, 246, 0.3);
-  
-  /* Soft Cinematic Shadows */
-  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.1);
-  
-  /* Smooth radii */
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
-  --radius-full: 9999px;
-  
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  --scrollbar-thumb: rgba(255, 255, 255, 0.05);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.1);
-  --orb-opacity: 0.05;
-}
-
-/* Optional Light Theme (Keep it simple if needed, but primarily dark focus) */
-html.light {
+  /* Light Theme - Default */
   --bg-primary: #fafafa;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f0f0f4;
@@ -75,6 +25,51 @@ html.light {
   --scrollbar-thumb: rgba(0, 0, 0, 0.05);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.1);
   --orb-opacity: 0.02;
+  
+  /* Accent: Electric Blue system (shared across themes) */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-secondary: #60a5fa;
+  
+  /* Gradients */
+  --gradient-primary: linear-gradient(135deg, #3b82f6, #60a5fa);
+  --gradient-dark: linear-gradient(180deg, #050508, #0c0c12);
+  
+  /* Smooth radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+  
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* Dark Theme */
+html.dark {
+  --bg-primary: #050508;
+  --bg-secondary: #0c0c12;
+  --bg-tertiary: #13131c;
+  --bg-card: rgba(12, 12, 18, 0.4);
+  --bg-glass: rgba(255, 255, 255, 0.02);
+  --bg-glass-hover: rgba(255, 255, 255, 0.04);
+
+  --text-primary: #f2f2f5;
+  --text-secondary: #9090a1;
+  --text-muted: #5e5e6e;
+
+  --border-color: rgba(255, 255, 255, 0.04);
+  --border-active: rgba(59, 130, 246, 0.3);
+
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.1);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.05);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.1);
+  --orb-opacity: 0.05;
 }
 
 /* ===== GLOBAL STYLES ===== */
