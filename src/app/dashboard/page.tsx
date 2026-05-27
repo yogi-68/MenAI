@@ -58,7 +58,7 @@ export default function DashboardOverview() {
         .from("profiles")
         .select("onboarding_completed")
         .eq("id", authUser.id)
-        .single();
+        .maybeSingle();
 
       if (!profile?.onboarding_completed) {
         router.push("/onboarding");

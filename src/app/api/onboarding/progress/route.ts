@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       .from("onboarding_progress")
       .select("*")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
     if (!progress) {
       // Initialize progress

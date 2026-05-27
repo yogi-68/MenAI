@@ -29,7 +29,7 @@ export default function SettingsPage() {
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
-        .single();
+        .maybeSingle();
 
       if (profile) {
         setFullName(profile.full_name || "");
