@@ -169,7 +169,7 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                Patterns emerge through sustained interaction. Keep engaging, and insights will crystallize here.
+                No stable patterns detected yet.
               </p>
             )}
           </section>
@@ -228,7 +228,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                No active focus yet. Define your direction in conversation, and execution items will appear here.
+                No active focus tracked.
               </p>
             )}
           </section>
@@ -274,7 +274,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                No commitments tracked. Declare what you're committing to, and MenAI will hold the space for it.
+                No commitments detected.
               </p>
             )}
           </section>
@@ -315,7 +315,7 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                Reflections emerge from sustained dialogue. Share your journey, and deeper synthesis will appear here.
+                Insufficient data for reflection synthesis.
               </p>
             )}
           </section>

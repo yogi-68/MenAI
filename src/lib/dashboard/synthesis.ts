@@ -86,9 +86,9 @@ export async function synthesizeCurrentDirection(userId: string): Promise<string
   const identitySignals = identityRes.status === "fulfilled" ? (identityRes.value.data as IdentitySignal[] || []) : [];
   const commitments = commitmentsRes.status === "fulfilled" ? (commitmentsRes.value.data || []) : [];
 
-  // No data yet - return organic empty state
+  // No data yet - honest empty state
   if (goals.length === 0 && identitySignals.length === 0 && commitments.length === 0) {
-    return "Your trajectory emerges through conversation. Share what you're working toward, and MenAI will help you maintain focus.";
+    return "No clear direction detected yet.";
   }
 
   // Synthesize from available data

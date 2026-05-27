@@ -13,11 +13,15 @@ import {
   Menu,
   X,
   Plus,
+  Calendar,
+  FileText,
 } from "lucide-react";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
+  { href: "/dashboard/plans", icon: Calendar, label: "Daily Plans" },
+  { href: "/dashboard/reports", icon: FileText, label: "Reports" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 
