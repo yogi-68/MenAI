@@ -52,7 +52,7 @@ SELECT cron.schedule(
   SELECT
     net.http_post(
       url:='https://zshgaiqapgesppcvfnwz.supabase.co/functions/v1/generate-daily-tasks',
-      headers:='{"Content-Type": "application/json", "Authorization": "Bearer YOUR_SERVICE_ROLE_KEY"}'::jsonb,
+      headers:='{"Content-Type": "application/json", "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzaGdhaXFhcGdlc3BwY3Zmbnd6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODk0NjAyNCwiZXhwIjoyMDk0NTIyMDI0fQ.LfCsKBT_6HyCLtOxmNZ11OE2Cj1Mi43nR5O00-QtduA"}'::jsonb,
       body:='{}'::jsonb
     ) as request_id;
   $$
@@ -180,8 +180,8 @@ ORDER BY created_at DESC;
 ### Test 4: Edge Function (Manual Trigger)
 
 ```bash
-curl -X POST https://YOUR_PROJECT_REF.supabase.co/functions/v1/generate-daily-tasks \
-  -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY"
+curl -X POST https://zshgaiqapgesppcvfnwz.supabase.co/functions/v1/generate-daily-tasks \
+  -H "Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzaGdhaXFhcGdlc3BwY3Zmbnd6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODk0NjAyNCwiZXhwIjoyMDk0NTIyMDI0fQ.LfCsKBT_6HyCLtOxmNZ11OE2Cj1Mi43nR5O00-QtduA"
 ```
 
 Should return:

@@ -25,6 +25,22 @@ export async function POST(request: NextRequest) {
 
     const today = new Date().toISOString().split('T')[0];
 
+    // Check if plan already exists for today to prevent unlimited generation
+    const { data: existingPlanCheck } = await supabase
+      .from("daily_plans")
+      .select("id, plan_content")
+      .eq("user_id", user.id)
+      .eq("plan_date", today)
+      .maybeSingle();
+
+    if (existingPlanCheck) {
+      return NextResponse.json({
+        success: true,
+        plan: existingPlanCheck.plan_content,
+        message: "Plan already exists for today. Returning existing plan."
+      });
+    }
+
     // Get user context
     const [goalsRes, tasksRes, patternsRes] = await Promise.allSettled([
       supabase
@@ -116,27 +132,14 @@ export async function POST(request: NextRequest) {
       aiNotes,
     };
 
-    const { data: existingPlan } = await supabase
+    // Insert the plan (we already checked it doesn't exist above)
+    await supabase
       .from("daily_plans")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("plan_date", today)
-      .single();
-
-    if (existingPlan) {
-      await supabase
-        .from("daily_plans")
-        .update({ plan_content: planContent })
-        .eq("id", existingPlan.id);
-    } else {
-      await supabase
-        .from("daily_plans")
-        .insert({
-          user_id: user.id,
-          plan_date: today,
-          plan_content: planContent,
-        });
-    }
+      .insert({
+        user_id: user.id,
+        plan_date: today,
+        plan_content: planContent,
+      });
 
     // Create task entries
     if (adaptiveTasks.length > 0) {

@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     // Get all users with onboarding completed and active goals
     const { data: users, error: usersError } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, full_name, email')
       .eq('onboarding_completed', true)
 
     if (usersError) {

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { title, description, goalId, dueDate, scheduledTime, recurrence } = body;
+  const { title, description, goalId, dueDate, scheduledTime, recurrence, estimatedMinutes } = body;
 
   if (!title) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
       due_date: dueDate || null,
       scheduled_time: scheduledTime || null,
       recurrence: recurrence || null,
+      estimated_minutes: estimatedMinutes || null,
     })
     .select()
     .single();

@@ -29,14 +29,15 @@ export async function GET(request: Request) {
     const { error, data } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error && data.user) {
-      // Check if onboarding is completed
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("onboarding_completed")
-        .eq("id", data.user.id)
-        .single();
+      // Check onboarding completion using onboarding_progress table (single source of truth)
+      const { data: progress } = await supabase
+        .from("onboarding_progress")
+        .select("completed_at")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
       
-      if (profile && profile.onboarding_completed) {
+      // Redirect based on onboarding status
+      if (progress?.completed_at) {
         return NextResponse.redirect(`${origin}/dashboard`);
       } else {
         return NextResponse.redirect(`${origin}/onboarding`);

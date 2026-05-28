@@ -549,7 +549,7 @@ async function persistExtractedMemory(
       if (signal.confidence > 0.65) {
         await supabase.from("identity_signals").insert({
           user_id: userId,
-          signal_type: signal.type,
+          type: signal.type,
           description: signal.description,
           long_term_direction: signal.longTermDirection,
           confidence: signal.confidence,
