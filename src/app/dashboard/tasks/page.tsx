@@ -1,8 +1,8 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useQuery, useMutation, useQueryClient } from "@tantml:invoke>
-<invoke name="useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { CheckCircle2, Circle, Edit2, Trash2, Clock, Plus, X, AlertCircle } from "lucide-react";
 
 interface Task {
