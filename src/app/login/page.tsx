@@ -29,7 +29,8 @@ export default function LoginPage() {
       return;
     }
 
-    // Check onboarding progress before blindly pushing to dashboard
+    await fetch("/api/auth/bootstrap", { method: "POST" });
+
     if (data?.user) {
       const { data: progress } = await supabase
         .from("onboarding_progress")
@@ -43,7 +44,7 @@ export default function LoginPage() {
         router.push("/onboarding");
       }
     } else {
-      router.push("/dashboard");
+      router.push("/onboarding");
     }
   };
 

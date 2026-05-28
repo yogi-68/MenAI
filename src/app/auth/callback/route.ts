@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/onboarding";
 
   if (code) {
     const cookieStore = await cookies();
@@ -27,21 +27,14 @@ export async function GET(request: Request) {
     );
 
     const { error, data } = await supabase.auth.exchangeCodeForSession(code);
-    
+
     if (!error && data.user) {
-      // Check onboarding completion using onboarding_progress table (single source of truth)
-      const { data: progress } = await supabase
-        .from("onboarding_progress")
-        .select("completed_at")
-        .eq("user_id", data.user.id)
-        .maybeSingle();
-      
-      // Redirect based on onboarding status
-      if (progress?.completed_at) {
+      const setup = await ensureUserSetup(data.user);
+
+      if (setup.onboardingCompleted) {
         return NextResponse.redirect(`${origin}/dashboard`);
-      } else {
-        return NextResponse.redirect(`${origin}/onboarding`);
       }
+      return NextResponse.redirect(`${origin}/onboarding`);
     }
   }
 

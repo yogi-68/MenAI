@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    await ensureUserSetup(user);
+
     const { data: progress } = await supabase
       .from("onboarding_progress")
       .select("*")
@@ -24,19 +27,8 @@ export async function GET(request: NextRequest) {
       .maybeSingle();
 
     if (!progress) {
-      // Initialize progress
-      const { data: newProgress } = await supabase
-        .from("onboarding_progress")
-        .insert({
-          user_id: user.id,
-          current_question_id: "Q1",
-          completed_questions: [],
-        })
-        .select()
-        .single();
-
       return NextResponse.json({
-        progress: newProgress || {
+        progress: {
           currentQuestionId: "Q1",
           completedQuestions: [],
         },

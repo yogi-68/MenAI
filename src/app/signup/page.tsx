@@ -44,13 +44,38 @@ export default function SignupPage() {
       return;
     }
 
+    if (data?.user?.identities?.length === 0) {
+      setError(
+        "An account with this email already exists. Sign in with Google or use the login page."
+      );
+      setLoading(false);
+      return;
+    }
+
     // If email confirmation is disabled, signUp returns a session immediately
     if (data?.session) {
+      await fetch("/api/auth/bootstrap", { method: "POST" });
       router.push("/onboarding");
       return;
     }
 
     setSuccess(true);
+    setLoading(false);
+  };
+
+  const handleResendConfirmation = async () => {
+    setLoading(true);
+    setError("");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      setError(error.message);
+    }
     setLoading(false);
   };
 
@@ -95,10 +120,21 @@ export default function SignupPage() {
           <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "12px" }}>
             Check your email
           </h2>
-          <p style={{ color: "var(--text-secondary)", lineHeight: 1.7 }}>
+          <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
             We&apos;ve sent a confirmation link to <strong>{email}</strong>. Click the link to activate
             your account and get started.
           </p>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: 1.6, marginBottom: "8px" }}>
+            Didn&apos;t get it? Check spam, or if you signed up with Google before, use Google login instead.
+          </p>
+          <button
+            onClick={handleResendConfirmation}
+            disabled={loading}
+            className="btn-secondary"
+            style={{ marginTop: "12px", marginRight: "12px" }}
+          >
+            Resend email
+          </button>
           <Link
             href="/login"
             className="btn-primary"

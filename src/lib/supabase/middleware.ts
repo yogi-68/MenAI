@@ -29,19 +29,32 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes
+  // Protected routes — require auth + completed onboarding
   const protectedPaths = ["/dashboard", "/chat", "/journal", "/mood", "/meditation", "/profile"];
   const isProtected = protectedPaths.some((p) => request.nextUrl.pathname.startsWith(p));
+  const isOnboarding = request.nextUrl.pathname.startsWith("/onboarding");
 
-  if (!user && isProtected) {
+  if (!user && (isProtected || isOnboarding)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
-  // Enforce onboarding for protected routes
   if (user && isProtected) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    // No profile = deleted or never set up — send to onboarding (bootstrap runs there)
+    if (!profile) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+
     const { data: progress } = await supabase
       .from("onboarding_progress")
       .select("completed_at")

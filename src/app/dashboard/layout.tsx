@@ -45,22 +45,28 @@ export default function DashboardLayout({
         return;
       }
 
+      // Ensure profile exists in database
+      await fetch("/api/auth/bootstrap", { method: "POST" });
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
         .maybeSingle();
 
-      if (profile) {
-        setUser({
-          id: authUser.id,
-          full_name: profile.full_name || authUser.user_metadata?.full_name || "User",
-          avatar_url: profile.avatar_url || "",
-          role: profile.role || "user",
-          subscription_tier: profile.subscription_tier || "free",
-          onboarding_completed: profile.onboarding_completed || false,
-        });
-      }
+      setUser({
+        id: authUser.id,
+        full_name:
+          profile?.full_name ||
+          authUser.user_metadata?.full_name ||
+          authUser.user_metadata?.name ||
+          "User",
+        avatar_url:
+          profile?.avatar_url || authUser.user_metadata?.avatar_url || "",
+        role: profile?.role || "user",
+        subscription_tier: profile?.subscription_tier || "free",
+        onboarding_completed: profile?.onboarding_completed || false,
+      });
     };
 
     fetchUser();

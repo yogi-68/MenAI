@@ -41,17 +41,28 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     setIsMounted(true);
-    // Load progress
-    fetch("/api/onboarding/progress")
+    let wasReset = false;
+
+    fetch("/api/auth/bootstrap", { method: "POST" })
       .then((res) => res.json())
+      .then((bootstrap) => {
+        wasReset = !!bootstrap.onboardingReset;
+        if (wasReset) {
+          setCurrentQuestionId("Q1");
+          setResponses({});
+          resetInputs();
+        }
+        return fetch("/api/onboarding/progress");
+      })
+      .then((res) => res?.json())
       .then((data) => {
+        if (!data) return;
         if (data.progress?.completedAt) {
-          // Already completed — redirect to dashboard
           if (!completionRedirectedRef.current) {
             completionRedirectedRef.current = true;
             router.replace("/dashboard");
           }
-        } else if (data.progress?.currentQuestionId) {
+        } else if (data.progress?.currentQuestionId && !wasReset) {
           setCurrentQuestionId(data.progress.currentQuestionId);
         }
       })
@@ -200,8 +211,6 @@ export default function OnboardingPage() {
   const handleOptionToggle = (value: string) => {
     if (currentQuestion.type === "forced_choice") {
       setSelectedOptions([value]);
-      // Auto advance for forced choice!
-      handleNext(value);
     } else {
       setSelectedOptions((prev) =>
         prev.includes(value)
@@ -209,7 +218,19 @@ export default function OnboardingPage() {
           : [...prev, value]
       );
     }
+    setError(null);
   };
+
+  const canContinue =
+    currentQuestion.type === "text" || currentQuestion.type === "textarea"
+      ? currentQuestion.optional || textInput.trim().length > 0
+      : currentQuestion.type === "slider"
+        ? true
+        : askingFollowUp
+          ? otherText.trim().length > 0
+          : showOther && currentQuestion.allowOther
+            ? otherText.trim().length > 0 || selectedOptions.length > 0
+            : selectedOptions.length > 0;
 
   if (!isMounted || !currentQuestion) {
     return (
@@ -498,19 +519,28 @@ export default function OnboardingPage() {
                 )}
               </AnimatePresence>
 
-              {/* Action Buttons */}
+              {/* Action Buttons — always require explicit Continue */}
               <div style={{ display: "flex", gap: "16px", marginTop: "16px", alignItems: "center" }}>
+                {(currentQuestion.type === "multiple_choice" ||
+                  currentQuestion.type === "forced_choice") &&
+                  selectedOptions.length > 0 && (
+                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                      {currentQuestion.type === "multiple_choice"
+                        ? `${selectedOptions.length} selected — click Continue when ready`
+                        : "Click Continue to confirm your choice"}
+                    </span>
+                  )}
                 <motion.button
-                  whileHover={{ scale: saving ? 1 : 1.02 }}
-                  whileTap={{ scale: saving ? 1 : 0.98 }}
+                  whileHover={{ scale: saving || !canContinue ? 1 : 1.02 }}
+                  whileTap={{ scale: saving || !canContinue ? 1 : 0.98 }}
                   onClick={() => handleNext()}
-                  disabled={saving}
+                  disabled={saving || !canContinue}
                   className="btn-primary"
                   style={{
                     flex: 1,
                     padding: "16px 24px",
-                    opacity: saving ? 0.7 : 1,
-                    cursor: saving ? "not-allowed" : "fontSize: 1.05rem",
+                    opacity: saving || !canContinue ? 0.5 : 1,
+                    cursor: saving || !canContinue ? "not-allowed" : "pointer",
                     fontWeight: 600,
                     display: "flex",
                     alignItems: "center",
