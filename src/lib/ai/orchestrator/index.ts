@@ -26,10 +26,9 @@ import { buildPrompt } from "./prompt-builder";
 import { validateResponse } from "./response-validator";
 import { validateResponseStyle } from "./style-validator";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
-import { getLifeContext } from "./accountability-engine";
-import { getLifeSnapshot, computeInferenceConfidence, invalidateSnapshot } from "./snapshot-engine";
 import { evaluatePredictions } from "./prediction-engine";
-import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis, LifeContext, ContextRichness } from "./types";
+import { buildCognitiveState } from "./cognition-engine";
+import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis } from "./types";
 
 // ===== GRACEFUL FALLBACK RESPONSES =====
 // These are used when ANY part of the pipeline fails.
@@ -64,30 +63,7 @@ function getGracefulFallback(userMessage: string): string {
   return GRACEFUL_FALLBACKS[Math.floor(Math.random() * GRACEFUL_FALLBACKS.length)];
 }
 
-/**
- * Compute how much structured context we have about this user.
- * Prevents hallucinated plans when we don't know their goals.
- */
-function computeContextRichness(lifeContext: LifeContext | null): ContextRichness {
-  if (!lifeContext) {
-    return { score: 0, level: "LOW", hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false };
-  }
-
-  const hasGoals = (lifeContext.activeGoals?.length || 0) > 0;
-  const hasCommitments = (lifeContext.activeCommitments?.length || 0) > 0;
-  const hasTasks = (lifeContext.pendingTasks?.length || 0) > 0;
-  const hasRelationships = (lifeContext.recentRelationships?.length || 0) > 0;
-
-  let score = 0;
-  if (hasGoals) score += 0.35;
-  if (hasCommitments) score += 0.25;
-  if (hasTasks) score += 0.25;
-  if (hasRelationships) score += 0.15;
-
-  const level = score >= 0.7 ? "HIGH" : score >= 0.3 ? "MODERATE" : "LOW";
-
-  return { score, level, hasGoals, hasCommitments, hasTasks, hasRelationships };
-}
+// Removed unused legacy context richness code
 
 /**
  * Main orchestrator — process a user message through the full pipeline
@@ -186,7 +162,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [] as string[], longTerm: [] as string[], episodic: [] as string[], emotional: [] as string[], formatted: "" };
 
-  const [historyResult, memory, profileResult, lifeContext] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -199,7 +175,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
       .select("full_name, vision, founder_mode, coaching_style")
       .eq("id", input.userId)
       .single(),
-    getLifeContext(input.userId).catch(() => null),
+    buildCognitiveState(input.userId),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -217,10 +193,10 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   };
 
   // ===== STEP 4c: Compute Context Richness =====
-  const contextRichness = computeContextRichness(lifeContext);
+  const contextRichnessLevel = cognitiveState.maturity_level === "deep" ? "HIGH" : cognitiveState.maturity_level === "established" ? "MODERATE" : "LOW";
 
   // ===== STEP 5: Determine Conversation State (intent-aware + context-aware) =====
-  const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
+  const hasAccountability = cognitiveState.unfinished_commitments.length > 0;
   const state = determineState({
     emotion,
     safety,
@@ -228,7 +204,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     userMessage: input.message,
     hasAccountabilityItems: hasAccountability,
     intent,
-    contextRichness,
+    contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false }, // Legacy compatibility
   });
 
   // ===== STEP 6: Select Model =====
@@ -240,19 +216,14 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   });
 
   // ===== STEP 7: Build Pipeline Context =====
-  const lifeSnapshot = getLifeSnapshot(input.userId, lifeContext, user, memory);
-  const inferenceConfidence = computeInferenceConfidence(contextRichness, lifeContext, memory, user);
 
   // Session Context Injection - Log for observability
   if (process.env.NODE_ENV !== "production") {
     console.log("[Session Context]", {
       userId: input.userId,
       conversationId,
-      hasLifeContext: !!lifeContext,
       memoryCount: memory.longTerm.length + memory.episodic.length + memory.emotional.length,
-      snapshotAge: lifeSnapshot.snapshotAge,
-      contextRichness: contextRichness.level,
-      inferenceConfidence: inferenceConfidence.overall,
+      maturityLevel: cognitiveState.maturity_level,
     });
   }
 
@@ -262,12 +233,9 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     safety,
     emotion,
     memory,
-    lifeContext: lifeContext || undefined,
-    lifeSnapshot,
-    inferenceConfidence,
+    cognitiveState,
     state,
     intent,
-    contextRichness,
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
     modelConfig,
@@ -289,8 +257,8 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
 
   // ===== STEP 9b: Style Validation with Regeneration =====
   const styleValidation = validateResponseStyle(validated.content, {
-    lifeContext,
-    contextRichness,
+    lifeContext: null, // Legacy, replace later if needed
+    contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false },
     userMessage: input.message,
   });
 
@@ -325,10 +293,10 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     await serviceClient.from("context_confidence_log").insert({
       user_id: input.userId,
       conversation_id: conversationId,
-      richness_level: contextRichness.level,
-      goals_count: lifeContext?.activeGoals?.length || 0,
-      tasks_count: lifeContext?.pendingTasks?.length || 0,
-      commitments_count: lifeContext?.activeCommitments?.length || 0,
+      richness_level: contextRichnessLevel,
+      goals_count: cognitiveState.active_goals.length,
+      tasks_count: 0, // tasks count isn't directly exposed in the array, only computed metrics
+      commitments_count: cognitiveState.unfinished_commitments.length,
       sufficient_for_planning: styleValidation.score >= 70,
     });
   } catch {
@@ -374,9 +342,8 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   extractedData.then((data) => {
     if (hasExtractedData(data)) {
       persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
-        // After successful persistence, invalidate dashboard cache
-        invalidateSnapshot(input.userId); // Bust cache so next request sees new data
-        console.log("[Extraction] Successfully persisted data, dashboard cache invalidated");
+        // After successful persistence, we no longer need to invalidate old snapshot
+        console.log("[Extraction] Successfully persisted data");
       }).catch(() => {});
       
       const extractionSummary = buildExtractionSummary(data);
@@ -606,7 +573,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [], longTerm: [], episodic: [], emotional: [], formatted: "" };
 
-  const [historyResult, memory, profileResult, lifeContext] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -619,7 +586,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
       .select("full_name, vision, founder_mode, coaching_style")
       .eq("id", input.userId)
       .single(),
-    getLifeContext(input.userId).catch(() => null),
+    buildCognitiveState(input.userId),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -637,10 +604,10 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   };
 
   // ===== STEP 4c: Compute Context Richness =====
-  const contextRichness = computeContextRichness(lifeContext);
+  const contextRichnessLevel = cognitiveState.maturity_level === "deep" ? "HIGH" : cognitiveState.maturity_level === "established" ? "MODERATE" : "LOW";
 
   // ===== STEP 5: State + Model + Prompt =====
-  const hasAccountability = (lifeContext?.accountabilityItems?.length || 0) > 0;
+  const hasAccountability = cognitiveState.unfinished_commitments.length > 0;
   const state = determineState({
     emotion,
     safety,
@@ -648,24 +615,18 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     userMessage: input.message,
     hasAccountabilityItems: hasAccountability,
     intent,
-    contextRichness,
+    contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false }, // Legacy compatibility
   });
 
   const modelConfig = selectModel({ emotion, safety, state, messageLength: input.message.length });
-
-  const lifeSnapshot = getLifeSnapshot(input.userId, lifeContext, user, memory);
-  const inferenceConfidence = computeInferenceConfidence(contextRichness, lifeContext, memory, user);
 
   // Session Context Injection - Log for observability (streaming path)
   if (process.env.NODE_ENV !== "production") {
     console.log("[Session Context] Streaming", {
       userId: input.userId,
       conversationId,
-      hasLifeContext: !!lifeContext,
       memoryCount: memory.longTerm.length + memory.episodic.length + memory.emotional.length,
-      snapshotAge: lifeSnapshot.snapshotAge,
-      contextRichness: contextRichness.level,
-      inferenceConfidence: inferenceConfidence.overall,
+      maturityLevel: cognitiveState.maturity_level,
     });
   }
 
@@ -675,12 +636,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     safety,
     emotion,
     memory,
-    lifeContext: lifeContext || undefined,
-    lifeSnapshot,
-    inferenceConfidence,
+    cognitiveState,
     state,
     intent,
-    contextRichness,
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
     modelConfig,
@@ -718,8 +676,8 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
         // Style validation (monitoring only for streaming - can't regenerate after stream)
         const styleValidation = validateResponseStyle(validated.content, {
-          lifeContext,
-          contextRichness,
+          lifeContext: null, // Legacy, replace later if needed
+          contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false },
           userMessage: input.message,
         });
 
@@ -735,10 +693,10 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
             serviceClient.from("context_confidence_log").insert({
               user_id: input.userId,
               conversation_id: conversationId,
-              richness_level: contextRichness.level,
-              goals_count: lifeContext?.activeGoals?.length || 0,
-              tasks_count: lifeContext?.pendingTasks?.length || 0,
-              commitments_count: lifeContext?.activeCommitments?.length || 0,
+              richness_level: contextRichnessLevel,
+              goals_count: cognitiveState.active_goals.length,
+              tasks_count: 0,
+              commitments_count: cognitiveState.unfinished_commitments.length,
               sufficient_for_planning: styleValidation.score >= 70,
             })
           ).catch(() => {});
@@ -777,9 +735,8 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         bgExtraction.then((data) => {
           if (hasExtractedData(data)) {
             persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
-              // After successful persistence, invalidate dashboard cache
-              invalidateSnapshot(input.userId);
-              console.log("[Extraction] Successfully persisted data (streaming), dashboard cache invalidated");
+              // After successful persistence, we no longer need to invalidate old snapshot
+              console.log("[Extraction] Successfully persisted data (streaming)");
             }).catch(() => {});
             
             const extractionSummary = buildExtractionSummary(data);

@@ -3,6 +3,8 @@
  * Shared type definitions for the MenAI Life Operating System pipeline
  */
 
+import type { CognitiveState } from "./cognition-engine";
+
 // ===== Conversation States =====
 export type ConversationState =
   | "LISTENING"           // Absorbing what the user says
@@ -431,12 +433,9 @@ export interface PipelineContext {
   safety: SafetyResult;
   emotion: EmotionAnalysis;
   memory: MemoryContext;
-  lifeContext?: LifeContext;
-  lifeSnapshot?: LifeSnapshot;
-  inferenceConfidence: InferenceConfidence;
+  cognitiveState: CognitiveState;
   state: ConversationState;
   intent: UserIntent;
-  contextRichness: ContextRichness;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   conversationId: string;
   modelConfig: ModelConfig;

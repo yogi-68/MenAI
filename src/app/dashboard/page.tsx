@@ -14,9 +14,9 @@ import {
   ArrowRight,
   Sparkles,
   BookOpen,
-  TrendingUp
+  TrendingUp,
+  AlertTriangle,
 } from "lucide-react";
-import { generateDashboardIntelligence } from "@/lib/dashboard/synthesis";
 
 interface Goal {
   id: string;
@@ -74,16 +74,16 @@ export default function DashboardOverview() {
     checkOnboarding();
   }, [supabase, router]);
 
-  const { data: intelligence, isLoading: intelligenceLoading } = useQuery({
-    queryKey: ["dashboard-intelligence"],
+  // Fetch rhythm context from the Cognition Engine (server-side, cached)
+  const { data: rhythm, isLoading: rhythmLoading } = useQuery({
+    queryKey: ["dashboard-rhythm"],
     queryFn: async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return null;
-
-      return await generateDashboardIntelligence(authUser.id);
+      const res = await fetch("/api/rhythm");
+      if (!res.ok) return null;
+      return res.json();
     },
     staleTime: 60_000,
-    refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes
+    refetchInterval: 5 * 60 * 1000,
   });
 
   const { data, isLoading } = useQuery({
@@ -148,11 +148,14 @@ export default function DashboardOverview() {
   const commitments = data?.commitments || [];
   const reflection = data?.reflection;
   
-  const currentDirection = intelligence?.currentDirection || "Synthesizing current direction...";
-  const observation = intelligence?.aiObservation;
-  const activeFocus = intelligence?.activeFocus || [];
-  const nextSteps = intelligence?.suggestedNextSteps || [];
-  const momentumTrend = intelligence?.momentumTrend;
+  const isNew = rhythm?.maturity_level === "new";
+  const currentDirection = rhythm?.cognitive_summary?.direction || (isNew ? "Still gathering signal. Direction will emerge through conversation." : "Loading...");
+  const observation = rhythm?.cognitive_summary?.observation;
+  const momentumTrend = rhythm?.cognitive_summary?.momentum;
+  const weaknessHint = rhythm?.cognitive_summary?.weakness_hint;
+  const activeFocus = tasks.slice(0, 4).map((t: TaskItem) => t.title);
+  const suggestedAction = rhythm?.suggested_action;
+  const focusPrompt = rhythm?.focus_prompt;
 
   if (checkingOnboarding) {
     return (
@@ -167,10 +170,10 @@ export default function DashboardOverview() {
       {/* ===== HEADER ===== */}
       <div className="animate-fade-in" style={{ marginBottom: "72px" }}>
         <h1 suppressHydrationWarning style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
-          {greeting()}, {user?.full_name?.split(" ")[0] || "there"}.
+          {rhythm?.greeting || `${greeting()}, ${user?.full_name?.split(" ")[0] || "there"}.`}
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6 }}>
-          Here is your current trajectory.
+          {focusPrompt || "Here is your current trajectory."}
         </p>
       </div>
 
@@ -186,7 +189,7 @@ export default function DashboardOverview() {
                 Current Direction
               </h2>
             </div>
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : (
               <p style={{ fontSize: "1.05rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
@@ -202,19 +205,40 @@ export default function DashboardOverview() {
                 AI Observation
               </h2>
             </div>
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : observation ? (
               <p style={{ fontSize: "1rem", color: "var(--text-primary)", lineHeight: 1.8, fontStyle: "italic", fontWeight: 300 }}>
                 {observation}
               </p>
+            ) : isNew ? (
+              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
+                MenAI is still learning how you work. Patterns will appear after a few conversations.
+              </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                No stable patterns detected yet.
+                No strong patterns detected yet.
               </p>
             )}
           </section>
         </div>
+
+        {/* ROW 1.5: Weakness Alert (only shows when detected) */}
+        {weaknessHint && (
+          <section className="glass-card" style={{ padding: "28px 40px", transition: "all 0.3s ease", borderLeft: "3px solid var(--accent-secondary)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+              <AlertTriangle size={20} style={{ color: "var(--accent-secondary)" }} />
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-secondary)", marginBottom: "6px", fontWeight: 500 }}>
+                  Adaptation
+                </h2>
+                <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.7 }}>
+                  {weaknessHint}
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ROW 2: Focus & Commitments */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "28px" }}>
@@ -227,11 +251,11 @@ export default function DashboardOverview() {
               </h2>
             </div>
             
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
             ) : activeFocus.length > 0 || tasks.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                {(activeFocus.length > 0 ? activeFocus : tasks.slice(0, 4).map(t => t.title)).map((item, idx) => {
+                {(activeFocus.length > 0 ? activeFocus : tasks.slice(0, 4).map((t: TaskItem) => t.title)).map((item: string, idx: number) => {
                   const task = tasks.find(t => t.title === item);
                   return (
                     <div key={task?.id || idx} style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
@@ -269,7 +293,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                No active focus tracked.
+                {isNew ? "Start a conversation to set your focus." : "No active focus tracked."}
               </p>
             )}
           </section>
@@ -282,7 +306,7 @@ export default function DashboardOverview() {
               </h2>
             </div>
 
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
             ) : commitments.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
@@ -315,7 +339,7 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                No commitments detected.
+                {isNew ? "Commitments will appear as MenAI learns your patterns." : "No commitments detected."}
               </p>
             )}
           </section>
@@ -348,7 +372,7 @@ export default function DashboardOverview() {
                 Reflections
               </h2>
             </div>
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
             ) : reflection ? (
               <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
@@ -356,7 +380,7 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                Insufficient data for reflection synthesis.
+                {isNew ? "Reflections appear after your first few conversations." : "No reflections available yet."}
               </p>
             )}
           </section>
@@ -368,21 +392,26 @@ export default function DashboardOverview() {
                 Suggested Next Steps
               </h2>
             </div>
-            {intelligenceLoading ? (
+            {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "100px", width: "100%", borderRadius: "8px" }} />
             ) : (
               <>
                 <div style={{ display: "flex", flexDirection: "column", gap: "14px", flex: 1 }}>
-                  {nextSteps.map((step, idx) => (
-                    <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                  {suggestedAction && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
                       <span style={{ fontSize: "0.85rem", color: "var(--accent-primary)", fontWeight: 500, marginTop: "2px" }}>
-                        {idx + 1}.
+                        →
                       </span>
                       <span style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.8, fontWeight: 300 }}>
-                        {step}
+                        {suggestedAction}
                       </span>
                     </div>
-                  ))}
+                  )}
+                  {!suggestedAction && isNew && (
+                    <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
+                      Start a conversation with MenAI to get personalized suggestions.
+                    </p>
+                  )}
                 </div>
                 <Link 
                   href="/dashboard/chat" 

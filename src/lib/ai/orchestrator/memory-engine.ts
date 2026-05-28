@@ -10,7 +10,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { generateEmbedding } from "@/lib/ai/openai";
 import { classifyWithLLM } from "./router";
-import { invalidateSnapshot } from "./snapshot-engine";
+import { invalidateUserCache } from "./cache-invalidation";
 import type { MemoryContext } from "./types";
 
 /**
@@ -238,8 +238,8 @@ export async function storeMemory(params: {
       embedding: JSON.stringify(embedding),
     });
     
-    // Invalidate snapshot cache after storing new memory
-    invalidateSnapshot(params.userId);
+    // Invalidate cache after storing new memory
+    invalidateUserCache(params.userId, "new memory stored");
   } catch (e) {
     console.error("Memory store error:", e);
   }
@@ -329,6 +329,6 @@ export async function compressMemories(userId: string): Promise<void> {
   const idsToDelete = oldMemories.map((m) => m.id);
   await supabase.from("memories").delete().in("id", idsToDelete);
   
-  // Invalidate snapshot cache after memory compression
-  invalidateSnapshot(userId);
+  // Invalidate cache after memory compression
+  invalidateUserCache(userId, "memory compressed");
 }

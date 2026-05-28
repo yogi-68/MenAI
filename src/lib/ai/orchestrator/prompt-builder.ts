@@ -16,8 +16,7 @@ import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
-import { formatLifeContextForPrompt } from "./accountability-engine";
-import { formatSnapshotForPrompt, formatInferenceGuidance } from "./snapshot-engine";
+import { formatCognitiveStateForPrompt } from "./cognition-engine";
 
 /**
  * Detect if observation mode should be triggered
@@ -39,9 +38,9 @@ function shouldTriggerObservationMode(ctx: PipelineContext): boolean {
   }
   
   // Trigger 2: Pattern is clear from repeated mentions in memory
-  // Check if any execution pattern has high frequency
-  const hasHighFrequencyPattern = ctx.lifeContext?.executionPatterns?.some(
-    p => p.frequency === "frequent" || p.frequency === "constant"
+  // Check if any execution pattern has high frequency/severity
+  const hasHighFrequencyPattern = ctx.cognitiveState.main_patterns.some(
+    p => p.severity === "high" || p.occurrences >= 3
   );
   if (hasHighFrequencyPattern) {
     return true;
@@ -53,7 +52,7 @@ function shouldTriggerObservationMode(ctx: PipelineContext): boolean {
     ctx.emotion.sentiment === "neutral" ||
     (ctx.emotion.intensity <= 6 && !ctx.emotion.needsSupport);
   
-  const hasPattern = (ctx.memory.longTerm.length + ctx.memory.episodic.length) >= 5;
+  const hasPattern = ctx.cognitiveState.data_points >= 10;
   
   if (isReflective && hasPattern) {
     return true;
@@ -101,17 +100,16 @@ This creates premium intelligence feeling. The user wants to be SEEN through rea
  * This is critical for preventing hallucinated plans and fake personalization
  */
 function buildContextConfidenceAlert(ctx: PipelineContext): string {
-  const { contextRichness, lifeContext } = ctx;
+  const { maturity_level, active_goals, unfinished_commitments } = ctx.cognitiveState;
   
-  const goalsCount = lifeContext?.activeGoals?.length || 0;
-  const tasksCount = lifeContext?.pendingTasks?.length || 0;
-  const commitmentsCount = lifeContext?.activeCommitments?.length || 0;
+  const goalsCount = active_goals.length;
+  const commitmentsCount = unfinished_commitments.length;
 
-  if (contextRichness.level === "LOW") {
-    return `## CONTEXT CONFIDENCE: LOW — Intelligent Inference Without Hallucination
+  if (maturity_level === "new" || maturity_level === "developing") {
+    return `## CONTEXT CONFIDENCE: EMERGING — Intelligent Inference Without Hallucination
 
 You have LIMITED structured data about this user:
-- ${goalsCount} goal(s), ${tasksCount} task(s), ${commitmentsCount} commitment(s)
+- ${goalsCount} goal(s), ${commitmentsCount} commitment(s)
 
 YOUR BEHAVIOR:
 1. Use EVERYTHING you have — conversation history, memories, identity signals, and what they just said
@@ -134,12 +132,11 @@ BAD: "What are your goals?" (refusing to use available context)
 The user chose an AI Life OS — not a form. Be a mentor who interprets signals, not a system that demands structured input.`;
   }
   
-  if (contextRichness.level === "MODERATE") {
-    return `## CONTEXT CONFIDENCE: MODERATE — Generate With Confidence
+  if (maturity_level === "established") {
+    return `## CONTEXT CONFIDENCE: ESTABLISHED — Generate With Confidence
 
 You have SOLID context about this user:
 - ${goalsCount} active goal(s)
-- ${tasksCount} pending task(s)
 - ${commitmentsCount} active commitment(s)
 
 YOUR BEHAVIOR:
@@ -156,14 +153,12 @@ RESPONSE STYLE:
 - End with: "Want to adjust any of this?" NOT "What would you like to do?"`;
   }
   
-  if (contextRichness.level === "HIGH") {
-    const momentum = lifeContext?.momentumScore || 50;
-    
-    return `## CONTEXT CONFIDENCE: HIGH — Full Strategic Intelligence
+  if (maturity_level === "deep") {
+    return `## CONTEXT CONFIDENCE: DEEP — Full Strategic Intelligence
 
 You have RICH context about this person's life:
-- ${goalsCount} active goal(s), ${tasksCount} pending task(s), ${commitmentsCount} active commitment(s)
-- Momentum: ${momentum}/100
+- ${goalsCount} active goal(s), ${commitmentsCount} active commitment(s)
+- Momentum: ${ctx.cognitiveState.momentum_state}
 
 YOUR BEHAVIOR:
 1. Act as a strategic advisor who has been watching their trajectory for months
@@ -188,7 +183,7 @@ Don't just respond — interpret their trajectory. Surface insights they haven't
  * Now provides real validation instead of always returning true
  */
 export function validateSufficientContext(
-  lifeContext: PipelineContext["lifeContext"],
+  cognitiveState: PipelineContext["cognitiveState"],
   userMessage: string
 ): {
   sufficient: boolean;
@@ -196,10 +191,8 @@ export function validateSufficientContext(
   shouldAsk: boolean;
   suggestedQuestions?: string[];
 } {
-  const hasGoals = (lifeContext?.activeGoals?.length || 0) > 0;
-  const hasTasks = (lifeContext?.pendingTasks?.length || 0) > 0;
-  const hasCommitments = (lifeContext?.activeCommitments?.length || 0) > 0;
-  const hasIdentitySignals = (lifeContext?.identitySignals?.length || 0) > 0;
+  const hasGoals = cognitiveState.active_goals.length > 0;
+  const hasCommitments = cognitiveState.unfinished_commitments.length > 0;
   
   const missingInfo: string[] = [];
   if (!hasGoals) missingInfo.push("goals");
@@ -283,36 +276,9 @@ Instructed behavior: ${styleText}`);
   parts.push(`## Emotional State: ${emotionalState}
 Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT — clearer, more grounded, more accountable, or more at peace — after reading your response.`);
 
-  // ===== LIFE CONTEXT (Structured Data) =====
-  if (ctx.lifeContext) {
-    const lifeContextFormatted = formatLifeContextForPrompt(ctx.lifeContext);
-    if (lifeContextFormatted) {
-      parts.push(`## Their Life Context — What You Know
-${lifeContextFormatted}
-
-Use this naturally. Reference their goals and commitments when relevant. Follow up on accountability items at appropriate moments — not all at once. This is what makes you feel like a mentor who actually pays attention.`);
-    }
-  }
-
-  // ===== CONTEXT CONFIDENCE SYSTEM (prevents hallucination) =====
-  const contextDetails = buildContextConfidenceAlert(ctx);
-  parts.push(contextDetails);
-
-  // ===== LIFE SNAPSHOT (compact cached operating state) =====
-  if (ctx.lifeSnapshot) {
-    const snapshotText = formatSnapshotForPrompt(ctx.lifeSnapshot);
-    if (snapshotText) {
-      parts.push(snapshotText);
-    }
-  }
-
-  // ===== INFERENCE CONFIDENCE GUIDE =====
-  if (ctx.inferenceConfidence) {
-    const inferenceText = formatInferenceGuidance(ctx.inferenceConfidence);
-    if (inferenceText) {
-      parts.push(inferenceText);
-    }
-  }
+  // ===== COGNITIVE STATE (Full Context Injection) =====
+  const statePrompt = formatCognitiveStateForPrompt(ctx.cognitiveState);
+  parts.push(statePrompt);
 
   // Emotional context — drives tone
   if (ctx.emotion) {

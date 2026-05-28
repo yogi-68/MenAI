@@ -48,6 +48,9 @@ export const REDIS_KEYS = {
   // UnifiedSessionContext - complete user state
   SESSION_CONTEXT: (userId: string) => `menai:session:${userId}`,
   
+  // CognitionState - the brain of MenAI
+  COGNITION_STATE: (userId: string) => `menai:cognition:${userId}`,
+  
   // LifeSnapshot - compact operating state
   LIFE_SNAPSHOT: (userId: string) => `menai:snapshot:${userId}`,
   
@@ -66,6 +69,7 @@ export const REDIS_KEYS = {
  */
 export const CACHE_TTL = {
   SESSION_CONTEXT: 5 * 60,      // 5 minutes
+  COGNITION_STATE: 5 * 60,      // 5 minutes (same as session for fast path)
   LIFE_SNAPSHOT: 10 * 60,       // 10 minutes
   RECENT_INSIGHTS: 30 * 60,     // 30 minutes
   MEMORY_SUMMARY: 15 * 60,      // 15 minutes
@@ -133,6 +137,8 @@ export async function invalidateCache(keys: string | string[]): Promise<void> {
 export async function invalidateUserCache(userId: string): Promise<void> {
   await invalidateCache([
     REDIS_KEYS.SESSION_CONTEXT(userId),
+    REDIS_KEYS.COGNITION_STATE(userId),
+    REDIS_KEYS.SESSION_CONTEXT(userId) + ":cognition",
     REDIS_KEYS.LIFE_SNAPSHOT(userId),
     REDIS_KEYS.RECENT_INSIGHTS(userId),
     REDIS_KEYS.MEMORY_SUMMARY(userId),

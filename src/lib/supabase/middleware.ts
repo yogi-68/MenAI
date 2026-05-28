@@ -45,8 +45,16 @@ export async function updateSession(request: NextRequest) {
   const isAuthPage = authPaths.some((p) => request.nextUrl.pathname.startsWith(p));
 
   if (user && isAuthPage) {
+    // Check onboarding status before redirecting
+    const { data: progress } = await supabase
+      .from("onboarding_progress")
+      .select("completed_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    // Redirect to onboarding if not completed, otherwise to dashboard
+    url.pathname = progress?.completed_at ? "/dashboard" : "/onboarding";
     return NextResponse.redirect(url);
   }
 

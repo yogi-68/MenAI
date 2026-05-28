@@ -61,45 +61,20 @@ export async function DELETE(
   }
 
   try {
-    // Count what will be deleted for transparency
-    const { count: messageCount } = await serviceClient
-      .from("messages")
-      .select("*", { count: "exact", head: true })
-      .eq("conversation_id", id);
-    
-    const { count: memoryCount } = await serviceClient
-      .from("memories")
-      .select("*", { count: "exact", head: true })
-      .eq("conversation_id", id);
+    // Delete in parallel for better performance
+    const [memoryDelete, messageDelete, convDelete] = await Promise.all([
+      serviceClient.from("memories").delete().eq("conversation_id", id),
+      serviceClient.from("messages").delete().eq("conversation_id", id),
+      serviceClient.from("conversations").delete().eq("id", id).select()
+    ]);
 
-    // Delete memories associated with this specific conversation
-    await serviceClient
-      .from("memories")
-      .delete()
-      .eq("conversation_id", id);
-
-    // Delete messages (CASCADE will handle this, but explicit for clarity)
-    await serviceClient
-      .from("messages")
-      .delete()
-      .eq("conversation_id", id);
-
-    // Delete the conversation
-    const { error } = await serviceClient
-      .from("conversations")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (convDelete.error) {
+      return NextResponse.json({ error: convDelete.error.message }, { status: 500 });
     }
 
     return NextResponse.json({ 
       success: true,
-      deleted: {
-        messages: messageCount || 0,
-        memories: memoryCount || 0
-      }
+      message: "Conversation and associated data deleted successfully"
     });
   } catch (error: any) {
     console.error("Conversation deletion error:", error);
