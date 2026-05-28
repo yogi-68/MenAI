@@ -40,6 +40,21 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Enforce onboarding for protected routes
+  if (user && isProtected) {
+    const { data: progress } = await supabase
+      .from("onboarding_progress")
+      .select("completed_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!progress?.completed_at) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+  }
+
   // Redirect logged-in users from auth pages
   const authPaths = ["/login", "/signup"];
   const isAuthPage = authPaths.some((p) => request.nextUrl.pathname.startsWith(p));

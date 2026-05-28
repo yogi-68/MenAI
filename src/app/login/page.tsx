@@ -21,7 +21,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -29,7 +29,22 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // Check onboarding progress before blindly pushing to dashboard
+    if (data?.user) {
+      const { data: progress } = await supabase
+        .from("onboarding_progress")
+        .select("completed_at")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+
+      if (progress?.completed_at) {
+        router.push("/dashboard");
+      } else {
+        router.push("/onboarding");
+      }
+    } else {
+      router.push("/dashboard");
+    }
   };
 
   const handleGoogleLogin = async () => {
