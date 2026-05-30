@@ -3,6 +3,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
+import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
+import { MAX_ACTIVE_INITIATIVES } from "@/lib/product/constants";
 
 async function invalidatePlanForUser(userId: string) {
   const supabase = await createServerSupabaseClient();
@@ -53,6 +55,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const gate = await assertCanActivateInitiative(supabase, user.id);
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 409 });
+
   const { data, error } = await supabase
     .from("initiatives")
     .insert({
@@ -92,6 +97,24 @@ export async function PATCH(req: NextRequest) {
   if (updates.lifeArea !== undefined) mapped.life_area = updates.lifeArea;
   if (updates.status !== undefined) mapped.status = updates.status;
   if (updates.progress !== undefined) mapped.progress = updates.progress;
+
+  if (updates.status === "active") {
+    const { data: current } = await supabase
+      .from("initiatives")
+      .select("status")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+    if (current?.status !== "active") {
+      const gate = await assertCanActivateInitiative(supabase, user.id);
+      if (!gate.ok) {
+        return NextResponse.json(
+          { error: gate.error, maxActive: MAX_ACTIVE_INITIATIVES },
+          { status: 409 }
+        );
+      }
+    }
+  }
 
   const { data, error } = await supabase
     .from("initiatives")

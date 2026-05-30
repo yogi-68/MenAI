@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowRight, Zap, MessageSquare, Calendar, Target, Sparkles } from "lucide-react";
+import { AiSuggestionsBanner } from "@/components/dashboard/ai-suggestions";
 
 interface TodayPayload {
   greeting: string;
@@ -102,6 +103,8 @@ export default function DashboardOverview() {
       </header>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+        <AiSuggestionsBanner />
+
         <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 36px)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>

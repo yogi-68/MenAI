@@ -13,6 +13,12 @@
 import { classifyWithLLM } from "./router";
 import { EXTRACTION_PROMPT } from "@/lib/ai/prompts";
 import type { ExtractedLifeData } from "./types";
+import {
+  archivePriorIdentitySignals,
+  queueSuggestion,
+  shouldSaveExplicit,
+} from "@/lib/ai/memory-confidence";
+import { MEMORY_CONFIDENCE } from "@/lib/product/constants";
 
 const EMPTY_EXTRACTION: ExtractedLifeData = {
   goals: [],
@@ -195,82 +201,120 @@ export async function persistExtractedData(
 ): Promise<void> {
   const tasks: PromiseLike<unknown>[] = [];
 
-  // Persist goals (long-term direction only — not active projects)
+  // Direction (goals): explicit statements save immediately; low confidence → suggestion queue
   if (data.goals.length > 0) {
     for (const goal of data.goals) {
-      tasks.push(
-        supabase.from("goals").insert({
-          user_id: userId,
-          title: goal.title,
-          description: goal.description || null,
-          category: goal.category,
-          priority: goal.priority,
-          target_date: goal.targetDate || null,
-          source: "chat_extraction",
-        }).then(() => {})
-      );
+      const conf = goal.confidence ?? 0.8;
+      if (shouldSaveExplicit(conf)) {
+        tasks.push(
+          (async () => {
+            const { data: existing } = await supabase
+              .from("goals")
+              .select("id")
+              .eq("user_id", userId)
+              .ilike("title", goal.title)
+              .limit(1);
+            if (existing?.length) return;
+            await supabase.from("goals").insert({
+              user_id: userId,
+              title: goal.title,
+              description: goal.description || null,
+              category: goal.category,
+              priority: goal.priority,
+              target_date: goal.targetDate || null,
+              source: "chat_extraction",
+            });
+          })()
+        );
+      } else {
+        tasks.push(
+          queueSuggestion(supabase, {
+            userId,
+            type: "direction",
+            title: goal.title,
+            payload: {
+              description: goal.description,
+              category: goal.category,
+              priority: goal.priority,
+            },
+            confidence: conf,
+            conversationId,
+          })
+        );
+      }
     }
   }
 
-  // Persist projects as active initiatives (what user is executing now)
+  // Initiatives: always queue for user confirmation (never auto-create)
   if (data.projects.length > 0) {
     for (const project of data.projects) {
       const title = project.name.trim();
       if (!title) continue;
-
       const defaultDeadline = new Date();
       defaultDeadline.setDate(defaultDeadline.getDate() + 30);
-      const targetDate = defaultDeadline.toISOString().split("T")[0];
 
       tasks.push(
-        (async () => {
-          const { data: existing } = await supabase
-            .from("initiatives")
-            .select("id")
-            .eq("user_id", userId)
-            .ilike("title", title)
-            .limit(1);
-
-          if (existing?.length) return;
-
-          await supabase.from("initiatives").insert({
-            user_id: userId,
-            title,
-            description: project.context || null,
-            status: project.status === "completed" ? "completed" : "active",
-            target_date: targetDate,
-            life_area: inferLifeAreaFromProject(project),
-          });
-        })()
+        queueSuggestion(supabase, {
+          userId,
+          type: "initiative",
+          title,
+          payload: {
+            description: project.context,
+            targetDate: defaultDeadline.toISOString().split("T")[0],
+            lifeArea: inferLifeAreaFromProject(project),
+          },
+          confidence: project.confidence ?? 0.85,
+          conversationId,
+        })
       );
     }
   }
 
-  // Persist time-sensitive opportunities (interviews, deadlines, events)
+  // Opportunities: queue unless very explicit dated event
   if (data.opportunities.length > 0) {
     for (const opp of data.opportunities) {
-      tasks.push(
-        (async () => {
-          const { data: existing } = await supabase
-            .from("opportunities")
-            .select("id")
-            .eq("user_id", userId)
-            .ilike("title", opp.title)
-            .limit(1);
+      const conf = opp.confidence ?? 0.85;
+      const autoSave =
+        conf >= MEMORY_CONFIDENCE.opportunityAutoSave && !!opp.dueDate;
 
-          if (existing?.length) return;
-
-          await supabase.from("opportunities").insert({
-            user_id: userId,
+      if (autoSave) {
+        tasks.push(
+          (async () => {
+            const { data: existing } = await supabase
+              .from("opportunities")
+              .select("id")
+              .eq("user_id", userId)
+              .ilike("title", opp.title)
+              .limit(1);
+            if (existing?.length) return;
+            await supabase.from("opportunities").insert({
+              user_id: userId,
+              title: opp.title,
+              description: opp.description || null,
+              due_date: opp.dueDate || null,
+              urgency: opp.urgency,
+              life_area: opp.lifeArea || "personal",
+              status: "active",
+            });
+          })()
+        );
+      } else {
+        tasks.push(
+          queueSuggestion(supabase, {
+            userId,
+            type: "opportunity",
             title: opp.title,
-            description: opp.description || null,
-            due_date: opp.dueDate || null,
-            urgency: opp.urgency,
-            life_area: opp.lifeArea || "personal",
-            status: "active",
-          });
-        })()
-      );
+            payload: {
+              description: opp.description,
+              dueDate: opp.dueDate,
+              urgency: opp.urgency,
+              lifeArea: opp.lifeArea,
+            },
+            confidence: conf,
+            conversationId,
+          })
+        );
+      }
     }
   }
 
@@ -288,18 +332,24 @@ export async function persistExtractedData(
     }
   }
 
-  // Persist identity signals
+  // Identity: archive prior active signals when direction shifts, then insert new
   if (data.identitySignals.length > 0) {
     for (const signal of data.identitySignals) {
       tasks.push(
-        supabase.from("identity_signals").insert({
-          user_id: userId,
-          type: signal.type,
-          description: signal.description,
-          long_term_direction: signal.longTermDirection,
-          confidence: signal.confidence,
-          extracted_from: conversationId,
-        }).then(() => {})
+        (async () => {
+          if (signal.confidence >= MEMORY_CONFIDENCE.explicitSave) {
+            await archivePriorIdentitySignals(supabase, userId);
+          }
+          await supabase.from("identity_signals").insert({
+            user_id: userId,
+            type: signal.type,
+            description: signal.description,
+            long_term_direction: signal.longTermDirection,
+            confidence: signal.confidence,
+            status: "active",
+            source: "chat_extraction",
+          });
+        })()
       );
     }
   }
