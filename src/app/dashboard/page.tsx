@@ -36,7 +36,7 @@ interface TodayPayload {
 }
 
 export default function DashboardOverview() {
-  const { user } = useAppStore();
+  const user = useAppStore((s) => s.user);
   const supabase = createClient();
   const queryClient = useQueryClient();
   const router = useRouter();

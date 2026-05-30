@@ -24,7 +24,7 @@ function fmtTokens(n: number) {
 
 export default function AdminMonitoringPage() {
   const router = useRouter();
-  const { user } = useAppStore();
+  const user = useAppStore((s) => s.user);
 
   useEffect(() => {
     if (user && user.role !== "admin") {

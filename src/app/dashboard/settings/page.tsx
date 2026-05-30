@@ -7,7 +7,8 @@ import { Settings, CheckCircle, ChevronDown, Sun, Moon } from "lucide-react";
 
 export default function SettingsPage() {
   const supabase = createClient();
-  const { user, setUser } = useAppStore();
+  const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

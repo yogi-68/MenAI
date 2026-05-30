@@ -15,6 +15,12 @@ interface VirtualMessageListProps {
   scrollRef?: React.RefObject<HTMLDivElement | null>;
 }
 
+function estimateMessageHeight(msg: Message | undefined): number {
+  if (!msg) return 72;
+  const lines = Math.max(1, Math.ceil(msg.content.length / 72));
+  return Math.min(520, 48 + lines * 24);
+}
+
 export function VirtualMessageList({
   messages,
   streamingContent,
@@ -35,8 +41,22 @@ export function VirtualMessageList({
   const virtualizer = useVirtualizer({
     count: totalCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 96,
-    overscan: 10,
+    estimateSize: (index) => {
+      const msg = messages[index];
+      if (msg) return estimateMessageHeight(msg);
+      if (index === messages.length && streamingContent) {
+        const lines = Math.max(1, Math.ceil(streamingContent.length / 72));
+        return Math.min(520, 48 + lines * 24);
+      }
+      return 72;
+    },
+    overscan: 8,
+    getItemKey: (index) => {
+      const msg = messages[index];
+      if (msg) return msg.id;
+      if (index === messages.length && streamingContent) return "__streaming__";
+      return "__typing__";
+    },
   });
 
   const handleScroll = useCallback(() => {
@@ -53,7 +73,7 @@ export function VirtualMessageList({
     } else {
       loadTriggeredRef.current = false;
     }
-  }, [hasMoreOlder, loadingOlder, onLoadOlder, parentRef]);
+  }, [hasMoreOlder, loadingOlder, onLoadOlder]);
 
   useEffect(() => {
     loadTriggeredRef.current = false;
@@ -64,7 +84,7 @@ export function VirtualMessageList({
     if (!el) return;
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll, parentRef]);
+  }, [handleScroll]);
 
   return (
     <>
@@ -93,7 +113,6 @@ export function VirtualMessageList({
             <div
               key={virtualRow.key}
               data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
               style={{
                 position: "absolute",
                 top: 0,

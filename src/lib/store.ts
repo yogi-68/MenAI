@@ -136,7 +136,24 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       user: null,
-      setUser: (user) => set({ user }),
+      setUser: (user) =>
+        set((state) => {
+          if (user === null) {
+            return state.user === null ? state : { user: null };
+          }
+          const current = state.user;
+          if (
+            current &&
+            current.id === user.id &&
+            current.full_name === user.full_name &&
+            current.avatar_url === user.avatar_url &&
+            current.role === user.role &&
+            current.onboarding_completed === user.onboarding_completed
+          ) {
+            return state;
+          }
+          return { user };
+        }),
 
       sidebarOpen: true,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -319,17 +336,16 @@ export const useAppStore = create<AppState>()(
           state.currentConversationId
         ),
       }),
-      onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        state.conversationStates = Object.fromEntries(
+      onRehydrateStorage: () => (state, error) => {
+        if (error || !state) return;
+        const normalized = Object.fromEntries(
           Object.entries(state.conversationStates || {}).map(([id, convState]) => [
             id,
             normalizeConversationState(convState),
           ])
         );
-        if (
-          state.currentConversationId?.startsWith("pending-")
-        ) {
+        state.conversationStates = normalized;
+        if (state.currentConversationId?.startsWith("pending-")) {
           state.currentConversationId = null;
         }
       },

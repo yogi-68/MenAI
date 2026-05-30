@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
 import { useRouter, usePathname } from "next/navigation";
@@ -37,14 +37,19 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, setUser } = useAppStore();
+  const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
+  const userLoadedRef = useRef(false);
 
 
   useEffect(() => {
+    if (userLoadedRef.current) return;
+    userLoadedRef.current = true;
+
     const fetchUser = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
@@ -74,24 +79,11 @@ export default function DashboardLayout({
         onboarding_completed: profile?.onboarding_completed || false,
       };
 
-      const current = useAppStore.getState().user;
-      if (
-        current &&
-        current.id === nextUser.id &&
-        current.full_name === nextUser.full_name &&
-        current.avatar_url === nextUser.avatar_url &&
-        current.role === nextUser.role &&
-        current.onboarding_completed === nextUser.onboarding_completed
-      ) {
-        return;
-      }
-
       setUser(nextUser);
     };
 
     fetchUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setUser]);
+  }, [setUser, router, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

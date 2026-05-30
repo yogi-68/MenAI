@@ -36,6 +36,8 @@ type ConversationRow = {
 
 type PaginationMeta = { hasMore: boolean; nextBefore: string | null };
 
+const EMPTY_MESSAGES: Message[] = [];
+
 function applyPagination(meta: Record<string, PaginationMeta>, convId: string, page: MessagePage) {
   meta[convId] = { hasMore: page.hasMore, nextBefore: page.nextBefore };
 }
@@ -56,8 +58,8 @@ export default function ChatPage() {
     useCallback(
       (s) =>
         currentConversationId
-          ? s.conversationStates[currentConversationId]?.messages ?? []
-          : [],
+          ? s.conversationStates[currentConversationId]?.messages ?? EMPTY_MESSAGES
+          : EMPTY_MESSAGES,
       [currentConversationId]
     )
   );

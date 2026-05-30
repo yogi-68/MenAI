@@ -648,11 +648,16 @@ function ReflectionSection({ todayKey }: { todayKey: string }) {
   const existing = reflectionData?.reflection;
 
   useEffect(() => {
-    if (existing) {
-      setMovedForward(existing.moved_forward || "");
-      setBlockedBy(existing.blocked_by || "");
-      setTomorrowContext(existing.tomorrow_context || "");
-    }
+    if (!existing) return;
+    setMovedForward((prev) =>
+      prev === (existing.moved_forward || "") ? prev : existing.moved_forward || ""
+    );
+    setBlockedBy((prev) =>
+      prev === (existing.blocked_by || "") ? prev : existing.blocked_by || ""
+    );
+    setTomorrowContext((prev) =>
+      prev === (existing.tomorrow_context || "") ? prev : existing.tomorrow_context || ""
+    );
   }, [existing]);
 
   const saveReflection = useMutation({
