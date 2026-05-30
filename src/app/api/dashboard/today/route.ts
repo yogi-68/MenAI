@@ -1,0 +1,106 @@
+import { NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildCognitiveState, formatCognitiveStateForDashboard } from "@/lib/ai/orchestrator/cognition-engine";
+import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
+import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+
+export const runtime = "nodejs";
+
+export async function GET() {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const today = new Date().toISOString().split("T")[0];
+  const hour = new Date().getHours();
+  const timeOfDay = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
+
+  const [profileRes, tasksRes, initiativesRes, planRes, patternsRes, cogState] =
+    await Promise.all([
+      supabase.from("profiles").select("full_name").eq("id", user.id).single(),
+      supabase
+        .from("tasks")
+        .select("id, title, status, due_date, auto_generated, created_at, initiative_id")
+        .eq("user_id", user.id)
+        .in("status", ["pending", "in_progress"])
+        .order("due_date", { ascending: true, nullsFirst: false }),
+      supabase
+        .from("initiatives")
+        .select("id, title, life_area, progress, last_action_at, target_date, status")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("last_action_at", { ascending: false, nullsFirst: false })
+        .limit(8),
+      supabase
+        .from("daily_plans")
+        .select("plan_content")
+        .eq("user_id", user.id)
+        .eq("plan_date", today)
+        .maybeSingle(),
+      supabase
+        .from("execution_patterns")
+        .select("pattern, behavioral_impact, severity")
+        .eq("user_id", user.id)
+        .order("severity", { ascending: false })
+        .limit(3),
+      buildCognitiveState(user.id),
+    ]);
+
+  const firstName = profileRes.data?.full_name?.split(" ")[0] || "there";
+  const allTasks = tasksRes.data || [];
+  const focusTasks = selectDashboardTasks(allTasks, today, 5);
+  const initiatives = initiativesRes.data || [];
+
+  const planContent = planRes.data?.plan_content as {
+    whatMattersNow?: string;
+    tasks?: Array<{ title: string }>;
+  } | null;
+
+  const dashboardCog = formatCognitiveStateForDashboard(cogState);
+
+  let topMomentumInitiative: string | null = null;
+  if (initiatives.length > 0) {
+    const scored = initiatives.map((i) => {
+      const health = computeInitiativeHealth({
+        status: i.status,
+        targetDate: i.target_date,
+        lastActionAt: i.last_action_at,
+        progress: i.progress,
+      });
+      const recency = i.last_action_at ? new Date(i.last_action_at).getTime() : 0;
+      return { title: i.title, score: recency + (health.health === "on_track" ? 1000 : 0) };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    topMomentumInitiative = scored[0]?.title ?? null;
+  }
+
+  const patternInsight = patternsRes.data?.[0]?.behavioral_impact;
+  const insight =
+    dashboardCog.observation ||
+    (patternInsight
+      ? `You tend to ${patternInsight.charAt(0).toLowerCase()}${patternInsight.slice(1)}`
+      : null);
+
+  return NextResponse.json({
+    greeting: `${timeOfDay}, ${firstName}.`,
+    whatMattersNow: planContent?.whatMattersNow || null,
+    focusTasks: focusTasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+    })),
+    hasPlan: Boolean(planRes.data),
+    initiatives: initiatives.map((i) => ({
+      id: i.id,
+      title: i.title,
+      lifeArea: i.life_area,
+      progress: i.progress,
+    })),
+    topMomentumInitiative,
+    insight,
+    hasInitiatives: initiatives.length > 0,
+    maturityLevel: cogState.maturity_level,
+  });
+}

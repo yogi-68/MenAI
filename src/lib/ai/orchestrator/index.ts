@@ -361,7 +361,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   // These all run AFTER the response is returned to the user.
 
   // Extract life data from message (moved from fast path to background)
-  const extractedData = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [], identitySignals: [], executionPatterns: [] }));
+  const extractedData = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));
 
   // Store memory
   storeMemory({
@@ -778,7 +778,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         }
 
         // Extract and persist life data (background — fires after stream)
-        const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], blockers: [], identitySignals: [], executionPatterns: [] }));
+        const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));
         bgExtraction.then((data) => {
           if (hasExtractedData(data)) {
             persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {

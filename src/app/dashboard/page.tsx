@@ -6,29 +6,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  Compass,
-  Target,
-  Eye,
-  ShieldCheck,
-  ArrowRight,
-  Sparkles,
-  BookOpen,
-  TrendingUp,
-  AlertTriangle,
-} from "lucide-react";
+import { ArrowRight, Zap, MessageSquare, Calendar, Target, Sparkles } from "lucide-react";
 
-import {
-  selectDashboardTasks,
-  formatLatestReflection,
-  type DashboardTask,
-} from "@/lib/dashboard/pending-tasks";
-
-interface Commitment {
-  id: string;
-  description: string;
-  status: string;
-  consistency_score?: number;
+interface TodayPayload {
+  greeting: string;
+  whatMattersNow: string | null;
+  focusTasks: Array<{ id: string; title: string; status: string }>;
+  hasPlan: boolean;
+  initiatives: Array<{ id: string; title: string; lifeArea: string; progress: number }>;
+  topMomentumInitiative: string | null;
+  insight: string | null;
+  hasInitiatives: boolean;
+  maturityLevel: string;
 }
 
 export default function DashboardOverview() {
@@ -38,460 +27,217 @@ export default function DashboardOverview() {
   const router = useRouter();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
-  // Check onboarding status — use onboarding_progress as single source of truth
   useEffect(() => {
     const checkOnboarding = async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
       if (!authUser) {
         router.replace("/login");
         return;
       }
-
-      // Check the same table the onboarding page checks (onboarding_progress)
-      // to avoid desync between profiles.onboarding_completed and
-      // onboarding_progress.completed_at which caused redirect loops.
       const { data: progress } = await supabase
         .from("onboarding_progress")
         .select("completed_at")
         .eq("user_id", authUser.id)
         .maybeSingle();
-
       if (!progress?.completed_at) {
         router.replace("/onboarding");
         return;
       }
-
       setCheckingOnboarding(false);
     };
-
     checkOnboarding();
   }, [supabase, router]);
 
-  // Fetch rhythm context from the Cognition Engine (server-side, cached)
-  const { data: rhythm, isLoading: rhythmLoading } = useQuery({
-    queryKey: ["dashboard-rhythm"],
-    queryFn: async () => {
-      const res = await fetch("/api/rhythm");
-      if (!res.ok) return null;
-      return res.json();
-    },
-    staleTime: 60_000,
-    refetchInterval: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
-  const { data: executionData } = useQuery({
-    queryKey: ["execution-metrics"],
-    queryFn: async () => {
-      const res = await fetch("/api/execution");
-      if (!res.ok) return null;
-      return res.json();
-    },
-    staleTime: 60_000,
-  });
-
   const { data, isLoading } = useQuery({
-    queryKey: ["dashboard-core"],
+    queryKey: ["dashboard-today"],
     queryFn: async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return null;
-
-      const today = new Date().toISOString().split("T")[0];
-
-      const [
-        tasksRes,
-        commitmentsRes,
-        reflectionsRes,
-      ] = await Promise.allSettled([
-        supabase
-          .from("tasks")
-          .select("id, title, status, due_date, auto_generated, created_at")
-          .eq("user_id", authUser.id)
-          .in("status", ["pending", "in_progress"])
-          .order("due_date", { ascending: true, nullsFirst: false }),
-        supabase.from("commitments").select("id, description, status, consistency_score").eq("user_id", authUser.id).eq("status", "active"),
-        supabase
-          .from("daily_reflections")
-          .select("moved_forward, blocked_by, reflection_date")
-          .eq("user_id", authUser.id)
-          .order("reflection_date", { ascending: false })
-          .limit(1),
-      ]);
-
-      const allTasks = tasksRes.status === "fulfilled" ? (tasksRes.value.data || []) as DashboardTask[] : [];
-      const tasks = selectDashboardTasks(allTasks, today);
-      const commitments = commitmentsRes.status === "fulfilled" ? (commitmentsRes.value.data || []) as Commitment[] : [];
-
-      const reflectionRow =
-        reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.[0]
-          ? reflectionsRes.value.data[0]
-          : null;
-      const reflection = reflectionRow ? formatLatestReflection(reflectionRow) : null;
-
-      return {
-        tasks,
-        commitments,
-        reflection,
-        hasTodayPlanTasks: allTasks.some((t) => t.due_date === today && t.auto_generated),
-      };
+      const res = await fetch("/api/dashboard/today");
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json() as Promise<TodayPayload>;
     },
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const toggleTask = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const newStatus = status === "completed" ? "pending" : "completed";
-      const res = await fetch("/api/tasks", {
+      await fetch("/api/tasks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: newStatus }),
       });
-      return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dashboard-core"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
     },
   });
-
-  const greeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Morning";
-    if (hour < 18) return "Afternoon";
-    return "Evening";
-  };
-
-  const tasks = data?.tasks || [];
-  const commitments = data?.commitments || [];
-  const reflection = data?.reflection;
-  const hasTodayPlanTasks = data?.hasTodayPlanTasks ?? false;
-  
-  const isNew = rhythm?.maturity_level === "new";
-  const currentDirection = rhythm?.cognitive_summary?.direction || (isNew ? "Still gathering signal. Direction will emerge through conversation." : "Loading...");
-  const observation = rhythm?.cognitive_summary?.observation;
-  const weaknessHint = rhythm?.cognitive_summary?.weakness_hint;
-  const activeFocus = tasks.map((t) => t.title);
-  const suggestedAction = rhythm?.suggested_action;
-  const focusPrompt = rhythm?.focus_prompt;
 
   if (checkingOnboarding) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div className="skeleton shimmer" style={{ width: "200px", height: "40px", borderRadius: "8px" }} />
+        <div className="skeleton shimmer" style={{ width: 200, height: 40, borderRadius: 8 }} />
       </div>
     );
   }
 
+  const isNew = data?.maturityLevel === "new";
+
   return (
     <div className="page-shell">
-      {/* ===== HEADER ===== */}
-      <div className="animate-fade-in" style={{ marginBottom: "72px" }}>
-        <h1 suppressHydrationWarning style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
-          {rhythm?.greeting || `${greeting()}, ${user?.full_name?.split(" ")[0] || "there"}.`}
-        </h1>
-        <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6 }}>
-          {focusPrompt || "Here is your current trajectory."}
+      <header className="animate-fade-in" style={{ marginBottom: "40px" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Today
         </p>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
-        
-        {/* ROW 1: Direction & Observation */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "28px" }}>
-          
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <Compass size={20} style={{ color: "var(--text-muted)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                Current Direction
-              </h2>
-            </div>
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
-            ) : (
-              <p style={{ fontSize: "1.05rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
-                {currentDirection}
-              </p>
-            )}
-          </section>
-
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <Eye size={20} style={{ color: "var(--accent-secondary)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-secondary)", fontWeight: 500 }}>
-                AI Observation
-              </h2>
-            </div>
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
-            ) : observation ? (
-              <p style={{ fontSize: "1rem", color: "var(--text-primary)", lineHeight: 1.8, fontStyle: "italic", fontWeight: 300 }}>
-                {observation}
-              </p>
-            ) : isNew ? (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                MenAI is still learning how you work. Patterns will appear after a few conversations.
-              </p>
-            ) : (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                No strong patterns detected yet.
-              </p>
-            )}
-          </section>
-        </div>
-
-        {/* ROW 1.5: Weakness Alert (only shows when detected) */}
-        {weaknessHint && (
-          <section className="glass-card" style={{ padding: "28px 40px", transition: "all 0.3s ease", borderLeft: "3px solid var(--accent-secondary)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-              <AlertTriangle size={20} style={{ color: "var(--accent-secondary)" }} />
-              <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-secondary)", marginBottom: "6px", fontWeight: 500 }}>
-                  Adaptation
-                </h2>
-                <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.7 }}>
-                  {weaknessHint}
-                </p>
-              </div>
-            </div>
-          </section>
+        <h1 suppressHydrationWarning style={{ fontSize: "clamp(1.75rem, 4vw, 2.25rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
+          {isLoading ? `${user?.full_name?.split(" ")[0] || "there"}.` : data?.greeting}
+        </h1>
+        {data?.whatMattersNow && (
+          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
+            {data.whatMattersNow}
+          </p>
         )}
+      </header>
 
-        {executionData?.metrics && (
-          <section className="glass-card" style={{ padding: "28px 40px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <TrendingUp size={20} style={{ color: "var(--accent-primary)" }} />
-                <div>
-                  <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                    Momentum
-                  </h2>
-                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                    {executionData.momentumDisplay?.headline || executionData.momentum?.label || "building"}
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "24px" }}>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 300, color: "var(--accent-primary)" }}>
-                    {executionData.momentum?.score ?? "—"}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>momentum score</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "1.75rem", fontWeight: 300 }}>{executionData.metrics.last7Days.rate}%</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>7-day execution</div>
-                </div>
-              </div>
-            </div>
-            {(executionData.momentumDisplay?.evidence?.length > 0 || executionData.momentum?.factors?.length > 0) && (
-              <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "16px", lineHeight: 1.6 }}>
-                {(executionData.momentumDisplay?.evidence || executionData.momentum?.factors || []).slice(0, 3).join(" · ")}
-              </p>
-            )}
-            <Link href="/dashboard/plans" style={{ display: "inline-block", marginTop: "16px", fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
-              View today&apos;s plan →
+      <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+        <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 36px)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
+              <Calendar size={16} />
+              Today&apos;s focus
+            </h2>
+            <Link href="/dashboard/plans" style={{ fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
+              {data?.hasPlan ? "Open plan →" : "Generate plan →"}
             </Link>
-          </section>
-        )}
+          </div>
 
-        {/* ROW 2: Tasks & Commitments */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px" }}>
-          
-          <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 40px)", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px", flexWrap: "wrap", gap: "8px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <Target size={20} style={{ color: "var(--text-muted)" }} />
-                <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                  Pending tasks
-                </h2>
-              </div>
-              <Link href="/dashboard/plans" style={{ fontSize: "0.8rem", color: "var(--accent-primary)", textDecoration: "none" }}>
-                Today&apos;s plan →
+          {isLoading ? (
+            <div className="skeleton shimmer" style={{ height: 100, borderRadius: 8 }} />
+          ) : data?.focusTasks.length ? (
+            <ol style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              {data.focusTasks.map((task, idx) => (
+                <li key={task.id} style={{ fontSize: "1rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.6 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => toggleTask.mutate({ id: task.id, status: task.status })}
+                      aria-label={`Mark task ${idx + 1} complete`}
+                      style={{
+                        marginTop: 4,
+                        background: "none",
+                        border: "1.5px solid var(--border-color)",
+                        width: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span>{task.title}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontWeight: 300 }}>
+              {isNew ? (
+                <p>Start by telling MenAI what you&apos;re actively working on — then open Today&apos;s Plan.</p>
+              ) : data?.hasInitiatives ? (
+                <p>No tasks for today yet. Generate your daily plan from your active initiatives.</p>
+              ) : (
+                <p>Add an active initiative (with a deadline) — daily tasks come from initiatives, not abstract goals.</p>
+              )}
+              <Link href="/dashboard/plans" className="btn-primary" style={{ display: "inline-flex", marginTop: 16, textDecoration: "none", padding: "10px 20px", fontSize: "0.9rem" }}>
+                Go to Today&apos;s Plan
               </Link>
             </div>
-            
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
-            ) : activeFocus.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                {activeFocus.map((item: string, idx: number) => {
-                  const task = tasks.find((t) => t.title === item);
-                  return (
-                    <div key={task?.id || idx} style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
-                      {task ? (
-                        <button
-                          onClick={() => toggleTask.mutate({ id: task.id, status: task.status })}
-                          style={{ 
-                            marginTop: "4px", 
-                            background: "none", 
-                            border: "1.5px solid var(--border-color)", 
-                            width: "18px", 
-                            height: "18px", 
-                            borderRadius: "50%", 
-                            cursor: "pointer",
-                            transition: "all 0.25s ease"
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = "var(--accent-primary)";
-                            e.currentTarget.style.transform = "scale(1.1)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = "var(--border-color)";
-                            e.currentTarget.style.transform = "scale(1)";
-                          }}
-                        />
-                      ) : (
-                        <div style={{ marginTop: "4px", width: "4px", height: "18px", background: "var(--border-color)", borderRadius: "2px" }} />
-                      )}
-                      <span style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.7 }}>
-                        {item}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                {isNew
-                  ? "Start a conversation to set your focus."
-                  : hasTodayPlanTasks
-                    ? "Open today's plan to see your tasks."
-                    : "No tasks for today yet — generate your daily plan."}
-              </p>
-            )}
-          </section>
+          )}
 
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
-              <ShieldCheck size={20} style={{ color: "var(--text-muted)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                Commitments
+          {data?.topMomentumInitiative && data.focusTasks.length > 0 && (
+            <p style={{ marginTop: 20, fontSize: "0.88rem", color: "var(--text-muted)" }}>
+              Most momentum right now: <strong style={{ color: "var(--accent-primary)", fontWeight: 500 }}>{data.topMomentumInitiative}</strong>
+            </p>
+          )}
+        </section>
+
+        {(isLoading || (data?.initiatives.length ?? 0) > 0) && (
+          <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 36px)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
+              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
+                <Zap size={16} />
+                Active initiatives
               </h2>
+              <Link href="/dashboard/goals" style={{ fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
+                Manage →
+              </Link>
             </div>
-
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
-            ) : commitments.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                {commitments.map(c => (
-                  <div key={c.id} style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
-                    <div 
-                      style={{ 
-                        width: "4px", 
-                        height: "18px", 
-                        background: c.consistency_score && c.consistency_score >= 70 
-                          ? "var(--accent-primary)" 
-                          : "var(--border-color)", 
-                        borderRadius: "2px", 
-                        marginTop: "4px",
-                        transition: "background 0.3s ease"
-                      }} 
-                    />
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.7 }}>
-                        {c.description}
-                      </span>
-                      {c.consistency_score !== undefined && c.consistency_score > 0 && (
-                        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "6px", lineHeight: 1.5 }}>
-                          {Math.round(c.consistency_score)}% follow-through
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            {isLoading ? (
+              <div className="skeleton shimmer" style={{ height: 60, borderRadius: 8 }} />
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                {data?.initiatives.map((init) => (
+                  <span
+                    key={init.id}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: "var(--radius-full)",
+                      background: "var(--bg-glass)",
+                      border: "1px solid var(--border-color)",
+                      fontSize: "0.9rem",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {init.title}
+                  </span>
                 ))}
               </div>
-            ) : (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                {isNew ? "Commitments will appear as MenAI learns your patterns." : "No commitments detected."}
-              </p>
             )}
           </section>
-        </div>
+        )}
 
-        {/* ROW 3: Reflections & Next Steps */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "28px" }}>
-          
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <BookOpen size={20} style={{ color: "var(--text-muted)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                Reflections
-              </h2>
+        {!isLoading && !data?.hasInitiatives && (
+          <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 36px)", borderLeft: "3px solid var(--accent-primary)" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-primary)", marginBottom: 10 }}>
+              Set up execution
+            </h2>
+            <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 16, fontWeight: 300 }}>
+              Long-term goals are direction. <strong>Initiatives</strong> are what you execute this month — AI SaaS, job search, fat loss. Daily plans come from initiatives.
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              <Link href="/dashboard/goals" className="btn-primary" style={{ textDecoration: "none", padding: "10px 18px", fontSize: "0.88rem", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Target size={14} /> Add initiative
+              </Link>
+              <Link href="/dashboard/chat" className="btn-secondary" style={{ textDecoration: "none", padding: "10px 18px", fontSize: "0.88rem", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <MessageSquare size={14} /> Tell MenAI what you&apos;re building
+              </Link>
             </div>
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "70px", width: "100%", borderRadius: "8px" }} />
-            ) : reflection ? (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
-                {reflection}
-              </p>
-            ) : (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                {isNew
-                  ? "Reflections appear after your first few conversations."
-                  : "No reflections yet."}{" "}
-                <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)", textDecoration: "none" }}>
-                  Submit today&apos;s reflection →
-                </Link>
-              </p>
-            )}
           </section>
+        )}
 
-          <section className="glass-card" style={{ padding: "40px", display: "flex", flexDirection: "column", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <Sparkles size={20} style={{ color: "var(--accent-primary)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-primary)", fontWeight: 500 }}>
-                Suggested Next Steps
-              </h2>
-            </div>
-            {rhythmLoading ? (
-              <div className="skeleton shimmer" style={{ height: "100px", width: "100%", borderRadius: "8px" }} />
-            ) : (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: "14px", flex: 1 }}>
-                  {suggestedAction && (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-                      <span style={{ fontSize: "0.85rem", color: "var(--accent-primary)", fontWeight: 500, marginTop: "2px" }}>
-                        →
-                      </span>
-                      <span style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.8, fontWeight: 300 }}>
-                        {suggestedAction}
-                      </span>
-                    </div>
-                  )}
-                  {!suggestedAction && isNew && (
-                    <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                      Start a conversation with MenAI to get personalized suggestions.
-                    </p>
-                  )}
-                </div>
-                <Link 
-                  href="/dashboard/chat" 
-                  style={{ 
-                    marginTop: "24px", 
-                    display: "inline-flex", 
-                    alignItems: "center", 
-                    gap: "8px", 
-                    color: "var(--text-primary)", 
-                    textDecoration: "none", 
-                    fontSize: "0.9rem",
-                    opacity: 0.8,
-                    transition: "all 0.25s ease"
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.opacity = "1";
-                    e.currentTarget.style.gap = "12px";
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.opacity = "0.8";
-                    e.currentTarget.style.gap = "8px";
-                  }}
-                >
-                  Resume conversation <ArrowRight size={14} />
-                </Link>
-              </>
-            )}
+        {data?.insight && (
+          <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <Sparkles size={14} />
+              Recent insight
+            </h2>
+            <p style={{ fontSize: "1rem", lineHeight: 1.75, color: "var(--text-primary)", fontWeight: 300, fontStyle: "italic" }}>
+              {data.insight}
+            </p>
           </section>
+        )}
 
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, paddingTop: 8 }}>
+          <Link
+            href="/dashboard/chat"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", textDecoration: "none", fontSize: "0.9rem" }}
+          >
+            Resume conversation <ArrowRight size={14} />
+          </Link>
+          <Link href="/dashboard/reports" style={{ color: "var(--text-muted)", textDecoration: "none", fontSize: "0.88rem" }}>
+            Weekly review →
+          </Link>
         </div>
       </div>
     </div>

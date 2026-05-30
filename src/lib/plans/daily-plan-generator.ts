@@ -78,37 +78,9 @@ export interface PlanUserContext {
   timeEstimationInsight?: string;
 }
 
-const VAGUE_PATTERNS = [
-  /^work on/i,
-  /^make progress/i,
-  /^improve /i,
-  /^focus on/i,
-  /^build (a |the )?business/i,
-  /^build scalable/i,
-  /^build recurring/i,
-  /^study more/i,
-  /^get healthier/i,
-  /^network\b/i,
-  /^network more/i,
-  /cash flow$/i,
-  /^continue /i,
-  /^start working/i,
-  /^work toward/i,
-  /^spend time on/i,
-  /^think about/i,
-  /^plan for/i,
-  /^research more/i,
-  /^research investing/i,
-  /^learn more about/i,
-  /^improve career/i,
-  /^goals?$/i,
-];
+import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
 
-export function isVagueTask(title: string): boolean {
-  const normalized = title.trim();
-  if (normalized.length < 12) return true;
-  return VAGUE_PATTERNS.some((p) => p.test(normalized));
-}
+export { isVagueTask } from "@/lib/tasks/finishable-today";
 
 function listOrFallback(items: string[], fallback: string): string {
   return items.length > 0 ? items.map((i) => `  - ${i}`).join("\n") : `  - ${fallback}`;
@@ -499,8 +471,13 @@ ${ctx.lifeAreaInsight ? `\nBalance insight: ${ctx.lifeAreaInsight}` : ""}
 Upcoming deadlines:
 ${listOrFallback(ctx.upcomingDeadlines, "None")}
 
-Goals (background only — do NOT mirror as tasks):
+Goals (background DIRECTION only — never generate tasks from these):
 ${listOrFallback(ctx.goals, "None")}
+
+TASK RULE — every task MUST pass: "Can the user finish this today before bed?"
+BAD: "Build scalable businesses", "Increase income", "Improve fitness"
+GOOD: "Send 5 outreach emails", "Implement onboarding form validation", "Walk 30 minutes"
+Each task needs a deliverable + successMetric that is yes/no verifiable today.
 
 Commitments:
 ${listOrFallback(ctx.commitments, "None")}
@@ -634,7 +611,7 @@ export async function generateDailyPlanWithAI(
         : "normal";
 
   let tasks: DailyPlanTask[] = (parsed.tasks || [])
-    .filter((t) => t.title && (t.isContextBuilding || !isVagueTask(t.title)))
+    .filter((t) => t.title && (t.isContextBuilding || isFinishableTodayTask(t.title)))
     .map((t) => ({
       title: t.title.trim(),
       whyItMatters:

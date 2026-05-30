@@ -277,18 +277,28 @@ Return ONLY valid JSON:
   "habits": [{"name": "...", "type": "sleep|workout|nutrition|deep_work|reading|learning|social_media|other", "status": "positive|negative|neutral"}],
   "emotions": [{"emotion": "...", "intensity": 1-10, "trigger": "..."}],
   "projects": [{"name": "...", "status": "active|stuck|completed|idea", "context": "...", "confidence": 0.9}],
+  "opportunities": [{"title": "...", "description": "...", "dueDate": "YYYY-MM-DD", "urgency": "low|medium|high|critical", "lifeArea": "career|business|...", "confidence": 0.9}],
   "blockers": ["..."]
 }
 
 Extraction Rules:
 
-1. GOALS - explicit intentions to achieve something
-   Examples:
-   - "I want to build a SaaS" → {title: "Build a SaaS", category: "startup", priority: "high", confidence: 0.92}
-   - "I need to get healthier" → {title: "Get healthier", category: "health", priority: "medium", confidence: 0.85}
-   Only extract if user explicitly states a desire or intention.
+1. GOALS — long-term DIRECTION only (identity / lifetime outcomes). NOT active work.
+   Examples: "Achieve financial freedom", "Build wealth", "Get healthier overall"
+   Do NOT put active projects here (e.g. "Build AI SaaS" → project/initiative, not goal)
 
-2. COMMITMENTS - explicit promises
+2. PROJECTS — active initiatives the user is working on NOW (executable focus areas).
+   Examples:
+   - "I'm building an AI SaaS" → {name: "Launch AI SaaS MVP", status: "active", confidence: 0.92}
+   - "Preparing for UPSC" → {name: "UPSC preparation", status: "active", confidence: 0.90}
+   - "Fat loss phase" → {name: "Fat loss", status: "active", confidence: 0.88}
+
+3. OPPORTUNITIES — time-sensitive events with dates or urgency.
+   Examples:
+   - "Interview on June 10" → {title: "Senior Developer Interview", dueDate: "2026-06-10", urgency: "high", lifeArea: "career", confidence: 0.95}
+   - "Demo day next Friday" → opportunity with dueDate
+
+4. COMMITMENTS — explicit promises
    Examples:
    - "I'll wake up at 6am tomorrow" → {description: "Wake up at 6am", category: "personal", timeframe: "today", confidence: 0.95}
    - "I'm going to finish the landing page" → {description: "Finish landing page", category: "work", timeframe: "this_week", confidence: 0.90}

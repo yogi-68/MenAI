@@ -19,7 +19,9 @@ import {
   Zap,
   Flag,
   Sparkles,
+  MessageSquare,
 } from "lucide-react";
+import Link from "next/link";
 import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
 import { computeInitiativeHealth, healthColor } from "@/lib/plans/initiative-health";
 import { InfoTip, HEALTH_LEGEND } from "@/components/ui/info-tip";
@@ -302,25 +304,25 @@ export default function GoalsPage() {
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
             <Target size={28} style={{ color: "var(--accent-primary)" }} />
-            Goals & Initiatives
+            Direction & Active Initiatives
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            Goals are direction. Initiatives are what you&apos;re actually executing — they drive your daily plan.
+            <strong>Direction</strong> = long-term outcomes. <strong>Active initiatives</strong> = what you execute this month — they drive your daily plan.
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => setShowAddInitiative(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
-            <Zap size={16} /> Initiative
+          <button onClick={() => setShowAddInitiative(true)} className="btn-primary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+            <Zap size={16} /> Add initiative
           </button>
           <button onClick={() => setShowAddOpportunity(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
             <Sparkles size={16} /> Opportunity
           </button>
-          <button onClick={() => setShowAddTask(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
-            <Plus size={16} /> Task
+          <button onClick={() => setShowAddGoal(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+            <Plus size={16} /> Direction
           </button>
-          <button onClick={() => setShowAddGoal(true)} className="btn-primary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
-            <Plus size={16} /> Goal
-          </button>
+          <Link href="/dashboard/chat" className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <MessageSquare size={16} /> Ask AI to set up
+          </Link>
         </div>
       </div>
 
@@ -352,7 +354,7 @@ export default function GoalsPage() {
       <section style={{ marginBottom: "32px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           <Zap size={18} style={{ color: "var(--accent-primary)" }} />
-          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Initiatives</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Active initiatives</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>each needs a deadline · feeds daily plan</span>
         </div>
         <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>
@@ -464,7 +466,12 @@ export default function GoalsPage() {
         )}
       </section>
 
-      {/* Goals List */}
+      {/* Direction (long-term goals) */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+        <Target size={18} style={{ color: "var(--text-muted)" }} />
+        <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Direction</h2>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>long-term · not daily tasks</span>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "32px" }}>
         {goalsLoading ? (
           <div className="skeleton" style={{ height: "80px", width: "100%" }} />
@@ -472,7 +479,7 @@ export default function GoalsPage() {
           <div className="glass-card" style={{ padding: "40px", textAlign: "center", cursor: "default" }}>
             <Target size={40} style={{ color: "var(--text-muted)", opacity: 0.3, marginBottom: "12px" }} />
             <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
-              No {filter === "all" ? "" : filter} goals yet. Talk to your AI mentor or add one manually.
+              No {filter === "all" ? "" : filter} direction items yet. Add long-term outcomes here — or chat with MenAI to extract them.
             </p>
           </div>
         ) : (

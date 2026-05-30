@@ -23,7 +23,7 @@ const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
   { href: "/dashboard/plans", icon: Calendar, label: "Daily Plans" },
-  { href: "/dashboard/goals", icon: Target, label: "Goals & Initiatives" },
+  { href: "/dashboard/goals", icon: Target, label: "Direction & Initiatives" },
   { href: "/dashboard/reports", icon: FileText, label: "Reports" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];

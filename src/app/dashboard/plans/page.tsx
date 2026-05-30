@@ -502,7 +502,7 @@ export default function DailyPlansPage() {
           >
             Add active initiatives with deadlines on{" "}
             <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-              Goals &amp; Initiatives
+              Direction &amp; Initiatives
             </Link>
             {" "}— they drive your daily plan.
           </p>

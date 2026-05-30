@@ -23,6 +23,7 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
   habits: [],
   emotions: [],
   projects: [],
+  opportunities: [],
   blockers: [],
 };
 
@@ -116,6 +117,12 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
             return conf >= PROJECT_THRESHOLD;
           })
         : [],
+      opportunities: Array.isArray(parsed.opportunities)
+        ? parsed.opportunities.map(sanitizeOpportunity).filter((o: { confidence?: number; title?: string }) => {
+            const conf = o.confidence ?? 1;
+            return conf >= PROJECT_THRESHOLD;
+          })
+        : [],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers.filter((b: unknown) => typeof b === "string") : [],
     };
 
@@ -188,7 +195,7 @@ export async function persistExtractedData(
 ): Promise<void> {
   const tasks: PromiseLike<unknown>[] = [];
 
-  // Persist goals
+  // Persist goals (long-term direction only — not active projects)
   if (data.goals.length > 0) {
     for (const goal of data.goals) {
       tasks.push(
@@ -199,8 +206,70 @@ export async function persistExtractedData(
           category: goal.category,
           priority: goal.priority,
           target_date: goal.targetDate || null,
-          extracted_from: conversationId,
+          source: "chat_extraction",
         }).then(() => {})
+      );
+    }
+  }
+
+  // Persist projects as active initiatives (what user is executing now)
+  if (data.projects.length > 0) {
+    for (const project of data.projects) {
+      const title = project.name.trim();
+      if (!title) continue;
+
+      const defaultDeadline = new Date();
+      defaultDeadline.setDate(defaultDeadline.getDate() + 30);
+      const targetDate = defaultDeadline.toISOString().split("T")[0];
+
+      tasks.push(
+        (async () => {
+          const { data: existing } = await supabase
+            .from("initiatives")
+            .select("id")
+            .eq("user_id", userId)
+            .ilike("title", title)
+            .limit(1);
+
+          if (existing?.length) return;
+
+          await supabase.from("initiatives").insert({
+            user_id: userId,
+            title,
+            description: project.context || null,
+            status: project.status === "completed" ? "completed" : "active",
+            target_date: targetDate,
+            life_area: inferLifeAreaFromProject(project),
+          });
+        })()
+      );
+    }
+  }
+
+  // Persist time-sensitive opportunities (interviews, deadlines, events)
+  if (data.opportunities.length > 0) {
+    for (const opp of data.opportunities) {
+      tasks.push(
+        (async () => {
+          const { data: existing } = await supabase
+            .from("opportunities")
+            .select("id")
+            .eq("user_id", userId)
+            .ilike("title", opp.title)
+            .limit(1);
+
+          if (existing?.length) return;
+
+          await supabase.from("opportunities").insert({
+            user_id: userId,
+            title: opp.title,
+            description: opp.description || null,
+            due_date: opp.dueDate || null,
+            urgency: opp.urgency,
+            life_area: opp.lifeArea || "personal",
+            status: "active",
+          });
+        })()
       );
     }
   }
@@ -322,6 +391,7 @@ export function hasExtractedData(data: ExtractedLifeData): boolean {
     data.executionPatterns.length > 0 ||
     data.relationships.length > 0 ||
     data.projects.length > 0 ||
+    data.opportunities.length > 0 ||
     data.blockers.length > 0
   );
 }
@@ -386,6 +456,28 @@ function sanitizeProject(project: Record<string, unknown>) {
     context: project.context ? String(project.context).slice(0, 300) : undefined,
     confidence: typeof project.confidence === "number" ? project.confidence : 0.8,
   } as ExtractedLifeData["projects"][number] & { confidence: number };
+}
+
+function sanitizeOpportunity(opp: Record<string, unknown>) {
+  const validUrgency = ["low", "medium", "high", "critical"];
+  const validAreas = ["career", "business", "finance", "health", "learning", "relationships", "personal"];
+  return {
+    title: String(opp.title || "").slice(0, 200),
+    description: opp.description ? String(opp.description).slice(0, 400) : undefined,
+    dueDate: opp.dueDate ? String(opp.dueDate) : undefined,
+    urgency: validUrgency.includes(String(opp.urgency)) ? (String(opp.urgency) as ExtractedLifeData["opportunities"][number]["urgency"]) : "medium",
+    lifeArea: validAreas.includes(String(opp.lifeArea)) ? String(opp.lifeArea) : "personal",
+    confidence: typeof opp.confidence === "number" ? opp.confidence : 0.85,
+  } as ExtractedLifeData["opportunities"][number];
+}
+
+function inferLifeAreaFromProject(project: ExtractedLifeData["projects"][number]): string {
+  const text = `${project.name} ${project.context || ""}`.toLowerCase();
+  if (/saas|startup|business|revenue|client/.test(text)) return "business";
+  if (/job|career|interview|resume/.test(text)) return "career";
+  if (/fitness|weight|workout|calisthenics|fat/.test(text)) return "health";
+  if (/learn|study|course|upsc/.test(text)) return "learning";
+  return "personal";
 }
 
 function sanitizeIdentitySignal(signal: Record<string, unknown>) {

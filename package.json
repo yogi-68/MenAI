@@ -2,7 +2,7 @@
   "name": "men-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "MenAI - AI Mental Health & Wellness Platform",
+  "description": "MenAI — personal execution operating system",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",

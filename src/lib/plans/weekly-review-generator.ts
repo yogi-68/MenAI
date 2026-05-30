@@ -113,13 +113,11 @@ export async function generateWeeklyReview(
     (r) => `[${r.reflection_date}] Forward: ${r.moved_forward} | Blocked: ${r.blocked_by}`
   );
 
-  const prompt = `Generate a weekly execution review for this user. Be direct like an execution coach — no gamification, no fluff.
+  const prompt = `Generate a weekly execution review for this user. Write like a direct coach — narrative first, no gamification, no numeric scores in the narrative.
 
 Week: ${weekStart} to ${weekEnd}
 
 Execution rate (planned tasks): ${execution.last7Days.rate}% (${execution.last7Days.completed}/${execution.last7Days.total})
-Momentum score: ${momentum.score}/100 (${momentum.label})
-Momentum factors: ${momentum.factors.join("; ") || "None"}
 
 Initiative health:
 ${initiativeHealth.join("\n") || "No initiatives"}
@@ -135,15 +133,15 @@ ${reflectionLines.join("\n") || "No reflections logged"}
 
 Return JSON:
 {
-  "biggestWin": "One sentence — cite specific completed task or initiative progress",
-  "biggestBottleneck": "One sentence — cite execution rate, missed tasks, or reflection data",
-  "initiativeHealthChanges": ["bullet with evidence"],
-  "lifeAreaDistribution": "2-3 sentences citing task counts per area",
-  "opportunitiesSummary": "What was gained/lost — cite opportunity list",
+  "biggestWin": "One sentence — cite a specific completed task or initiative",
+  "biggestBottleneck": "One sentence — cite missed tasks or patterns",
+  "initiativeHealthChanges": ["optional bullets"],
+  "lifeAreaDistribution": "2-3 sentences",
+  "opportunitiesSummary": "What was gained/lost",
   "focusRecommendation": "Clear focus for next week",
-  "executionSummary": "One sentence citing 7-day execution rate: ${execution.last7Days.rate}%",
-  "evidenceUsed": ["list each metric you referenced"],
-  "narrative": "3-5 sentence coach summary — every claim must trace to evidenceUsed"
+  "executionSummary": "One sentence: e.g. You completed X of Y planned actions.",
+  "evidenceUsed": ["metrics referenced"],
+  "narrative": "4-6 sentences in second person. Example tone: 'This week you worked on your SaaS 5 days. You completed 8 of 11 planned actions. Most delays happened after long planning sessions. Your consistency improved compared to last week.' Every claim must trace to evidenceUsed."
 }`;
 
   const openai = getOpenAI();

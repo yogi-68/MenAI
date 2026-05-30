@@ -122,7 +122,17 @@ export interface ExtractedLifeData {
   habits: ExtractedHabit[];
   emotions: ExtractedEmotion[];
   projects: ExtractedProject[];
+  opportunities: ExtractedOpportunity[];
   blockers: string[];
+}
+
+export interface ExtractedOpportunity {
+  title: string;
+  description?: string;
+  dueDate?: string;
+  urgency: "low" | "medium" | "high" | "critical";
+  lifeArea?: string;
+  confidence: number;
 }
 
 export interface IdentitySignal {

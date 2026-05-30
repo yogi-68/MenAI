@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { finishableTaskError } from "@/lib/tasks/finishable-today";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { autoEvolveAndApply } from "@/lib/ai/orchestrator/task-evolution-engine";
@@ -71,6 +72,11 @@ export async function POST(req: NextRequest) {
   }
 
   const normalizedTitle = title.trim();
+  const taskError = finishableTaskError(normalizedTitle);
+  if (taskError) {
+    return NextResponse.json({ error: taskError }, { status: 400 });
+  }
+
   let dupQuery = supabase
     .from("tasks")
     .select("id")
