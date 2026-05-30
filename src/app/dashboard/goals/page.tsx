@@ -8,18 +8,13 @@ import {
   Plus,
   CheckCircle2,
   Circle,
-  Flame,
-  Clock,
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
   Trash2,
-  TrendingUp,
-  X,
   Zap,
   Flag,
   Sparkles,
   MessageSquare,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
@@ -84,14 +79,10 @@ export default function GoalsPage() {
   const supabase = createClient();
   const queryClient = useQueryClient();
   const [showAddGoal, setShowAddGoal] = useState(false);
-  const [showAddTask, setShowAddTask] = useState(false);
   const [showAddInitiative, setShowAddInitiative] = useState(false);
   const [showAddOpportunity, setShowAddOpportunity] = useState(false);
-  const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<"all" | "active" | "completed">("active");
 
   const [newGoal, setNewGoal] = useState({ title: "", description: "", category: "personal", priority: "medium", targetDate: "" });
-  const [newTask, setNewTask] = useState({ title: "", goalId: "", dueDate: "", recurrence: "" });
   const [newInitiative, setNewInitiative] = useState({ title: "", description: "", goalId: "", targetDate: "", lifeArea: "personal" });
   const [newOpportunity, setNewOpportunity] = useState({ title: "", description: "", lifeArea: "personal", urgency: "medium", dueDate: "" });
   const [completionModal, setCompletionModal] = useState<{
@@ -101,13 +92,16 @@ export default function GoalsPage() {
 
   // Fetch goals
   const { data: goalsData, isLoading: goalsLoading } = useQuery({
-    queryKey: ["goals", filter],
+    queryKey: ["goals", "direction"],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
-      let query = supabase.from("goals").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      if (filter !== "all") query = query.eq("status", filter);
-      const { data } = await query;
+      const { data } = await supabase
+        .from("goals")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
       return (data || []) as Goal[];
     },
   });
@@ -147,9 +141,10 @@ export default function GoalsPage() {
   });
 
   const goals = goalsData || [];
-  const tasks = tasksData || [];
-  const initiatives = initiativesData || [];
+  const initiatives = (initiativesData || []).filter((i) => i.status === "active");
   const opportunities = opportunitiesData || [];
+
+  const tasks = tasksData || [];
 
   const tasksByInitiative = new Map<string, Task[]>();
   for (const t of tasks) {
@@ -299,41 +294,6 @@ export default function GoalsPage() {
     },
   });
 
-  // Create task mutation
-  const createTask = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newTask),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      setNewTask({ title: "", goalId: "", dueDate: "", recurrence: "" });
-      setShowAddTask(false);
-    },
-  });
-
-  // Toggle task completion
-  const toggleTask = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const newStatus = status === "completed" ? "pending" : "completed";
-      const res = await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: newStatus }),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-    },
-  });
-
   // Delete goal
   const deleteGoal = useMutation({
     mutationFn: async (id: string) => {
@@ -345,16 +305,7 @@ export default function GoalsPage() {
     },
   });
 
-  const toggleGoalExpanded = (goalId: string) => {
-    const next = new Set(expandedGoals);
-    if (next.has(goalId)) next.delete(goalId);
-    else next.add(goalId);
-    setExpandedGoals(next);
-  };
-
-  const getGoalTasks = (goalId: string) => tasks.filter((t) => t.goal_id === goalId);
-  const unlinkedTasks = tasks.filter((t) => !t.goal_id);
-  const getCatColor = (cat: string) => CATEGORIES.find((c) => c.value === cat)?.color || "#888";
+  const activeInitiativeCount = initiatives.length;
 
   return (
     <div className="page-shell">
@@ -363,14 +314,20 @@ export default function GoalsPage() {
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
             <Target size={28} style={{ color: "var(--accent-primary)" }} />
-            Long-Term Direction & Initiatives
+            Direction & Initiatives
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            <strong>Long-term direction</strong> = outcomes that matter over years. <strong>Active initiatives</strong> = what you execute this month — they drive your daily plan.
+            Long-term direction is read-only context. Daily tasks come from <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)" }}>Today&apos;s Plan</Link> via active initiatives.
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button onClick={() => setShowAddInitiative(true)} className="btn-primary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+          <button
+            onClick={() => setShowAddInitiative(true)}
+            className="btn-primary"
+            style={{ padding: "10px 16px", fontSize: "0.85rem", opacity: activeInitiativeCount >= 3 ? 0.5 : 1 }}
+            disabled={activeInitiativeCount >= 3}
+            title={activeInitiativeCount >= 3 ? "Maximum 3 active initiatives" : undefined}
+          >
             <Zap size={16} /> Add initiative
           </button>
           <button onClick={() => setShowAddOpportunity(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
@@ -385,36 +342,54 @@ export default function GoalsPage() {
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div style={{ display: "flex", gap: "4px", marginBottom: "24px", background: "var(--bg-glass)", borderRadius: "var(--radius-md)", padding: "4px" }}>
-        {(["active", "completed", "all"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "var(--radius-sm)",
-              border: "none",
-              background: filter === f ? "var(--accent-primary)" : "transparent",
-              color: filter === f ? "white" : "var(--text-secondary)",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-              fontWeight: 500,
-              textTransform: "capitalize",
-              transition: "all 0.2s ease",
-            }}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      {/* Long-term direction — read-only context, never tasks */}
+      <section style={{ marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+          <Target size={18} style={{ color: "var(--text-muted)" }} />
+          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Long-term direction</h2>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>years · read-only · no tasks</span>
+        </div>
+        {goalsLoading ? (
+          <div className="skeleton" style={{ height: "80px", width: "100%" }} />
+        ) : goals.length === 0 ? (
+          <div className="glass-card" style={{ padding: "24px", cursor: "default" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.6, margin: 0 }}>
+              Life outcomes you&apos;re building toward — financial freedom, health, career legacy. Add them here or let chat extract them over time.
+            </p>
+          </div>
+        ) : (
+          <div className="glass-card" style={{ padding: "20px 24px", cursor: "default" }}>
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "12px" }}>
+              {goals.map((goal) => (
+                <li key={goal.id} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+                  <div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 500 }}>{goal.title}</div>
+                    {goal.description && (
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>{goal.description}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteGoal.mutate(goal.id)}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5, flexShrink: 0 }}
+                    title="Remove direction"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       {/* Active Initiatives — primary input for daily plans */}
       <section style={{ marginBottom: "32px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           <Zap size={18} style={{ color: "var(--accent-primary)" }} />
           <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Active initiatives</h2>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>each needs a deadline · feeds daily plan</span>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+            {activeInitiativeCount}/3 · each needs a deadline · feeds Today&apos;s Plan
+          </span>
         </div>
         <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>
           <span title={HEALTH_LEGEND.on_track} style={{ marginRight: "12px" }}>● On Track</span>
@@ -537,15 +512,6 @@ export default function GoalsPage() {
                   >
                     Mark complete
                   </button>
-                  {(tasksByInitiative.get(init.id) || []).length > 0 && (
-                    <ul style={{ marginTop: "10px", paddingLeft: "0", listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
-                      {(tasksByInitiative.get(init.id) || []).slice(0, 5).map((t) => (
-                        <li key={t.id} style={{ fontSize: "0.8rem", color: t.status === "completed" ? "var(--text-muted)" : "var(--text-secondary)", textDecoration: t.status === "completed" ? "line-through" : "none" }}>
-                          {t.title}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
                 <button
                   onClick={() => deleteInitiative.mutate(init.id)}
@@ -600,132 +566,9 @@ export default function GoalsPage() {
         )}
       </section>
 
-      {/* Direction (long-term goals) */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
-        <Target size={18} style={{ color: "var(--text-muted)" }} />
-        <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Long-term direction</h2>
-        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>long-term · not daily tasks</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "32px" }}>
-        {goalsLoading ? (
-          <div className="skeleton" style={{ height: "80px", width: "100%" }} />
-        ) : goals.length === 0 ? (
-          <div className="glass-card" style={{ padding: "40px", textAlign: "center", cursor: "default" }}>
-            <Target size={40} style={{ color: "var(--text-muted)", opacity: 0.3, marginBottom: "12px" }} />
-            <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
-              No {filter === "all" ? "" : filter} direction items yet. Add long-term outcomes here — or chat with MenAI to extract them.
-            </p>
-          </div>
-        ) : (
-          goals.map((goal) => {
-            const goalTasks = getGoalTasks(goal.id);
-            const isExpanded = expandedGoals.has(goal.id);
-            const completedTasks = goalTasks.filter((t) => t.status === "completed").length;
-
-            return (
-              <div key={goal.id} className="glass-card" style={{ padding: "0", cursor: "default", overflow: "hidden" }}>
-                {/* Goal Header */}
-                <div
-                  style={{
-                    padding: "18px 20px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                    cursor: "pointer",
-                  }}
-                  onClick={() => toggleGoalExpanded(goal.id)}
-                >
-                  {isExpanded ? <ChevronDown size={18} style={{ color: "var(--text-muted)" }} /> : <ChevronRight size={18} style={{ color: "var(--text-muted)" }} />}
-
-                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: getCatColor(goal.category), flexShrink: 0 }} />
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "0.95rem", fontWeight: 600, marginBottom: "2px" }}>{goal.title}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", gap: "8px", alignItems: "center" }}>
-                      <span style={{ textTransform: "capitalize" }}>{goal.category}</span>
-                      <span>•</span>
-                      <span style={{
-                        color: goal.priority === "critical" ? "var(--accent-tertiary)" : goal.priority === "high" ? "var(--accent-warm)" : "var(--text-muted)",
-                        textTransform: "capitalize",
-                      }}>
-                        {goal.priority}
-                      </span>
-                      {goalTasks.length > 0 && (
-                        <>
-                          <span>•</span>
-                          <span>{completedTasks}/{goalTasks.length} tasks</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Progress */}
-                  <div style={{ width: 80, textAlign: "right" }}>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 700, marginBottom: "4px" }}>{goal.progress}%</div>
-                    <div style={{ width: "100%", height: 4, borderRadius: 2, background: "var(--bg-glass)" }}>
-                      <div style={{
-                        width: `${goal.progress}%`, height: "100%", borderRadius: 2,
-                        background: getCatColor(goal.category),
-                        transition: "width 0.5s ease",
-                      }} />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={(e) => { e.stopPropagation(); deleteGoal.mutate(goal.id); }}
-                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5 }}
-                    title="Delete goal"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-
-                {/* Expanded: tasks under this goal */}
-                {isExpanded && (
-                  <div style={{ padding: "0 20px 16px 54px", borderTop: "1px solid var(--border-color)" }}>
-                    {goal.description && (
-                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", padding: "12px 0 8px", lineHeight: 1.5 }}>
-                        {goal.description}
-                      </p>
-                    )}
-                    {goalTasks.length > 0 ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px", paddingTop: "8px" }}>
-                        {goalTasks.map((task) => (
-                          <TaskRow key={task.id} task={task} onToggle={() => toggleTask.mutate({ id: task.id, status: task.status })} />
-                        ))}
-                      </div>
-                    ) : (
-                      <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", paddingTop: "8px" }}>
-                        No tasks linked to this goal yet.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Unlinked Tasks */}
-      {unlinkedTasks.length > 0 && (
-        <div style={{ marginBottom: "32px" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "12px", color: "var(--text-secondary)" }}>
-            Standalone Tasks
-          </h3>
-          <div className="glass-card" style={{ padding: "16px 20px", cursor: "default" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {unlinkedTasks.map((task) => (
-                <TaskRow key={task.id} task={task} onToggle={() => toggleTask.mutate({ id: task.id, status: task.status })} />
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Add Goal Modal */}
       {showAddGoal && (
-        <Modal title="Add New Goal" onClose={() => setShowAddGoal(false)}>
+        <Modal title="Add long-term direction" onClose={() => setShowAddGoal(false)}>
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
             <input
               className="input-field" placeholder="What do you want to achieve?"
@@ -760,51 +603,7 @@ export default function GoalsPage() {
               onClick={() => createGoal.mutate()}
               disabled={!newGoal.title || createGoal.isPending}
             >
-              {createGoal.isPending ? "Creating..." : "Create Goal"}
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {/* Add Task Modal */}
-      {showAddTask && (
-        <Modal title="Add New Task" onClose={() => setShowAddTask(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <input
-              className="input-field" placeholder="What needs to be done?"
-              value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-              autoFocus
-            />
-            <select
-              className="input-field" value={newTask.goalId}
-              onChange={(e) => setNewTask({ ...newTask, goalId: e.target.value })}
-            >
-              <option value="">No linked goal</option>
-              {goals.filter((g) => g.status === "active").map((g) => (
-                <option key={g.id} value={g.id}>{g.title}</option>
-              ))}
-            </select>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-              <input
-                className="input-field" type="date" value={newTask.dueDate}
-                onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
-              />
-              <select
-                className="input-field" value={newTask.recurrence}
-                onChange={(e) => setNewTask({ ...newTask, recurrence: e.target.value })}
-              >
-                <option value="">One-time</option>
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekly">Weekly</option>
-              </select>
-            </div>
-            <button
-              className="btn-primary" style={{ width: "100%", marginTop: "4px" }}
-              onClick={() => createTask.mutate()}
-              disabled={!newTask.title || createTask.isPending}
-            >
-              {createTask.isPending ? "Creating..." : "Create Task"}
+              {createGoal.isPending ? "Creating..." : "Add direction"}
             </button>
           </div>
         </Modal>
@@ -936,51 +735,6 @@ export default function GoalsPage() {
 }
 
 // ===== Sub-components =====
-
-function TaskRow({ task, onToggle }: { task: Task; onToggle: () => void }) {
-  const isCompleted = task.status === "completed";
-  const isOverdue = !isCompleted && task.due_date && new Date(task.due_date) < new Date(new Date().toISOString().split("T")[0]);
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-      <button
-        onClick={onToggle}
-        style={{
-          background: "none", border: "none", cursor: "pointer", padding: 0,
-          color: isCompleted ? "var(--accent-secondary)" : isOverdue ? "var(--accent-tertiary)" : "var(--text-muted)",
-        }}
-      >
-        {isCompleted ? <CheckCircle2 size={18} /> : <Circle size={18} />}
-      </button>
-      <span style={{
-        flex: 1, fontSize: "0.85rem",
-        textDecoration: isCompleted ? "line-through" : "none",
-        color: isCompleted ? "var(--text-muted)" : isOverdue ? "var(--accent-tertiary)" : "var(--text-primary)",
-      }}>
-        {task.title}
-      </span>
-      {task.recurrence && (
-        <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", background: "var(--bg-glass)", padding: "2px 6px", borderRadius: 4 }}>
-          {task.recurrence}
-        </span>
-      )}
-      {task.due_date && (
-        <span style={{
-          fontSize: "0.7rem",
-          color: isOverdue ? "var(--accent-tertiary)" : "var(--text-muted)",
-        }}>
-          {isOverdue && <AlertTriangle size={11} style={{ marginRight: 2 }} />}
-          {new Date(task.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-        </span>
-      )}
-      {task.streak_count > 0 && (
-        <span style={{ fontSize: "0.7rem", color: "var(--accent-warm)", display: "flex", alignItems: "center", gap: "2px" }}>
-          <Flame size={12} /> {task.streak_count}
-        </span>
-      )}
-    </div>
-  );
-}
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (

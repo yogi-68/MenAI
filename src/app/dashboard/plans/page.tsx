@@ -34,6 +34,8 @@ interface DailyPlanTask {
   deliverable: string;
   successMetric: string;
   isContextBuilding: boolean;
+  linkedInitiative?: string;
+  linkedMilestone?: string;
 }
 
 interface Task {
@@ -175,17 +177,8 @@ export default function DailyPlansPage() {
   const isLoading = planLoading || tasksLoading;
   const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
   const evidence = plan?.evidence || [];
-  const showSetup =
-    lowContext ||
-    plan?.planMode === "context_building" ||
-    (plan?.confidence?.gaps?.length ?? 0) >= 2;
-
   const hasInitiatives = !evidence.some((e) => e.includes("No active initiatives"));
-  const hasReflections = !evidence.some((e) => e.includes("No daily reflections"));
-  const hasOpportunities = evidence.some((e) => e.includes("opportunit"));
-  const hasCommitments = (plan?.confidence?.strengths || []).some((s) =>
-    s.toLowerCase().includes("commitment")
-  );
+  const showSetup = !hasInitiatives;
 
   // Match plan tasks to DB tasks by title for checkboxes
   const taskByTitle = new Map(
@@ -232,14 +225,7 @@ export default function DailyPlansPage() {
         )}
       </header>
 
-      {!isLoading && showSetup && (
-        <SetupChecklist
-          hasInitiatives={hasInitiatives}
-          hasOpportunities={hasOpportunities}
-          hasCommitments={hasCommitments}
-          hasReflections={hasReflections}
-        />
-      )}
+      {!isLoading && showSetup && <SetupChecklist hasInitiatives={hasInitiatives} />}
 
       {topPriority && !isLoading && (
         <section
@@ -382,9 +368,9 @@ export default function DailyPlansPage() {
         </div>
       )}
 
-      <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
+        <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>Tasks</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>Today&apos;s focus</h2>
           {totalTasks > 0 && (
             <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
               {completedTasks}/{totalTasks} complete
@@ -522,6 +508,31 @@ export default function DailyPlansPage() {
                     <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>Why? </span>
                     {planTask.whyItMatters}
                   </p>
+
+                  {(planTask.linkedInitiative || planTask.linkedMilestone) && (
+                    <div
+                      style={{
+                        paddingLeft: dbTask ? "36px" : "34px",
+                        marginBottom: "12px",
+                        fontSize: "0.82rem",
+                        color: "var(--text-muted)",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      {planTask.linkedInitiative && (
+                        <div>
+                          <span style={{ fontWeight: 500 }}>Supports: </span>
+                          {planTask.linkedInitiative}
+                        </div>
+                      )}
+                      {planTask.linkedMilestone && (
+                        <div>
+                          <span style={{ fontWeight: 500 }}>Current milestone: </span>
+                          {planTask.linkedMilestone}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div
                     style={{

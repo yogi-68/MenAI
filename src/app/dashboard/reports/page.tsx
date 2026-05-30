@@ -4,14 +4,54 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, RefreshCw } from "lucide-react";
 
 interface WeeklyReview {
+  whatHappened: string;
+  patternDetected: string;
   biggestWin: string;
-  biggestBottleneck: string;
-  initiativeHealthChanges: string[];
-  lifeAreaDistribution: string;
-  opportunitiesSummary: string;
-  focusRecommendation: string;
-  executionSummary: string;
-  narrative: string;
+  biggestRisk: string;
+  focusNextWeek: string;
+}
+
+function ReviewSection({
+  label,
+  children,
+  accent,
+}: {
+  label: string;
+  children: React.ReactNode;
+  accent?: boolean;
+}) {
+  return (
+    <section
+      className="glass-card"
+      style={{
+        padding: accent ? "28px 32px" : "clamp(24px, 3vw, 32px)",
+        borderLeft: accent ? "3px solid var(--accent-primary)" : undefined,
+      }}
+    >
+      <h2
+        style={{
+          fontSize: "0.8rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: accent ? "var(--accent-primary)" : "var(--text-muted)",
+          marginBottom: "12px",
+        }}
+      >
+        {label}
+      </h2>
+      <p
+        style={{
+          fontSize: accent ? "1.05rem" : "1rem",
+          lineHeight: 1.85,
+          color: "var(--text-primary)",
+          fontWeight: 300,
+          whiteSpace: "pre-wrap",
+        }}
+      >
+        {children}
+      </p>
+    </section>
+  );
 }
 
 export default function ReportsPage() {
@@ -32,6 +72,13 @@ export default function ReportsPage() {
   });
 
   const review = data?.review;
+  const hasContent =
+    review &&
+    (review.whatHappened ||
+      review.patternDetected ||
+      review.biggestWin ||
+      review.biggestRisk ||
+      review.focusNextWeek);
 
   return (
     <div className="page-shell">
@@ -40,7 +87,7 @@ export default function ReportsPage() {
           Weekly Review
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "1rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6 }}>
-          What happened this week — in plain language, not scores.
+          What happened, what changed, and what matters next — written for you, not a dashboard.
         </p>
         {data && (
           <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "8px" }}>
@@ -53,47 +100,29 @@ export default function ReportsPage() {
 
       {isLoading ? (
         <div className="skeleton shimmer" style={{ height: 320, borderRadius: 12 }} />
-      ) : review ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          <section className="glass-card" style={{ padding: "clamp(28px, 4vw, 40px)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-              <FileText size={18} style={{ color: "var(--accent-primary)" }} />
-              <span style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>
-                This week
-              </span>
-            </div>
-            <p style={{ fontSize: "1.1rem", lineHeight: 1.85, color: "var(--text-primary)", fontWeight: 300, whiteSpace: "pre-wrap" }}>
-              {review.narrative}
-            </p>
-            {review.executionSummary && (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", marginTop: "16px", lineHeight: 1.7 }}>
-                {review.executionSummary}
-              </p>
+      ) : hasContent ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {review.whatHappened && (
+            <ReviewSection label="What actually happened">{review.whatHappened}</ReviewSection>
+          )}
+
+          {review.patternDetected && (
+            <ReviewSection label="Pattern detected">{review.patternDetected}</ReviewSection>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "20px" }}>
+            {review.biggestWin && (
+              <ReviewSection label="The most meaningful progress">{review.biggestWin}</ReviewSection>
             )}
-          </section>
+            {review.biggestRisk && (
+              <ReviewSection label="The thing most likely to slow you down">{review.biggestRisk}</ReviewSection>
+            )}
+          </div>
 
-          <section className="glass-card" style={{ padding: "28px 32px", borderLeft: "3px solid var(--accent-primary)" }}>
-            <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-primary)", marginBottom: "12px" }}>
-              Focus next week
-            </h2>
-            <p style={{ fontSize: "1.05rem", lineHeight: 1.8, color: "var(--text-primary)" }}>{review.focusRecommendation}</p>
-          </section>
-
-          {(review.biggestWin || review.biggestBottleneck) && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "20px" }}>
-              {review.biggestWin && (
-                <section className="glass-card" style={{ padding: "24px 28px" }}>
-                  <h2 style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "10px" }}>Win</h2>
-                  <p style={{ fontSize: "0.95rem", lineHeight: 1.7 }}>{review.biggestWin}</p>
-                </section>
-              )}
-              {review.biggestBottleneck && (
-                <section className="glass-card" style={{ padding: "24px 28px" }}>
-                  <h2 style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "10px" }}>Bottleneck</h2>
-                  <p style={{ fontSize: "0.95rem", lineHeight: 1.7 }}>{review.biggestBottleneck}</p>
-                </section>
-              )}
-            </div>
+          {review.focusNextWeek && (
+            <ReviewSection label="One thing worth protecting next week" accent>
+              {review.focusNextWeek}
+            </ReviewSection>
           )}
 
           <button
@@ -110,7 +139,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0", lineHeight: 1.7 }}>
-          Not enough data yet. Generate a few daily plans, complete tasks, and submit reflections — then your weekly story will appear here.
+          Not enough data yet. Create an initiative, complete a few tasks, and submit reflections — then your weekly story will appear here.
         </p>
       )}
     </div>

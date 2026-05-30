@@ -36,6 +36,7 @@ export interface DailyPlanTask {
   isContextBuilding: boolean;
   lifeArea?: string;
   linkedInitiative?: string;
+  linkedMilestone?: string;
 }
 
 export interface DailyPlanContent {
@@ -647,7 +648,8 @@ Return JSON only:
     "successMetric": "Measurable done criteria",
     "isContextBuilding": false,
     "lifeArea": "career|business|finance|health|learning|relationships|personal",
-    "linkedInitiative": "initiative title if applicable"
+    "linkedInitiative": "initiative title if applicable",
+    "linkedMilestone": "current in_progress milestone title if applicable"
   }]
 }`;
 }
@@ -740,6 +742,7 @@ export async function generateDailyPlanWithAI(
       isContextBuilding: ctx.planMode === "context_building" || !!t.isContextBuilding,
       lifeArea: t.lifeArea,
       linkedInitiative: t.linkedInitiative?.trim(),
+      linkedMilestone: t.linkedMilestone?.trim(),
     }));
 
   if (ctx.planMode === "context_building") {

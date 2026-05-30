@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
 import { trackProductEvent } from "@/lib/analytics/track-event";
+import { finalizeOnboarding } from "@/lib/onboarding/finalize-onboarding";
 
 export const runtime = "nodejs";
 
@@ -75,15 +76,8 @@ export async function POST(request: NextRequest) {
 
     if (completed) {
       updateData.completed_at = new Date().toISOString();
-      
-      // Mark onboarding as completed in profile
-      await supabase
-        .from("profiles")
-        .upsert({ 
-          id: user.id, 
-          onboarding_completed: true,
-          updated_at: new Date().toISOString()
-        });
+
+      await finalizeOnboarding(supabase, user.id);
 
       trackProductEvent(user.id, "onboarding_completed").catch(() => {});
     }

@@ -63,7 +63,10 @@ export default function OnboardingPage() {
             router.replace("/dashboard");
           }
         } else if (data.progress?.currentQuestionId && !wasReset) {
-          setCurrentQuestionId(data.progress.currentQuestionId);
+          const nextId = data.progress.currentQuestionId;
+          setCurrentQuestionId(
+            QUESTION_ORDER.includes(nextId) ? nextId : "Q1"
+          );
         }
       })
       .catch(console.error);
@@ -194,7 +197,7 @@ export default function OnboardingPage() {
         method: "POST",
       });
 
-      router.replace("/dashboard");
+      router.replace("/dashboard/plans");
     }
   };
 
@@ -287,6 +290,11 @@ export default function OnboardingPage() {
               <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3, margin: 0 }}>
                 {promptToShow}
               </h1>
+              {!askingFollowUp && currentQuestion.subtitle && (
+                <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
+                  {currentQuestion.subtitle}
+                </p>
+              )}
 
               {/* Input Area */}
               <div style={{ marginTop: "8px" }}>

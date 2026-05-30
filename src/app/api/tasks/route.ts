@@ -5,11 +5,15 @@ import { finishableTaskError } from "@/lib/tasks/finishable-today";
 import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { autoEvolveAndApply } from "@/lib/ai/orchestrator/task-evolution-engine";
+import { cancelLegacyDirectionTasks } from "@/lib/plans/legacy-task-cleanup";
+import { isLegacyGenericTask } from "@/lib/dashboard/pending-tasks";
 
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  await cancelLegacyDirectionTasks(supabase, user.id).catch(() => {});
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
@@ -18,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("tasks")
-    .select(dueDate === "today" ? "id, title, status, due_date, description, estimated_minutes, actual_minutes, goal_id, initiative_id" : "*, goals(title, category)")
+    .select("*")
     .eq("user_id", user.id)
     .order("due_date", { ascending: true, nullsFirst: false });
 
@@ -48,6 +52,19 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  type TaskRow = {
+    id: string;
+    title: string;
+    goal_id: string | null;
+    initiative_id: string | null;
+    [key: string]: unknown;
+  };
+
+  const rows = (data || []) as TaskRow[];
+  const filtered = rows.filter(
+    (t) => !isLegacyGenericTask(t.title || "") && !(t.goal_id && !t.initiative_id)
+  );
+
   // Skip heavy evolution on today's task list fetches
   const skipEvolution = dueDate === "today" || status === "all";
   if (!skipEvolution && status !== "completed") {
@@ -56,7 +73,7 @@ export async function GET(req: NextRequest) {
       .catch(err => console.error("[TaskEvolution] Async trigger failed:", err));
   }
 
-  return NextResponse.json({ tasks: data });
+  return NextResponse.json({ tasks: filtered });
 }
 
 export async function POST(req: NextRequest) {
@@ -65,10 +82,17 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { title, description, goalId, dueDate, scheduledTime, recurrence, estimatedMinutes } = body;
+  const { title, description, goalId, initiativeId, dueDate, scheduledTime, recurrence, estimatedMinutes } = body;
 
   if (!title) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
+  }
+
+  if (goalId && !initiativeId) {
+    return NextResponse.json(
+      { error: "Tasks cannot link to long-term direction. Create or select an active initiative instead." },
+      { status: 400 }
+    );
   }
 
   const normalizedTitle = title.trim();
@@ -100,7 +124,8 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       title: normalizedTitle,
       description: description || null,
-      goal_id: goalId || null,
+      goal_id: null,
+      initiative_id: initiativeId || null,
       due_date: dueDate || null,
       scheduled_time: scheduledTime || null,
       recurrence: recurrence || null,

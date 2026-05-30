@@ -1,175 +1,107 @@
 /**
- * Onboarding Questionnaire Configuration
- * Defines all questions, types, options, and flow
+ * MenAI onboarding — structured intelligence seed (not personality quiz).
+ * Creates: direction → initiative → patterns → planning preferences.
  */
 
 export interface OnboardingQuestion {
   id: string;
   type: "text" | "textarea" | "multiple_choice" | "forced_choice" | "slider";
   prompt: string;
-  promptVariant?: "concise" | "conversational" | "mentor";
+  subtitle?: string;
   options?: Array<{ value: string; label: string }>;
   allowMultiple?: boolean;
   allowOther?: boolean;
+  optional?: boolean;
   otherPrompt?: string;
   min?: number;
   max?: number;
   labels?: { min: string; max: string };
-  optional?: boolean;
-  nextQuestion?: string | ((response: any) => string);
 }
 
 export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
   Q1: {
     id: "Q1",
-    type: "textarea",
-    prompt: "What's most important to you right now in your life?",
-    promptVariant: "concise",
-    optional: false,
+    type: "multiple_choice",
+    prompt: "What matters most to you right now?",
+    subtitle: "Select all that apply — these become your long-term direction.",
+    allowMultiple: true,
+    options: [
+      { value: "career", label: "Career" },
+      { value: "business", label: "Business" },
+      { value: "fitness", label: "Fitness" },
+      { value: "study", label: "Study / exams" },
+      { value: "relationships", label: "Relationships" },
+      { value: "finance", label: "Finance" },
+      { value: "health", label: "Health" },
+      { value: "other", label: "Other" },
+    ],
   },
-
   Q2: {
     id: "Q2",
     type: "textarea",
-    prompt: "Where do you see yourself in a year? What would success look like?",
-    promptVariant: "conversational",
-    optional: false,
+    prompt: "What long-term outcomes are you building toward?",
+    subtitle: "One per line. Example: Financial freedom · Build scalable businesses · Create recurring income",
+    optional: true,
   },
-
   Q3: {
     id: "Q3",
-    type: "multiple_choice",
-    prompt: "What obstacles are you facing? (Select all that apply)",
-    promptVariant: "concise",
-    allowMultiple: true,
-    allowOther: true,
-    otherPrompt: "Can you tell me more about the challenges you're facing?",
-    options: [
-      { value: "time_management", label: "Time management" },
-      { value: "motivation", label: "Motivation" },
-      { value: "stress", label: "Stress" },
-      { value: "relationships", label: "Relationships" },
-      { value: "health", label: "Health" },
-      { value: "career_uncertainty", label: "Career uncertainty" },
-      { value: "financial_concerns", label: "Financial concerns" },
-    ],
+    type: "text",
+    prompt: "What are you actively trying to achieve in the next 30–90 days?",
+    subtitle: "This becomes your first initiative. Example: Launch AI SaaS MVP · Lose 5 kg · Crack UPSC Prelims",
   },
-
   Q4: {
     id: "Q4",
-    type: "multiple_choice",
-    prompt: "What do you want to focus on daily?",
-    promptVariant: "concise",
-    allowMultiple: true,
-    allowOther: true,
-    otherPrompt: "What specific areas do you want to prioritize?",
+    type: "forced_choice",
+    prompt: "When do you want to achieve this?",
     options: [
-      { value: "personal_growth", label: "Personal growth" },
-      { value: "health_fitness", label: "Health & fitness" },
-      { value: "career_work", label: "Career/Work" },
-      { value: "relationships", label: "Relationships" },
-      { value: "creativity", label: "Creativity" },
-      { value: "learning", label: "Learning" },
+      { value: "30", label: "30 days" },
+      { value: "60", label: "60 days" },
+      { value: "90", label: "90 days" },
     ],
   },
-
   Q5: {
     id: "Q5",
     type: "forced_choice",
-    prompt: "How do you prefer guidance?",
-    promptVariant: "concise",
-    allowOther: false,
+    prompt: "What usually stops you?",
+    subtitle: "Helps MenAI plan around your patterns from day one.",
     options: [
-      { value: "gentle", label: "Gentle encouragement" },
-      { value: "direct", label: "Direct accountability" },
-      { value: "balanced", label: "Balanced approach" },
-      { value: "strategic", label: "Strategic planning" },
+      { value: "overthinking", label: "Overthinking" },
+      { value: "procrastination", label: "Procrastination" },
+      { value: "burnout", label: "Low energy" },
+      { value: "scattered_focus", label: "Lack of clarity" },
+      { value: "scattered_focus_priorities", label: "Too many priorities" },
+      { value: "inconsistency", label: "Inconsistency" },
+      { value: "avoidance", label: "Avoidance" },
     ],
   },
-
   Q6: {
     id: "Q6",
     type: "forced_choice",
-    prompt: "What area of life needs most attention right now?",
-    promptVariant: "conversational",
-    allowOther: true,
-    otherPrompt: "What specific area do you want to focus on?",
+    prompt: "How do you prefer daily tasks?",
     options: [
-      { value: "career", label: "Career" },
-      { value: "health", label: "Health" },
-      { value: "relationships", label: "Relationships" },
-      { value: "personal_development", label: "Personal development" },
-      { value: "finances", label: "Finances" },
+      { value: "small_actions", label: "Very small actions" },
+      { value: "balanced", label: "Balanced" },
+      { value: "aggressive", label: "Aggressive / high output" },
     ],
   },
-
   Q7: {
     id: "Q7",
     type: "forced_choice",
-    prompt: "What motivates you most?",
-    promptVariant: "concise",
-    allowOther: true,
-    otherPrompt: "What drives you forward?",
+    prompt: "How often should MenAI check in?",
     options: [
-      { value: "achievement", label: "Achievement" },
-      { value: "growth", label: "Growth" },
-      { value: "connection", label: "Connection" },
-      { value: "impact", label: "Impact" },
-      { value: "freedom", label: "Freedom" },
-      { value: "security", label: "Security" },
+      { value: "morning_night", label: "Morning + night" },
+      { value: "full_day", label: "Morning + afternoon + night" },
+      { value: "on_open", label: "Only when I open the app" },
     ],
-  },
-
-  Q8: {
-    id: "Q8",
-    type: "forced_choice",
-    prompt: "When you feel overwhelmed, you typically...",
-    promptVariant: "concise",
-    allowOther: true,
-    otherPrompt: "Tell me more about how you handle overwhelm.",
-    options: [
-      { value: "avoid_tasks", label: "Avoid tasks" },
-      { value: "overplan", label: "Overplan" },
-      { value: "distract_myself", label: "Distract myself" },
-      { value: "work_harder", label: "Work harder" },
-      { value: "shut_down", label: "Shut down" },
-      { value: "start_something_new", label: "Start something new" },
-    ],
-  },
-
-  Q9: {
-    id: "Q9",
-    type: "forced_choice",
-    prompt: "How often do you want to reflect on your progress?",
-    promptVariant: "concise",
-    allowOther: false,
-    options: [
-      { value: "daily", label: "Daily" },
-      { value: "few_times_week", label: "A few times a week" },
-      { value: "weekly", label: "Weekly" },
-      { value: "as_needed", label: "As needed" },
-    ],
-  },
-
-  Q10: {
-    id: "Q10",
-    type: "text",
-    prompt: "What's one thing you want to accomplish in the next 30 days?",
-    promptVariant: "mentor",
-    optional: false,
   },
 };
 
-export const QUESTION_ORDER = [
-  "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10"
-];
+export const QUESTION_ORDER = ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7"];
 
 export function getNextQuestion(currentId: string): string | null {
-  const currentIndex = QUESTION_ORDER.indexOf(currentId);
-  if (currentIndex === -1 || currentIndex === QUESTION_ORDER.length - 1) {
-    return null;
-  }
-  return QUESTION_ORDER[currentIndex + 1];
+  const idx = QUESTION_ORDER.indexOf(currentId);
+  if (idx === -1 || idx === QUESTION_ORDER.length - 1) return null;
+  return QUESTION_ORDER[idx + 1];
 }
 
 export function getTotalQuestions(): number {
@@ -179,3 +111,59 @@ export function getTotalQuestions(): number {
 export function getQuestionNumber(questionId: string): number {
   return QUESTION_ORDER.indexOf(questionId) + 1;
 }
+
+/** Map onboarding direction pick → goal category + initiative life area */
+export const DIRECTION_AREA_MAP: Record<
+  string,
+  { goalCategory: string; lifeArea: string; label: string }
+> = {
+  career: { goalCategory: "career_work", lifeArea: "career", label: "Career growth" },
+  business: { goalCategory: "career_work", lifeArea: "business", label: "Build a business" },
+  fitness: { goalCategory: "health_fitness", lifeArea: "health", label: "Fitness" },
+  study: { goalCategory: "learning", lifeArea: "learning", label: "Study & exams" },
+  relationships: { goalCategory: "relationships", lifeArea: "relationships", label: "Relationships" },
+  finance: { goalCategory: "finances", lifeArea: "finance", label: "Financial freedom" },
+  health: { goalCategory: "health_fitness", lifeArea: "health", label: "Health" },
+  other: { goalCategory: "personal", lifeArea: "personal", label: "Personal growth" },
+};
+
+export const OBSTACLE_PATTERN_MAP: Record<
+  string,
+  { pattern: string; trigger: string; behavioralImpact: string }
+> = {
+  overthinking: {
+    pattern: "overthinking",
+    trigger: "Uncertainty before committing",
+    behavioralImpact: "Delays shipping and gathering real feedback",
+  },
+  procrastination: {
+    pattern: "procrastination",
+    trigger: "Task feels large or unclear",
+    behavioralImpact: "Important work gets postponed",
+  },
+  burnout: {
+    pattern: "burnout",
+    trigger: "Sustained high load without recovery",
+    behavioralImpact: "Energy drops and consistency breaks",
+  },
+  scattered_focus: {
+    pattern: "scattered_focus",
+    trigger: "Too many open threads",
+    behavioralImpact: "Progress spreads thin across goals",
+  },
+  scattered_focus_priorities: {
+    pattern: "scattered_focus",
+    trigger: "Competing priorities",
+    behavioralImpact: "Hard to protect one initiative at a time",
+  },
+  inconsistency: {
+    pattern: "inconsistency",
+    trigger: "Irregular follow-through",
+    behavioralImpact: "Momentum resets frequently",
+  },
+  avoidance: {
+    pattern: "avoidance",
+    trigger: "Fear of failure or judgment",
+    behavioralImpact: "High-value tasks get skipped",
+  },
+};

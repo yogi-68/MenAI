@@ -23,7 +23,7 @@ import {
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
-  { href: "/dashboard/plans", icon: Calendar, label: "Daily Plans" },
+  { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
   { href: "/dashboard/goals", icon: Target, label: "Initiatives" },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
   { href: "/dashboard/reports", icon: FileText, label: "Reports" },

@@ -3,21 +3,48 @@ import { DEEP_MODEL } from "@/lib/ai/models";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
-import { computeLifeAreaBalance, lifeAreaLabel } from "@/lib/plans/life-areas";
+import { lifeAreaLabel } from "@/lib/plans/life-areas";
+import { buildMemoryTimeline } from "@/lib/plans/memory-timeline";
 import { logAiUsage, checkAiQuota, AI_UNAVAILABLE_MESSAGE } from "@/lib/ai/usage-guard";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+/** User-facing weekly review — no scores or percentages in these fields. */
 export interface WeeklyReviewContent {
+  whatHappened: string;
+  patternDetected: string;
   biggestWin: string;
-  biggestBottleneck: string;
-  initiativeHealthChanges: string[];
-  lifeAreaDistribution: string;
-  opportunitiesSummary: string;
-  focusRecommendation: string;
-  executionSummary: string;
-  momentumScore: number;
-  narrative: string;
+  biggestRisk: string;
+  focusNextWeek: string;
+  /** Internal only — used for AI/planning, never shown in user UI */
+  internalMetrics?: {
+    momentumScore: number;
+    executionRate7d: number;
+  };
 }
+
+const REVIEW_SYSTEM_PROMPT = `You are MenAI's weekly review writer — not an analytics dashboard.
+
+Never lead with metrics. Never open with "Execution rate", "Momentum score", or percentages.
+Metrics may appear in your reasoning but must NOT appear in user-facing text unless they support a meaningful, specific observation (rare).
+
+Write as if speaking to someone who already knows their numbers. Focus on understanding, not reporting.
+
+Your review must feel like it could ONLY apply to this user — cite their initiative names, reflection language, patterns, and commitments.
+
+Adapt tone to their domain:
+- Founder/SaaS: shipping vs researching, feedback loops, MVP scope
+- Fitness: consistency, scheduled action vs intention, recovery
+- UPSC/study: revision vs new learning, retention bottlenecks
+- Career: applications, skill gaps, follow-through
+
+Return JSON only with exactly these keys:
+{
+  "whatHappened": "2-4 sentences. What they actually spent effort on this week. Name initiatives and concrete actions.",
+  "patternDetected": "2-3 sentences. One recurring pattern from their data — hesitation, overplanning, inconsistency, etc. Connect to reflections or behavior.",
+  "biggestWin": "1-2 sentences. The most meaningful progress — not generic praise.",
+  "biggestRisk": "1-2 sentences. What is most likely to slow them down next — be direct.",
+  "focusNextWeek": "2-3 sentences. One thing worth protecting. Actionable, not 'be more productive'."
+}`;
 
 function weekBounds(date = new Date()) {
   const start = new Date(date);
@@ -28,6 +55,39 @@ function weekBounds(date = new Date()) {
   return {
     weekStart: start.toISOString().split("T")[0],
     weekEnd: end.toISOString().split("T")[0],
+  };
+}
+
+/** Map legacy cached reviews to the current shape. */
+export function normalizeWeeklyReview(raw: Record<string, unknown>): WeeklyReviewContent {
+  if (typeof raw.whatHappened === "string" && raw.whatHappened.trim()) {
+    return {
+      whatHappened: raw.whatHappened as string,
+      patternDetected: (raw.patternDetected as string) || "",
+      biggestWin: (raw.biggestWin as string) || "",
+      biggestRisk: (raw.biggestRisk as string) || "",
+      focusNextWeek: (raw.focusNextWeek as string) || "",
+      internalMetrics: raw.internalMetrics as WeeklyReviewContent["internalMetrics"],
+    };
+  }
+
+  const narrative = String(raw.narrative || "").trim();
+  const executionSummary = String(raw.executionSummary || "").trim();
+  const lifeArea = String(raw.lifeAreaDistribution || "").trim();
+
+  return {
+    whatHappened: narrative || lifeArea || executionSummary,
+    patternDetected: "",
+    biggestWin: String(raw.biggestWin || ""),
+    biggestRisk: String(raw.biggestBottleneck || ""),
+    focusNextWeek: String(raw.focusRecommendation || ""),
+    internalMetrics:
+      raw.momentumScore != null
+        ? {
+            momentumScore: Number(raw.momentumScore),
+            executionRate7d: 0,
+          }
+        : undefined,
   };
 }
 
@@ -47,7 +107,7 @@ export async function generateWeeklyReview(
 
   if (existing?.content && !forceRegenerate) {
     return {
-      review: existing.content as WeeklyReviewContent,
+      review: normalizeWeeklyReview(existing.content as Record<string, unknown>),
       weekStart,
       weekEnd,
       cached: true,
@@ -59,138 +119,227 @@ export async function generateWeeklyReview(
     throw new Error(AI_UNAVAILABLE_MESSAGE);
   }
 
-  const [execution, momentum, tasksRes, initiativesRes, opportunitiesRes, reflectionsRes, prevTasksRes, prevReviewRes] =
-    await Promise.all([
-      fetchExecutionMetrics(supabase, userId),
-      computeMomentumScore(supabase, userId),
-      supabase
-        .from("tasks")
-        .select("status, completed_at, due_date, title, estimated_minutes, initiatives(life_area, title)")
-        .eq("user_id", userId)
-        .gte("due_date", weekStart)
-        .lte("due_date", weekEnd),
-      supabase
-        .from("initiatives")
-        .select("title, life_area, target_date, last_action_at, progress, status")
-        .eq("user_id", userId),
-      supabase
-        .from("opportunities")
-        .select("title, urgency, status, due_date, life_area")
-        .eq("user_id", userId),
-      supabase
-        .from("daily_reflections")
-        .select("moved_forward, blocked_by, tomorrow_context, reflection_date")
-        .eq("user_id", userId)
-        .gte("reflection_date", weekStart)
-        .lte("reflection_date", weekEnd),
-      (() => {
-        const prevStart = new Date(weekStart);
-        prevStart.setDate(prevStart.getDate() - 7);
-        const prevEnd = new Date(weekEnd);
-        prevEnd.setDate(prevEnd.getDate() - 7);
-        const ps = prevStart.toISOString().split("T")[0];
-        const pe = prevEnd.toISOString().split("T")[0];
-        return supabase
-          .from("tasks")
-          .select("status, due_date")
-          .eq("user_id", userId)
-          .gte("due_date", ps)
-          .lte("due_date", pe);
-      })(),
-      (() => {
-        const prevStart = new Date(weekStart);
-        prevStart.setDate(prevStart.getDate() - 7);
-        const ps = prevStart.toISOString().split("T")[0];
-        return supabase
-          .from("weekly_reviews")
-          .select("content")
-          .eq("user_id", userId)
-          .eq("week_start", ps)
-          .maybeSingle();
-      })(),
-    ]);
+  const prevStart = new Date(weekStart);
+  prevStart.setDate(prevStart.getDate() - 7);
+  const prevWeekStart = prevStart.toISOString().split("T")[0];
+
+  const [
+    execution,
+    momentum,
+    tasksRes,
+    initiativesRes,
+    milestonesRes,
+    goalsRes,
+    patternsRes,
+    commitmentsRes,
+    signalsRes,
+    profileRes,
+    opportunitiesRes,
+    reflectionsRes,
+    prevReviewRes,
+    timelineEvents,
+  ] = await Promise.all([
+    fetchExecutionMetrics(supabase, userId),
+    computeMomentumScore(supabase, userId),
+    supabase
+      .from("tasks")
+      .select("status, completed_at, due_date, title, auto_generated, initiatives(title, life_area)")
+      .eq("user_id", userId)
+      .gte("due_date", weekStart)
+      .lte("due_date", weekEnd),
+    supabase
+      .from("initiatives")
+      .select("id, title, description, life_area, target_date, last_action_at, progress, status")
+      .eq("user_id", userId)
+      .in("status", ["active", "completed"]),
+    supabase
+      .from("initiative_milestones")
+      .select("title, status, completed_at, sort_order, initiative_id, initiatives(title, life_area)")
+      .eq("user_id", userId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("goals")
+      .select("title, description, category, status")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(8),
+    supabase
+      .from("execution_patterns")
+      .select("pattern, trigger, behavioral_impact, severity, frequency")
+      .eq("user_id", userId)
+      .order("severity", { ascending: false })
+      .limit(6),
+    supabase
+      .from("commitments")
+      .select("description, category, status, consistency_score, timeframe")
+      .eq("user_id", userId)
+      .in("status", ["active", "pending"])
+      .limit(10),
+    supabase
+      .from("identity_signals")
+      .select("type, description, long_term_direction")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(6),
+    supabase
+      .from("profiles")
+      .select("current_focus_initiative_id, current_focus_until, vision")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("opportunities")
+      .select("title, urgency, status, due_date, life_area")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(8),
+    supabase
+      .from("daily_reflections")
+      .select("moved_forward, blocked_by, tomorrow_context, reflection_date")
+      .eq("user_id", userId)
+      .gte("reflection_date", weekStart)
+      .lte("reflection_date", weekEnd),
+    supabase
+      .from("weekly_reviews")
+      .select("content")
+      .eq("user_id", userId)
+      .eq("week_start", prevWeekStart)
+      .maybeSingle(),
+    buildMemoryTimeline(supabase, userId, 24),
+  ]);
 
   const tasks = tasksRes.data || [];
   const initiatives = initiativesRes.data || [];
+  const milestones = milestonesRes.data || [];
+  const goals = goalsRes.data || [];
+  const patterns = patternsRes.data || [];
+  const commitments = commitmentsRes.data || [];
+  const signals = signalsRes.data || [];
+  const profile = profileRes.data;
   const opportunities = opportunitiesRes.data || [];
   const reflections = reflectionsRes.data || [];
 
-  const balance = computeLifeAreaBalance(
-    tasks.map((t) => ({
-      life_area: (t.initiatives as { life_area?: string } | null)?.life_area || "personal",
-      status: t.status,
-      completed_at: t.completed_at,
-      due_date: t.due_date,
-    }))
+  const completedTasks = tasks.filter((t) => t.status === "completed");
+  const missedTasks = tasks.filter((t) => t.status !== "completed" && t.status !== "in_progress");
+
+  const focusInitiative = initiatives.find((i) => i.id === profile?.current_focus_initiative_id);
+
+  const milestonesCompletedThisWeek = milestones.filter(
+    (m) => m.status === "completed" && m.completed_at && m.completed_at.slice(0, 10) >= weekStart && m.completed_at.slice(0, 10) <= weekEnd
   );
 
-  const initiativeHealth = initiatives.map((i) => {
+  const weekTimeline = timelineEvents.filter(
+    (e) => e.sortKey.slice(0, 10) >= weekStart && e.sortKey.slice(0, 10) <= weekEnd
+  );
+
+  const initiativeLines = initiatives.map((i) => {
     const h = computeInitiativeHealth({
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
       progress: i.progress,
     });
-    return `${i.title} (${lifeAreaLabel(i.life_area)}): ${h.label} — ${h.reason}`;
+    const ms = milestones
+      .filter((m) => m.initiative_id === i.id)
+      .map((m) => `${m.title} (${m.status})`)
+      .join("; ");
+    return `- ${i.title} [${lifeAreaLabel(i.life_area)}]: ${h.label}. Target: ${i.target_date || "none"}. Milestones: ${ms || "none"}`;
   });
 
-  const activeOpps = opportunities.filter((o) => o.status === "active");
-  const reflectionLines = reflections.map(
-    (r) => `[${r.reflection_date}] Forward: ${r.moved_forward} | Blocked: ${r.blocked_by}`
-  );
+  const completedTaskLines = completedTasks.map((t) => {
+    const init = (t.initiatives as { title?: string; life_area?: string } | null)?.title;
+    return `- ${t.title}${init ? ` (${init})` : ""}`;
+  });
 
-  const prevTasks = prevTasksRes.data || [];
-  const prevCompleted = prevTasks.filter((t) => t.status === "completed").length;
-  const prevTotal = prevTasks.length;
-  const prevRate = prevTotal > 0 ? Math.round((prevCompleted / prevTotal) * 100) : null;
-  const thisCompleted = tasks.filter((t) => t.status === "completed").length;
-  const thisTotal = tasks.length;
-  const prevNarrative = (prevReviewRes.data?.content as { narrative?: string } | undefined)?.narrative;
+  const missedTaskLines = missedTasks.slice(0, 8).map((t) => {
+    const init = (t.initiatives as { title?: string } | null)?.title;
+    return `- ${t.title}${init ? ` (${init})` : ""}`;
+  });
 
-  const prompt = `Generate a weekly execution review for this user. Write like a direct coach — narrative first, no gamification, no numeric scores in the narrative.
+  const reflectionBlock = reflections.length
+    ? reflections
+        .map(
+          (r) =>
+            `[${r.reflection_date}]\n  Moved forward: ${r.moved_forward}\n  Blocked by: ${r.blocked_by}\n  Tomorrow: ${r.tomorrow_context}`
+        )
+        .join("\n\n")
+    : "No reflections logged this week.";
 
-Week: ${weekStart} to ${weekEnd}
+  const patternBlock = patterns.length
+    ? patterns
+        .map(
+          (p) =>
+            `- ${p.pattern}${p.frequency ? ` (${p.frequency})` : ""}: ${p.behavioral_impact || p.trigger || "detected in conversations"}`
+        )
+        .join("\n")
+    : "No patterns recorded yet.";
 
-This week execution: ${thisCompleted}/${thisTotal} planned tasks completed
-Last week execution: ${prevCompleted}/${prevTotal} planned tasks (${prevRate !== null ? `${prevRate}%` : "no data"})
-${prevNarrative ? `Last week's summary: ${prevNarrative}` : ""}
+  const commitmentBlock = commitments.length
+    ? commitments.map((c) => `- ${c.description} (${c.category}, ${c.timeframe || "ongoing"})`).join("\n")
+    : "No active commitments.";
 
-COMPARE to last week in the narrative — e.g. "You executed more consistently than last week" or "Planning time increased vs last week."
+  const directionBlock = [
+    ...goals.map((g) => `- Goal: ${g.title}${g.description ? ` — ${g.description.slice(0, 80)}` : ""}`),
+    ...signals
+      .filter((s) => s.long_term_direction || s.description)
+      .map((s) => `- Direction: ${s.long_term_direction || s.description}`),
+    profile?.vision ? `- Vision: ${profile.vision}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-Execution rate (7-day rolling): ${execution.last7Days.rate}% (${execution.last7Days.completed}/${execution.last7Days.total})
+  const prevReview = prevReviewRes.data?.content as Record<string, unknown> | undefined;
+  const prevNormalized = prevReview ? normalizeWeeklyReview(prevReview) : null;
 
-Initiative health:
-${initiativeHealth.join("\n") || "No initiatives"}
+  const prompt = `Generate this user's weekly review for ${weekStart} to ${weekEnd}.
 
-Life area activity:
-${balance.filter((b) => b.plannedTasks > 0).map((b) => `${b.label}: ${b.completedTasks}/${b.plannedTasks} tasks`).join("\n") || "No activity"}
+=== LONG-TERM DIRECTION ===
+${directionBlock || "Not defined yet."}
 
-Active opportunities:
-${activeOpps.map((o) => `${o.title} (${o.urgency}, due ${o.due_date || "none"})`).join("\n") || "None"}
+=== INITIATIVES ===
+${initiativeLines.join("\n") || "No initiatives."}
 
-Daily reflections this week:
-${reflectionLines.join("\n") || "No reflections logged"}
+=== CURRENT FOCUS ===
+${focusInitiative ? `${focusInitiative.title} until ${profile?.current_focus_until || "unset"}` : "No explicit focus set."}
 
-Return JSON:
-{
-  "biggestWin": "One sentence — cite a specific completed task or initiative",
-  "biggestBottleneck": "One sentence — cite missed tasks or patterns",
-  "initiativeHealthChanges": ["optional bullets"],
-  "lifeAreaDistribution": "2-3 sentences",
-  "opportunitiesSummary": "What was gained/lost",
-  "focusRecommendation": "Clear focus for next week",
-  "executionSummary": "One sentence: e.g. You completed X of Y planned actions.",
-  "evidenceUsed": ["metrics referenced"],
-  "narrative": "4-6 sentences in second person. Example tone: 'This week you worked on your SaaS 5 days. You completed 8 of 11 planned actions. Most delays happened after long planning sessions. Your consistency improved compared to last week.' Every claim must trace to evidenceUsed."
-}`;
+=== MILESTONES COMPLETED THIS WEEK ===
+${milestonesCompletedThisWeek.map((m) => `- ${m.title}`).join("\n") || "None completed this week."}
+
+=== TASKS COMPLETED THIS WEEK ===
+${completedTaskLines.join("\n") || "None."}
+
+=== TASKS NOT COMPLETED (planned this week) ===
+${missedTaskLines.join("\n") || "None missed."}
+
+=== DAILY REFLECTIONS (use their exact language) ===
+${reflectionBlock}
+
+=== EXECUTION PATTERNS ===
+${patternBlock}
+
+=== COMMITMENTS ===
+${commitmentBlock}
+
+=== ACTIVE OPPORTUNITIES ===
+${opportunities.map((o) => `- ${o.title} (${o.urgency})`).join("\n") || "None."}
+
+=== TIMELINE EVENTS THIS WEEK ===
+${weekTimeline.map((e) => `- ${e.headline}`).join("\n") || "None."}
+
+=== LAST WEEK'S REVIEW (for continuity, do not repeat verbatim) ===
+${prevNormalized?.whatHappened || "No prior review."}
+
+=== INTERNAL METRICS (for your reasoning only — do NOT quote these in output) ===
+7-day execution rate: ${execution.last7Days.rate}% (${execution.last7Days.completed}/${execution.last7Days.total} planned tasks)
+Momentum score: ${momentum.score}/100
+Compare to last week if helpful internally — but never lead the review with these numbers.`;
 
   const openai = getOpenAI();
   const completion = await openai.chat.completions.create({
     model: DEEP_MODEL,
-    temperature: 0.4,
+    temperature: 0.45,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: "Execution coach weekly review. Every statement must cite data provided. Use hedged language if data is sparse. JSON only." },
+      { role: "system", content: REVIEW_SYSTEM_PROMPT },
       { role: "user", content: prompt },
     ],
   });
@@ -207,20 +356,29 @@ Return JSON:
     usage?.completion_tokens ?? 0
   );
 
-  const parsed = JSON.parse(raw) as Omit<WeeklyReviewContent, "momentumScore">;
+  const parsed = JSON.parse(raw) as Partial<WeeklyReviewContent>;
 
   const review: WeeklyReviewContent = {
-    ...parsed,
-    momentumScore: momentum.score,
-    initiativeHealthChanges: parsed.initiativeHealthChanges || [],
+    whatHappened: String(parsed.whatHappened || "").trim(),
+    patternDetected: String(parsed.patternDetected || "").trim(),
+    biggestWin: String(parsed.biggestWin || "").trim(),
+    biggestRisk: String(parsed.biggestRisk || "").trim(),
+    focusNextWeek: String(parsed.focusNextWeek || "").trim(),
+    internalMetrics: {
+      momentumScore: momentum.score,
+      executionRate7d: execution.last7Days.rate,
+    },
   };
 
-  await supabase.from("weekly_reviews").insert({
-    user_id: userId,
-    week_start: weekStart,
-    week_end: weekEnd,
-    content: review,
-  });
+  await supabase.from("weekly_reviews").upsert(
+    {
+      user_id: userId,
+      week_start: weekStart,
+      week_end: weekEnd,
+      content: review,
+    },
+    { onConflict: "user_id,week_start" }
+  );
 
   return { review, weekStart, weekEnd, cached: false };
 }
