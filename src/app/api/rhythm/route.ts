@@ -90,7 +90,7 @@ export async function GET() {
       suggested_action: _buildSuggestedAction(phase, cogState),
       cognitive_summary: {
         direction: dashboardState.direction_text,
-        momentum: dashboardState.momentum_text || "Not enough data yet",
+        momentum: dashboardState.momentum_text || "Not enough activity data yet to assess momentum.",
         observation: dashboardState.observation,
         weakness_hint: dashboardState.weakness_text,
       },

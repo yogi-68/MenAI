@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { autoEvolveAndApply } from "@/lib/ai/orchestrator/task-evolution-engine";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("tasks")
-    .select("*, goals(title, category)")
+    .select(dueDate === "today" ? "id, title, status, due_date, description, estimated_minutes, actual_minutes, goal_id, initiative_id" : "*, goals(title, category)")
     .eq("user_id", user.id)
     .order("due_date", { ascending: true, nullsFirst: false });
 
@@ -46,9 +47,9 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Asynchronously trigger task evolution (fire and forget)
-  // This ensures tasks adapt to the user's cognitive state without blocking the response
-  if (status !== "completed") {
+  // Skip heavy evolution on today's task list fetches
+  const skipEvolution = dueDate === "today" || status === "all";
+  if (!skipEvolution && status !== "completed") {
     buildCognitiveState(user.id)
       .then(state => autoEvolveAndApply(user.id, state))
       .catch(err => console.error("[TaskEvolution] Async trigger failed:", err));
@@ -69,11 +70,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
+  const normalizedTitle = title.trim();
+  let dupQuery = supabase
+    .from("tasks")
+    .select("id")
+    .eq("user_id", user.id)
+    .ilike("title", normalizedTitle)
+    .in("status", ["pending", "in_progress"]);
+
+  if (dueDate) dupQuery = dupQuery.eq("due_date", dueDate);
+
+  const { data: existingDup } = await dupQuery.limit(1).maybeSingle();
+  if (existingDup) {
+    return NextResponse.json(
+      { error: "A task with this title already exists for that date" },
+      { status: 409 }
+    );
+  }
+
   const { data, error } = await supabase
     .from("tasks")
     .insert({
       user_id: user.id,
-      title,
+      title: normalizedTitle,
       description: description || null,
       goal_id: goalId || null,
       due_date: dueDate || null,
@@ -178,10 +197,13 @@ export async function PATCH(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  
-  // Invalidate cache after task update (completion, status change, etc.)
+
+  if (updates.status === "completed") {
+    trackProductEventOnce(user.id, "task_completed").catch(() => {});
+  }
+
   invalidateUserCache(user.id, "task updated");
-  
+
   return NextResponse.json({ task: data });
 }
 

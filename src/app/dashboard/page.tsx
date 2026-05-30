@@ -84,6 +84,7 @@ export default function DashboardOverview() {
     },
     staleTime: 60_000,
     refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: executionData } = useQuery({
@@ -161,7 +162,6 @@ export default function DashboardOverview() {
   const isNew = rhythm?.maturity_level === "new";
   const currentDirection = rhythm?.cognitive_summary?.direction || (isNew ? "Still gathering signal. Direction will emerge through conversation." : "Loading...");
   const observation = rhythm?.cognitive_summary?.observation;
-  const momentumTrend = rhythm?.cognitive_summary?.momentum;
   const weaknessHint = rhythm?.cognitive_summary?.weakness_hint;
   const activeFocus = tasks.slice(0, 4).map((t: TaskItem) => t.title);
   const suggestedAction = rhythm?.suggested_action;
@@ -176,7 +176,7 @@ export default function DashboardOverview() {
   }
 
   return (
-    <div style={{ padding: "64px 48px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
+    <div className="page-shell">
       {/* ===== HEADER ===== */}
       <div className="animate-fade-in" style={{ marginBottom: "72px" }}>
         <h1 suppressHydrationWarning style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
@@ -260,7 +260,7 @@ export default function DashboardOverview() {
                     Momentum
                   </h2>
                   <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                    {executionData.momentum?.label || "building"} · execution {executionData.metrics.last7Days.rate}%
+                    {executionData.momentumDisplay?.headline || executionData.momentum?.label || "building"}
                   </p>
                 </div>
               </div>
@@ -277,9 +277,9 @@ export default function DashboardOverview() {
                 </div>
               </div>
             </div>
-            {executionData.momentum?.factors?.length > 0 && (
+            {(executionData.momentumDisplay?.evidence?.length > 0 || executionData.momentum?.factors?.length > 0) && (
               <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "16px", lineHeight: 1.6 }}>
-                {executionData.momentum.factors.slice(0, 3).join(" · ")}
+                {(executionData.momentumDisplay?.evidence || executionData.momentum?.factors || []).slice(0, 3).join(" · ")}
               </p>
             )}
             <Link href="/dashboard/plans" style={{ display: "inline-block", marginTop: "16px", fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
@@ -288,15 +288,20 @@ export default function DashboardOverview() {
           </section>
         )}
 
-        {/* ROW 2: Focus & Commitments */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "28px" }}>
+        {/* ROW 2: Tasks & Commitments */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "28px" }}>
           
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
-              <Target size={20} style={{ color: "var(--text-muted)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                Active Focus
-              </h2>
+          <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 40px)", transition: "all 0.3s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "28px", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <Target size={20} style={{ color: "var(--text-muted)" }} />
+                <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
+                  Pending tasks
+                </h2>
+              </div>
+              <Link href="/dashboard/plans" style={{ fontSize: "0.8rem", color: "var(--accent-primary)", textDecoration: "none" }}>
+                Today&apos;s plan →
+              </Link>
             </div>
             
             {rhythmLoading ? (
@@ -393,24 +398,7 @@ export default function DashboardOverview() {
           </section>
         </div>
 
-        {/* ROW 3: Momentum & Reflections */}
-        {momentumTrend && (
-          <section className="glass-card" style={{ padding: "28px 40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-              <TrendingUp size={20} style={{ color: "var(--accent-primary)" }} />
-              <div style={{ flex: 1 }}>
-                <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "6px", fontWeight: 500 }}>
-                  Momentum
-                </h2>
-                <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", fontWeight: 300, lineHeight: 1.7 }}>
-                  {momentumTrend}
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ROW 4: Reflections & Next Steps */}
+        {/* ROW 3: Reflections & Next Steps */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "28px" }}>
           
           <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>

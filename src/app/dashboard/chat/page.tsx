@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useAppStore } from "@/lib/store";
-import { formatTime } from "@/lib/utils";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useAppStore, getChatStore, type Message } from "@/lib/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
+import { ChatMessage } from "@/components/chat/chat-message";
 import {
   Send,
   Loader2,
   Plus,
-  Brain,
   AlertTriangle,
   Phone,
   MessageSquare,
@@ -18,62 +16,75 @@ import {
   X,
 } from "lucide-react";
 
-interface Message {
+type ConversationRow = {
   id: string;
-  role: "user" | "assistant";
-  content: string;
-  created_at: string;
-  crisis?: boolean;
+  title: string;
+  updated_at: string;
+  message_count?: number;
+};
+
+async function fetchMessages(convId: string): Promise<Message[]> {
+  const res = await fetch(`/api/conversations/${convId}`);
+  if (!res.ok) throw new Error("Failed to load messages");
+  const data = await res.json();
+  return (data.messages || []).map((m: Record<string, string>) => ({
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    created_at: m.created_at,
+  }));
 }
 
 export default function ChatPage() {
-  const { 
-    user,
-    conversationStates,
-    currentConversationId,
-    crisisAlert,
-    setMessages,
-    addMessage,
-    addOptimisticMessage,
-    reconcileMessages,
-    updateStreamingContent,
-    setCurrentConversationId,
-    setIsAiTyping,
-    setCrisisAlert,
-    clearConversationState,
-  } = useAppStore();
-  
+  const currentConversationId = useAppStore((s) => s.currentConversationId);
+  const crisisAlert = useAppStore((s) => s.crisisAlert);
+  const setCurrentConversationId = useAppStore((s) => s.setCurrentConversationId);
+  const setCrisisAlert = useAppStore((s) => s.setCrisisAlert);
+  const clearConversationState = useAppStore((s) => s.clearConversationState);
+  const migrateConversation = useAppStore((s) => s.migrateConversation);
+  const addOptimisticMessage = useAppStore((s) => s.addOptimisticMessage);
+  const addMessage = useAppStore((s) => s.addMessage);
+  const setMessages = useAppStore((s) => s.setMessages);
+
+  const messages = useAppStore(
+    useCallback(
+      (s) => (currentConversationId ? s.conversationStates[currentConversationId]?.messages ?? [] : []),
+      [currentConversationId]
+    )
+  );
+
   const queryClient = useQueryClient();
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const scrollRaf = useRef<number | null>(null);
 
-  // Fix hydration: only render persisted state after client mount
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const activeState = currentConversationId ? conversationStates[currentConversationId] : null;
-  const messages = mounted ? (activeState?.messages || []) : [];
-  const streamingContent = mounted ? (activeState?.streamingContent || "") : "";
-  const isAiTyping = mounted ? (activeState?.isAiTyping || false) : false;
-
-  const { data: conversations = [] } = useQuery({
+  const { data: conversations = [], isLoading: convsLoading } = useQuery({
     queryKey: ["conversations"],
     queryFn: async () => {
       const res = await fetch("/api/conversations");
       if (!res.ok) return [];
       const data = await res.json();
-      return data.conversations || [];
+      return (data.conversations || []) as ConversationRow[];
     },
     staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
+  const scrollToBottom = useCallback((smooth = false) => {
+    if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current);
+    scrollRaf.current = requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+    });
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+    scrollToBottom(!streamingContent);
+  }, [messages.length, streamingContent, scrollToBottom]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -81,68 +92,80 @@ export default function ChatPage() {
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
   };
 
-  const loadConversation = useCallback(async (convId: string) => {
-    try {
-      const res = await fetch(`/api/conversations/${convId}`);
-      if (res.ok) {
-        const data = await res.json();
-        const loadedMessages = (data.messages || []).map((m: Record<string, string>) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          created_at: m.created_at,
-        }));
-        
-        // Use reconcileMessages instead of setMessages to preserve optimistic messages
-        reconcileMessages(convId, loadedMessages);
-        setCurrentConversationId(convId);
-        setSidebarOpen(false);
-      }
-    } catch (error) {
-      console.error("Failed to load conversation:", error);
-    }
-  }, [reconcileMessages, setCurrentConversationId]);
+  const loadConversation = useCallback(
+    async (convId: string) => {
+      setCurrentConversationId(convId);
+      setSidebarOpen(false);
+      setStreamingContent("");
+      setIsSending(false);
 
-  const startNewChat = () => {
+      const cached = getChatStore().conversationStates[convId]?.messages;
+      if (cached && cached.length > 0) return;
+
+      try {
+        const loaded = await queryClient.fetchQuery({
+          queryKey: ["messages", convId],
+          queryFn: () => fetchMessages(convId),
+          staleTime: 5 * 60_000,
+        });
+        setMessages(convId, loaded);
+      } catch (error) {
+        console.error("Failed to load conversation:", error);
+      }
+    },
+    [queryClient, setCurrentConversationId, setMessages]
+  );
+
+  const startNewChat = useCallback(() => {
+    abortRef.current?.abort();
     setCurrentConversationId(null);
     setInput("");
+    setStreamingContent("");
+    setIsSending(false);
     setSidebarOpen(false);
-  };
+  }, [setCurrentConversationId]);
 
   const deleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Delete this conversation? This cannot be undone.")) return;
 
+    queryClient.setQueryData<ConversationRow[]>(["conversations"], (old) =>
+      (old || []).filter((c) => c.id !== convId)
+    );
+    clearConversationState(convId);
+    queryClient.removeQueries({ queryKey: ["messages", convId] });
+
+    if (currentConversationId === convId) startNewChat();
+
     try {
       const res = await fetch(`/api/conversations/${convId}`, { method: "DELETE" });
-      if (res.ok) {
-        // Remove from Zustand store
-        clearConversationState(convId);
-        
-        // Remove from query cache
-        queryClient.invalidateQueries({ queryKey: ["conversations"] });
-        
-        // If this was the active conversation, clear it
-        if (currentConversationId === convId) {
-          startNewChat();
-        }
-      }
+      if (!res.ok) throw new Error("Delete failed");
     } catch (error) {
       console.error("Failed to delete conversation:", error);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
       alert("Failed to delete conversation. Please try again.");
     }
   };
 
+  const upsertConversationInList = (convId: string, title: string) => {
+    queryClient.setQueryData<ConversationRow[]>(["conversations"], (old) => {
+      const rest = (old || []).filter((c) => c.id !== convId);
+      return [
+        { id: convId, title: title.slice(0, 50) || "New thread", updated_at: new Date().toISOString() },
+        ...rest,
+      ];
+    });
+  };
+
   const sendMessage = async () => {
-    if (!input.trim() || isAiTyping) return;
+    if (!input.trim() || isSending) return;
 
     const messageText = input.trim();
-    let targetConvId = currentConversationId;
-    
-    if (!targetConvId) {
-      // Generate temporary ID for new conversations
-      targetConvId = crypto.randomUUID();
-      setCurrentConversationId(targetConvId);
+    const isNewConversation = !currentConversationId;
+    const localConvId = currentConversationId || `pending-${crypto.randomUUID()}`;
+
+    if (isNewConversation) {
+      setCurrentConversationId(localConvId);
     }
 
     const userMessage: Message = {
@@ -152,15 +175,18 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
 
-    // Add message optimistically with tracking
-    addOptimisticMessage(targetConvId, userMessage);
+    addOptimisticMessage(localConvId, userMessage);
     setInput("");
-    setIsAiTyping(targetConvId, true);
-    updateStreamingContent(targetConvId, "");
+    setStreamingContent("");
+    setIsSending(true);
 
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
+    if (inputRef.current) inputRef.current.style.height = "auto";
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let activeConvId = localConvId;
 
     try {
       const res = await fetch("/api/chat", {
@@ -168,29 +194,23 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: messageText,
-          conversationId: currentConversationId,
+          conversationId: isNewConversation ? null : currentConversationId,
         }),
+        signal: controller.signal,
       });
 
-      if (!res.ok) {
-        throw new Error("Chat request failed");
-      }
+      if (!res.ok) throw new Error("Chat request failed");
 
       const serverConvId = res.headers.get("X-Conversation-Id");
       const isCrisis = res.headers.get("X-Crisis") === "true";
+      if (isCrisis) setCrisisAlert(true);
 
-      if (isCrisis) {
-        setCrisisAlert(true);
-      }
-
-      if (serverConvId && serverConvId !== targetConvId) {
-        // Migration from optimistic ID to server ID
-        const currentMessages = conversationStates[targetConvId]?.messages || [];
-        setCurrentConversationId(serverConvId);
-        // Use reconcileMessages to preserve optimistic state
-        reconcileMessages(serverConvId, currentMessages);
-        targetConvId = serverConvId;
-        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (serverConvId && serverConvId !== localConvId) {
+        migrateConversation(localConvId, serverConvId);
+        activeConvId = serverConvId;
+        upsertConversationInList(serverConvId, messageText);
+      } else if (serverConvId) {
+        upsertConversationInList(serverConvId, messageText);
       }
 
       const reader = res.body?.getReader();
@@ -202,9 +222,8 @@ export default function ChatPage() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        accumulated += text;
-        updateStreamingContent(targetConvId, accumulated);
+        accumulated += decoder.decode(value, { stream: true });
+        setStreamingContent(accumulated);
       }
 
       const aiMessage: Message = {
@@ -215,25 +234,29 @@ export default function ChatPage() {
         crisis: isCrisis,
       };
 
-      addMessage(targetConvId, aiMessage);
-      updateStreamingContent(targetConvId, "");
-      setIsAiTyping(targetConvId, false);
-      
-      // Refresh conversations list
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      addMessage(activeConvId, aiMessage);
+      setStreamingContent("");
+
+      queryClient.setQueryData<Message[]>(["messages", activeConvId], (old) => [
+        ...(old || []),
+        userMessage,
+        aiMessage,
+      ]);
     } catch (error) {
+      if ((error as Error).name === "AbortError") return;
       console.error("Chat error:", error);
-      
-      const fallbackContent = "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?";
-      const errorMessage: Message = {
+
+      addMessage(activeConvId, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: fallbackContent,
+        content:
+          "There's something important in what you just shared. Let's unpack it — what does this mean for you right now?",
         created_at: new Date().toISOString(),
-      };
-      addMessage(targetConvId, errorMessage);
-      updateStreamingContent(targetConvId, "");
-      setIsAiTyping(targetConvId, false);
+      });
+      setStreamingContent("");
+    } finally {
+      setIsSending(false);
+      abortRef.current = null;
     }
   };
 
@@ -244,254 +267,103 @@ export default function ChatPage() {
     }
   };
 
+  const showEmpty = messages.length === 0 && !streamingContent && !isSending;
+
+  const messageList = useMemo(
+    () => messages.map((msg) => <ChatMessage key={msg.id} role={msg.role as "user" | "assistant"} content={msg.content} />),
+    [messages]
+  );
+
   return (
-    <div style={{ display: "flex", height: "100vh", position: "relative", width: "100%" }}>
-      {/* Mobile sidebar toggle */}
-      <button
-        onClick={() => setSidebarOpen(true)}
-        className="chat-sidebar-toggle"
-        style={{
-          position: "absolute",
-          top: "16px",
-          left: "16px",
-          zIndex: 20,
-          background: "var(--bg-glass)",
-          border: "1px solid var(--border-color)",
-          borderRadius: "var(--radius-md)",
-          padding: "8px",
-          cursor: "pointer",
-          color: "var(--text-secondary)",
-          display: "none",
-        }}
-      >
+    <div className="chat-layout">
+      <button type="button" onClick={() => setSidebarOpen(true)} className="chat-sidebar-toggle" aria-label="Open threads">
         <Menu size={20} />
       </button>
 
-      {/* Mobile overlay */}
       {sidebarOpen && (
-        <div
-          className="chat-sidebar-overlay"
-          onClick={() => setSidebarOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 25,
-            display: "none",
-          }}
-        />
+        <button type="button" className="chat-sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-label="Close threads" />
       )}
 
-      {/* ===== CONVERSATION SIDEBAR ===== */}
-      <div
-        className="chat-sidebar"
-        style={{
-          width: "280px",
-          borderRight: "1px solid var(--border-color)",
-          background: "var(--bg-secondary)",
-          display: "flex",
-          flexDirection: "column",
-          padding: "24px 16px",
-          overflowY: "auto",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
-          <button
-            onClick={startNewChat}
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "12px",
-              borderRadius: "var(--radius-md)",
-              background: "var(--bg-glass)",
-              border: "1px solid var(--border-color)",
-              color: "var(--text-primary)",
-              cursor: "pointer",
-              fontWeight: 500,
-              fontSize: "0.9rem",
-              transition: "all 0.2s",
-            }}
-          >
+      <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="chat-sidebar-header">
+          <button type="button" onClick={startNewChat} className="chat-new-btn">
             <Plus size={18} />
             New Thread
           </button>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="chat-sidebar-close"
-            style={{
-              display: "none",
-              background: "none",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              padding: "8px",
-              marginLeft: "8px",
-            }}
-          >
+          <button type="button" onClick={() => setSidebarOpen(false)} className="chat-sidebar-close" aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          Threads
-        </div>
+        <div className="chat-sidebar-label">Threads</div>
 
-        {conversations.map((conv: { id: string; title: string; updated_at: string }) => (
-          <div
-            key={conv.id}
-            onClick={() => loadConversation(conv.id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              padding: "12px 14px",
-              borderRadius: "var(--radius-md)",
-              cursor: "pointer",
-              marginBottom: "6px",
-              transition: "all 0.2s",
-              background: currentConversationId === conv.id ? "rgba(255, 255, 255, 0.04)" : "transparent",
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: "0.9rem",
-                  fontWeight: currentConversationId === conv.id ? 500 : 400,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  color: currentConversationId === conv.id ? "var(--text-primary)" : "var(--text-secondary)",
-                }}
-              >
-                {conv.title || "Untitled"}
-              </div>
-            </div>
-            <button
-              onClick={(e) => deleteConversation(conv.id, e)}
-              title="Delete conversation"
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                padding: "4px",
-                borderRadius: "4px",
-                opacity: 0,
-                transition: "all 0.2s",
-                flexShrink: 0,
-              }}
-              className="delete-conv-btn"
+        {convsLoading && conversations.length === 0 ? (
+          <div className="chat-sidebar-empty">Loading…</div>
+        ) : (
+          conversations.map((conv) => (
+            <div
+              key={conv.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => loadConversation(conv.id)}
+              onKeyDown={(e) => e.key === "Enter" && loadConversation(conv.id)}
+              className={`chat-thread-row ${currentConversationId === conv.id ? "active" : ""}`}
             >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+              <span className="chat-thread-title">{conv.title || "Untitled"}</span>
+              <button
+                type="button"
+                onClick={(e) => deleteConversation(conv.id, e)}
+                title="Delete conversation"
+                className="delete-conv-btn"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))
+        )}
 
-        {conversations.length === 0 && (
-          <div style={{ textAlign: "center", padding: "32px 16px", color: "var(--text-muted)", fontSize: "0.9rem" }}>
-            <MessageSquare size={24} style={{ opacity: 0.3, marginBottom: "12px" }} />
+        {!convsLoading && conversations.length === 0 && (
+          <div className="chat-sidebar-empty">
+            <MessageSquare size={24} />
             <p>No threads yet.</p>
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* ===== CHAT AREA ===== */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* Crisis Alert Banner */}
+      <div className="chat-main">
         {crisisAlert && (
-          <div
-            style={{
-              padding: "12px 24px",
-              background: "rgba(252, 92, 156, 0.1)",
-              borderBottom: "1px solid rgba(252, 92, 156, 0.2)",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              animation: "slideDown 0.3s ease-out",
-            }}
-          >
-            <AlertTriangle size={18} style={{ color: "var(--accent-tertiary)", flexShrink: 0 }} />
-            <span style={{ fontSize: "0.9rem", color: "var(--accent-tertiary)" }}>
-              If you're in crisis, please call <strong>988</strong> or text <strong>HELLO</strong> to <strong>741741</strong>
+          <div className="chat-crisis-banner">
+            <AlertTriangle size={18} />
+            <span>
+              If you&apos;re in crisis, please call <strong>988</strong> or text <strong>HELLO</strong> to{" "}
+              <strong>741741</strong>
             </span>
-            <a
-              href="tel:988"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "8px 16px",
-                borderRadius: "var(--radius-full)",
-                background: "rgba(252, 92, 156, 0.2)",
-                color: "var(--accent-tertiary)",
-                textDecoration: "none",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                marginLeft: "auto",
-                flexShrink: 0,
-              }}
-            >
+            <a href="tel:988" className="chat-crisis-call">
               <Phone size={14} />
               Call 988
             </a>
           </div>
         )}
 
-        {/* Messages */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "40px 48px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "28px",
-          }}
-        >
-          {messages.length === 0 && !streamingContent && (
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                gap: "16px",
-                animation: "fadeIn 0.5s ease-out",
-              }}
-            >
-              <h2 style={{ fontSize: "1.8rem", fontWeight: 400, letterSpacing: "-0.02em" }}>
+        <div className="chat-messages">
+          {showEmpty && (
+            <div className="chat-empty">
+              <h2>
                 What is your <span className="gradient-text">focus</span> today?
               </h2>
-              <p style={{ color: "var(--text-secondary)", maxWidth: "440px", lineHeight: 1.6, fontWeight: 300 }}>
-                MenAI is an adaptive intelligence system. It learns your patterns and helps you maintain your trajectory. 
-                Start by sharing what you want to achieve or what's currently blocking you.
+              <p>
+                MenAI learns your patterns and helps you maintain trajectory. Share what you want to achieve or
+                what&apos;s blocking you.
               </p>
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", justifyContent: "center", marginTop: "16px" }}>
+              <div className="chat-suggestions">
                 {["Define my trajectory", "Review my active focus", "I am stuck"].map((suggestion) => (
                   <button
                     key={suggestion}
+                    type="button"
                     onClick={() => {
                       setInput(suggestion);
                       inputRef.current?.focus();
                     }}
-                    style={{
-                      padding: "10px 20px",
-                      borderRadius: "var(--radius-full)",
-                      background: "var(--bg-glass)",
-                      border: "1px solid var(--border-color)",
-                      color: "var(--text-secondary)",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      transition: "all 0.2s",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)" }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-secondary)" }}
                   >
                     {suggestion}
                   </button>
@@ -500,55 +372,20 @@ export default function ChatPage() {
             </div>
           )}
 
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              style={{
-                display: "flex",
-                justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                alignItems: "flex-start",
-                gap: "16px",
-                animation: "fadeIn 0.5s ease-out",
-              }}
-            >
-              <div className={msg.role === "user" ? "chat-bubble-user" : "chat-bubble-ai"}>
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }) => <p style={{ margin: "0 0 14px", fontWeight: 300, lineHeight: 1.8 }}>{children}</p>,
-                      strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
-                      ul: ({ children }) => <ul style={{ paddingLeft: "22px", margin: "14px 0", fontWeight: 300, lineHeight: 1.8 }}>{children}</ul>,
-                      li: ({ children }) => <li style={{ marginBottom: "8px" }}>{children}</li>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  <p style={{ margin: 0, fontWeight: 400, lineHeight: 1.7 }}>{msg.content}</p>
-                )}
-              </div>
-            </div>
-          ))}
+          {messageList}
 
-          {/* Streaming response */}
           {streamingContent && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", animation: "fadeIn 0.3s ease-out" }}>
+            <div className="chat-streaming">
               <div className="chat-bubble-ai">
-                <ReactMarkdown
-                  components={{
-                    p: ({ children }) => <p style={{ margin: "0 0 14px", fontWeight: 300, lineHeight: 1.8 }}>{children}</p>,
-                    strong: ({ children }) => <strong style={{ color: "var(--text-primary)", fontWeight: 500 }}>{children}</strong>,
-                  }}
-                >
+                <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.7, fontWeight: 300 }}>
                   {streamingContent}
-                </ReactMarkdown>
+                </p>
               </div>
             </div>
           )}
 
-          {/* Typing indicator */}
-          {isAiTyping && !streamingContent && (
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
+          {isSending && !streamingContent && (
+            <div className="chat-streaming">
               <div className="chat-bubble-ai">
                 <div className="typing-indicator">
                   <span />
@@ -562,23 +399,8 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <div
-          style={{
-            padding: "28px 32px",
-            borderTop: "1px solid var(--border-color)",
-            background: "var(--bg-primary)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: "16px",
-              maxWidth: "800px",
-              margin: "0 auto",
-            }}
-          >
+        <div className="chat-input-area">
+          <div className="chat-input-row">
             <textarea
               ref={inputRef}
               value={input}
@@ -586,71 +408,18 @@ export default function ChatPage() {
               onKeyDown={handleKeyDown}
               placeholder="What are you focusing on?"
               rows={1}
-              style={{
-                flex: 1,
-                background: "var(--bg-glass)",
-                border: "1px solid var(--border-color)",
-                borderRadius: "var(--radius-lg)",
-                padding: "16px 20px",
-                color: "var(--text-primary)",
-                fontFamily: "var(--font-sans)",
-                fontSize: "1rem",
-                resize: "none",
-                outline: "none",
-                transition: "border-color 0.3s",
-                lineHeight: 1.5,
-                maxHeight: "150px",
-              }}
+              disabled={isSending}
             />
-            <button
-              onClick={sendMessage}
-              disabled={!input.trim() || isAiTyping}
-              style={{
-                width: 54,
-                height: 54,
-                borderRadius: "50%",
-                background: input.trim() ? "var(--text-primary)" : "var(--bg-glass)",
-                border: "none",
-                cursor: input.trim() ? "pointer" : "not-allowed",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.3s",
-                flexShrink: 0,
-              }}
-            >
-              {isAiTyping ? (
-                <Loader2 size={24} color="var(--bg-primary)" className="animate-spin" />
+            <button type="button" onClick={sendMessage} disabled={!input.trim() || isSending} className="chat-send-btn">
+              {isSending ? (
+                <Loader2 size={22} className="animate-spin" />
               ) : (
-                <Send size={24} color={input.trim() ? "var(--bg-primary)" : "var(--text-muted)"} />
+                <Send size={22} />
               )}
             </button>
           </div>
         </div>
       </div>
-
-      <style jsx global>{`
-        .chat-sidebar > div:hover .delete-conv-btn {
-          opacity: 0.5 !important;
-        }
-        .delete-conv-btn:hover {
-          opacity: 1 !important;
-          color: var(--text-primary) !important;
-        }
-
-        @media (max-width: 768px) {
-          .chat-sidebar-toggle { display: block !important; }
-          .chat-sidebar-overlay { display: block !important; }
-          .chat-sidebar-close { display: block !important; }
-          .chat-sidebar {
-            position: fixed !important;
-            left: 0; top: 0; bottom: 0;
-            z-index: 30;
-            transform: ${sidebarOpen ? "translateX(0)" : "translateX(-100%)"};
-            transition: transform 0.3s ease;
-          }
-        }
-      `}</style>
     </div>
   );
 }

@@ -2,15 +2,29 @@ import { create } from "zustand";
 import { persist, StateStorage, createJSONStorage } from "zustand/middleware";
 import { get, set, del } from "idb-keyval";
 
-// IndexedDB storage implementation for Zustand
+const PERSIST_DEBOUNCE_MS = 500;
+const MAX_PERSISTED_CONVERSATIONS = 12;
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingPersist: { name: string; value: string } | null = null;
+
 const idbStorage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
     return (await get(name)) || null;
   },
-  setItem: async (name: string, value: string): Promise<void> => {
-    await set(name, value);
+  setItem: (name: string, value: string): Promise<void> => {
+    pendingPersist = { name, value };
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      if (pendingPersist) {
+        void idbStorage.setItem(pendingPersist.name, pendingPersist.value);
+      }
+    }, PERSIST_DEBOUNCE_MS);
+    return Promise.resolve();
   },
   removeItem: async (name: string): Promise<void> => {
+    if (persistTimer) clearTimeout(persistTimer);
+    pendingPersist = null;
     await del(name);
   },
 };
@@ -20,7 +34,7 @@ export interface UserProfile {
   full_name: string;
   avatar_url: string;
   role: string;
-  subscription_tier: string;
+  subscription_tier?: string;
   onboarding_completed: boolean;
 }
 
@@ -44,219 +58,231 @@ export interface Message {
 
 export interface ConversationState {
   messages: Message[];
-  // Streaming state - NOT persisted
-  streamingContent?: string;
-  isAiTyping?: boolean;
-  // Track optimistic messages to prevent them from being wiped
-  pendingOptimisticIds?: Set<string>;
+  pendingOptimisticIds: string[];
 }
 
 interface AppState {
-  // User
   user: UserProfile | null;
   setUser: (user: UserProfile | null) => void;
 
-  // Sidebar
   sidebarOpen: boolean;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 
-  // Global Chat State
   conversations: Conversation[];
   setConversations: (convs: Conversation[]) => void;
-  
-  // Isolated Conversation States
+
   currentConversationId: string | null;
   setCurrentConversationId: (id: string | null) => void;
-  
+
   conversationStates: Record<string, ConversationState>;
   clearConversationState: (conversationId: string) => void;
-  
-  // Actions for the ACTIVE conversation
+  migrateConversation: (fromId: string, toId: string) => void;
+
   setMessages: (conversationId: string, msgs: Message[]) => void;
   addMessage: (conversationId: string, msg: Message) => void;
   addOptimisticMessage: (conversationId: string, msg: Message) => void;
   reconcileMessages: (conversationId: string, serverMessages: Message[]) => void;
-  updateStreamingContent: (conversationId: string, content: string) => void;
-  setIsAiTyping: (conversationId: string, typing: boolean) => void;
-  
-  // Legacy global alert
+  clearPendingOptimistic: (conversationId: string, messageId: string) => void;
+
   crisisAlert: boolean;
   setCrisisAlert: (crisis: boolean) => void;
 
-  // UI
   activeView: string;
   setActiveView: (view: string) => void;
 }
 
 const defaultConversationState: ConversationState = {
   messages: [],
-  // Streaming state defaults
-  streamingContent: "",
-  isAiTyping: false,
-  pendingOptimisticIds: new Set(),
+  pendingOptimisticIds: [],
 };
 
-// Separate: what gets persisted vs what's ephemeral
-const persistedConversationState: ConversationState = {
-  messages: [],
-  // Don't persist streaming state
-};
+function trimPersistedStates(
+  states: Record<string, ConversationState>,
+  currentId: string | null
+): Record<string, ConversationState> {
+  const entries = Object.entries(states);
+  if (entries.length <= MAX_PERSISTED_CONVERSATIONS) return states;
+
+  const sorted = entries.sort((a, b) => {
+    if (a[0] === currentId) return -1;
+    if (b[0] === currentId) return 1;
+    const aLast = a[1].messages.at(-1)?.created_at || "";
+    const bLast = b[1].messages.at(-1)?.created_at || "";
+    return bLast.localeCompare(aLast);
+  });
+
+  return Object.fromEntries(sorted.slice(0, MAX_PERSISTED_CONVERSATIONS));
+}
 
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      // User
       user: null,
       setUser: (user) => set({ user }),
 
-      // Sidebar
       sidebarOpen: true,
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-      // Global Chat State
       conversations: [],
       setConversations: (convs) => set({ conversations: convs }),
 
-      // Isolated Conversation States
       currentConversationId: null,
       setCurrentConversationId: (id) => set({ currentConversationId: id }),
-      
+
       conversationStates: {},
-      
-      clearConversationState: (conversationId) => set((state) => {
-        const newStates = { ...state.conversationStates };
-        delete newStates[conversationId];
-        return { conversationStates: newStates };
-      }),
 
-      setMessages: (conversationId, msgs) => set((state) => ({
-        conversationStates: {
-          ...state.conversationStates,
-          [conversationId]: {
-            ...(state.conversationStates[conversationId] || defaultConversationState),
-            messages: msgs,
-          }
-        }
-      })),
+      clearConversationState: (conversationId) =>
+        set((state) => {
+          const newStates = { ...state.conversationStates };
+          delete newStates[conversationId];
+          return { conversationStates: newStates };
+        }),
 
-      addMessage: (conversationId, msg) => set((state) => {
-        const convState = state.conversationStates[conversationId] || defaultConversationState;
-        // Immutable append - NEVER replace array
-        const newMessages = [...convState.messages, msg];
-        return {
+      migrateConversation: (fromId, toId) =>
+        set((state) => {
+          if (fromId === toId) return state;
+          const fromState = state.conversationStates[fromId];
+          if (!fromState) return { currentConversationId: toId };
+
+          const newStates = { ...state.conversationStates };
+          delete newStates[fromId];
+          newStates[toId] = fromState;
+
+          return {
+            conversationStates: newStates,
+            currentConversationId:
+              state.currentConversationId === fromId ? toId : state.currentConversationId,
+          };
+        }),
+
+      setMessages: (conversationId, msgs) =>
+        set((state) => ({
           conversationStates: {
             ...state.conversationStates,
             [conversationId]: {
-              ...convState,
-              messages: newMessages,
-            }
-          }
-        };
-      }),
+              ...(state.conversationStates[conversationId] || defaultConversationState),
+              messages: msgs,
+              pendingOptimisticIds: [],
+            },
+          },
+        })),
 
-      addOptimisticMessage: (conversationId, msg) => set((state) => {
-        const convState = state.conversationStates[conversationId] || defaultConversationState;
-        const newMessages = [...convState.messages, msg];
-        const newOptimisticIds = new Set(convState.pendingOptimisticIds || []);
-        newOptimisticIds.add(msg.id);
-        return {
-          conversationStates: {
-            ...state.conversationStates,
-            [conversationId]: {
-              ...convState,
-              messages: newMessages,
-              pendingOptimisticIds: newOptimisticIds,
-            }
-          }
-        };
-      }),
+      addMessage: (conversationId, msg) =>
+        set((state) => {
+          const convState = state.conversationStates[conversationId] || defaultConversationState;
+          const exists = convState.messages.some((m) => m.id === msg.id);
+          if (exists) return state;
 
-      reconcileMessages: (conversationId, serverMessages) => set((state) => {
-        const convState = state.conversationStates[conversationId];
-        if (!convState) {
-          // No existing state, just set server messages
+          const pending = convState.pendingOptimisticIds.filter((id) => id !== msg.id);
           return {
             conversationStates: {
               ...state.conversationStates,
               [conversationId]: {
-                ...defaultConversationState,
-                messages: serverMessages,
-              }
-            }
+                ...convState,
+                messages: [...convState.messages, msg],
+                pendingOptimisticIds: pending,
+              },
+            },
           };
-        }
+        }),
 
-        // Reconcile: keep optimistic messages, merge with server messages
-        const optimisticIds = convState.pendingOptimisticIds || new Set();
-        const optimisticMessages = convState.messages.filter(m => optimisticIds.has(m.id));
-        
-        // Create a map of server messages by ID for deduplication
-        const serverMessageMap = new Map(serverMessages.map(m => [m.id, m]));
-        
-        // Merge: server messages + optimistic messages not yet confirmed
-        const mergedMessages = [
-          ...serverMessages,
-          ...optimisticMessages.filter(m => !serverMessageMap.has(m.id))
-        ].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      addOptimisticMessage: (conversationId, msg) =>
+        set((state) => {
+          const convState = state.conversationStates[conversationId] || defaultConversationState;
+          return {
+            conversationStates: {
+              ...state.conversationStates,
+              [conversationId]: {
+                ...convState,
+                messages: [...convState.messages, msg],
+                pendingOptimisticIds: [...convState.pendingOptimisticIds, msg.id],
+              },
+            },
+          };
+        }),
 
-        return {
-          conversationStates: {
-            ...state.conversationStates,
-            [conversationId]: {
-              ...convState,
-              messages: mergedMessages,
-              // Clear optimistic IDs that are now in server messages
-              pendingOptimisticIds: new Set(
-                Array.from(optimisticIds).filter(id => !serverMessageMap.has(id))
-              ),
-            }
+      reconcileMessages: (conversationId, serverMessages) =>
+        set((state) => {
+          const convState = state.conversationStates[conversationId];
+          if (!convState) {
+            return {
+              conversationStates: {
+                ...state.conversationStates,
+                [conversationId]: { messages: serverMessages, pendingOptimisticIds: [] },
+              },
+            };
           }
-        };
-      }),
 
-      updateStreamingContent: (conversationId, content) => set((state) => ({
-        conversationStates: {
-          ...state.conversationStates,
-          [conversationId]: {
-            ...(state.conversationStates[conversationId] || defaultConversationState),
-            streamingContent: content,
-          }
-        }
-      })),
+          const optimisticIds = new Set(convState.pendingOptimisticIds);
+          const optimisticMessages = convState.messages.filter((m) => optimisticIds.has(m.id));
+          const serverIds = new Set(serverMessages.map((m) => m.id));
 
-      setIsAiTyping: (conversationId, typing) => set((state) => ({
-        conversationStates: {
-          ...state.conversationStates,
-          [conversationId]: {
-            ...(state.conversationStates[conversationId] || defaultConversationState),
-            isAiTyping: typing,
-          }
-        }
-      })),
+          const merged = [
+            ...serverMessages,
+            ...optimisticMessages.filter((m) => !serverIds.has(m.id)),
+          ].sort(
+            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+
+          return {
+            conversationStates: {
+              ...state.conversationStates,
+              [conversationId]: {
+                messages: merged,
+                pendingOptimisticIds: convState.pendingOptimisticIds.filter(
+                  (id) => !serverIds.has(id)
+                ),
+              },
+            },
+          };
+        }),
+
+      clearPendingOptimistic: (conversationId, messageId) =>
+        set((state) => {
+          const convState = state.conversationStates[conversationId];
+          if (!convState) return state;
+          return {
+            conversationStates: {
+              ...state.conversationStates,
+              [conversationId]: {
+                ...convState,
+                pendingOptimisticIds: convState.pendingOptimisticIds.filter(
+                  (id) => id !== messageId
+                ),
+              },
+            },
+          };
+        }),
 
       crisisAlert: false,
       setCrisisAlert: (crisis) => set({ crisisAlert: crisis }),
 
-      // UI
       activeView: "chat",
       setActiveView: (view) => set({ activeView: view }),
     }),
     {
-      name: "menai-db-storage", // IDB key
+      name: "menai-db-storage",
       storage: createJSONStorage(() => idbStorage),
       partialize: (state) => ({
         currentConversationId: state.currentConversationId,
         conversations: state.conversations,
-        // Only persist messages, NOT streaming state or optimistic IDs
-        conversationStates: Object.fromEntries(
-          Object.entries(state.conversationStates).map(([id, convState]) => [
-            id,
-            { messages: convState.messages }, // Only persist messages
-          ])
+        conversationStates: trimPersistedStates(
+          Object.fromEntries(
+            Object.entries(state.conversationStates).map(([id, convState]) => [
+              id,
+              { messages: convState.messages.slice(-80), pendingOptimisticIds: [] },
+            ])
+          ),
+          state.currentConversationId
         ),
       }),
     }
   )
 );
+
+/** Imperative access for async handlers (avoids stale closures). */
+export function getChatStore() {
+  return useAppStore.getState();
+}

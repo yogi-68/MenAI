@@ -17,6 +17,7 @@
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { logAiUsage } from "@/lib/ai/usage-guard";
 import { runSafetyPipeline } from "./safety-engine";
 import { detectEmotion } from "./emotion-engine";
 import { determineState, classifyIntent } from "./state-machine";
@@ -29,6 +30,34 @@ import { extractLifeData, persistExtractedData, hasExtractedData } from "./extra
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
 import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis } from "./types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+async function resolveConversationId(
+  serviceClient: SupabaseClient,
+  userId: string,
+  requestedId: string | null | undefined,
+  title: string
+): Promise<string> {
+  let conversationId = requestedId || "";
+  if (conversationId) {
+    const { data: existingConv } = await serviceClient
+      .from("conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!existingConv) conversationId = "";
+  }
+  if (!conversationId) {
+    const { data: newConv } = await serviceClient
+      .from("conversations")
+      .insert({ user_id: userId, title: title.slice(0, 50) })
+      .select("id")
+      .single();
+    conversationId = newConv?.id || "";
+  }
+  return conversationId;
+}
 
 // ===== GRACEFUL FALLBACK RESPONSES =====
 // These are used when ANY part of the pipeline fails.
@@ -135,15 +164,12 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const emotion = await detectEmotion(input.message);
 
   // ===== STEP 3: Get or Create Conversation =====
-  let conversationId = input.conversationId || "";
-  if (!conversationId) {
-    const { data: newConv } = await serviceClient
-      .from("conversations")
-      .insert({ user_id: input.userId, title: input.message.slice(0, 50) })
-      .select("id")
-      .single();
-    conversationId = newConv?.id || "";
-  }
+  const conversationId = await resolveConversationId(
+    serviceClient,
+    input.userId,
+    input.conversationId,
+    input.message
+  );
 
   // Save user message
   await serviceClient.from("messages").insert({
@@ -312,6 +338,14 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     emotion_data: emotion,
     token_count: llmResult.tokensUsed,
   });
+
+  logAiUsage(
+    input.userId,
+    "chat",
+    llmResult.model || "gpt-4o-mini",
+    Math.round(llmResult.tokensUsed * 0.6),
+    Math.round(llmResult.tokensUsed * 0.4)
+  ).catch(() => {});
 
   // Update conversation metadata
   await serviceClient
@@ -545,19 +579,11 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     };
   }
 
-  // ===== STEP 2: Emotion Detection =====
-  const emotion = await detectEmotion(input.message);
-
-  // ===== STEP 3: Get or Create Conversation =====
-  let conversationId = input.conversationId || "";
-  if (!conversationId) {
-    const { data: newConv } = await serviceClient
-      .from("conversations")
-      .insert({ user_id: input.userId, title: input.message.slice(0, 50) })
-      .select("id")
-      .single();
-    conversationId = newConv?.id || "";
-  }
+  // ===== STEP 2–3: Emotion + Conversation (parallel) =====
+  const [emotion, conversationId] = await Promise.all([
+    detectEmotion(input.message),
+    resolveConversationId(serviceClient, input.userId, input.conversationId, input.message),
+  ]);
 
   await serviceClient.from("messages").insert({
     conversation_id: conversationId,
@@ -710,6 +736,15 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
             content: validated.content,
             emotion_data: emotion,
           })
+        ).catch(() => {});
+
+        const estTokens = Math.ceil(fullResponse.length / 4);
+        logAiUsage(
+          input.userId,
+          "chat",
+          model,
+          Math.round(estTokens * 0.6),
+          Math.round(estTokens * 0.4)
         ).catch(() => {});
 
         Promise.resolve(

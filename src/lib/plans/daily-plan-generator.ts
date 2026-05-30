@@ -13,6 +13,13 @@ import {
 import { fetchTimeEstimationProfile, adjustMinutesForUser } from "@/lib/plans/time-estimation";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { recordPlanGeneration } from "@/lib/plans/momentum-score";
+import { logAiUsage, checkAiQuota, AI_UNAVAILABLE_MESSAGE } from "@/lib/ai/usage-guard";
+import {
+  applyPlanLanguageGuard,
+  buildPlanEvidence,
+  isLowPlanConfidence,
+} from "@/lib/plans/language-guard";
+import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -39,6 +46,7 @@ export interface DailyPlanContent {
   lifeAreaInsight?: string;
   timeEstimationInsight?: string;
   executionRate7d?: number;
+  evidence?: string[];
   tasks: DailyPlanTask[];
 }
 
@@ -520,6 +528,17 @@ Strengths: ${ctx.confidence.strengths.join("; ") || "None"}
 
 ${modeInstructions}
 
+LANGUAGE RULES (confidence ${ctx.confidence.score}%):
+${
+  isLowPlanConfidence(ctx.confidence.score)
+    ? `- LOW CONTEXT: Use hedged language only. Start summaries with "Based on the information available..." or "Your current goals suggest..."
+- NEVER state conclusions as facts (avoid "You're focused on X", "Your priority is X")
+- whyTheseTasks MUST cite specific gaps from the Gaps list above
+- Include "evidenceUsed" array listing each data point you relied on`
+    : `- Medium/high context: be direct but still cite initiatives, deadlines, or execution rate when making claims
+- Include "evidenceUsed" array listing each data point you relied on`
+}
+
 CRITICAL: Generate tasks only when evidence shows highest-leverage action today.
 Opportunities with critical/high urgency should beat routine maintenance.
 
@@ -529,6 +548,7 @@ Return JSON only:
   "topObstacle": "One sentence",
   "daySummary": "One sentence",
   "whyTheseTasks": "2-4 sentences — coach voice, reference actual data",
+  "evidenceUsed": ["data point 1", "data point 2"],
   "assumptions": ["only in normal mode if needed"],
   "tasks": [{
     "title": "Concrete action",
@@ -562,7 +582,8 @@ function fitTasksToTimeBudget(
 }
 
 export async function generateDailyPlanWithAI(
-  ctx: PlanUserContext
+  ctx: PlanUserContext,
+  userId?: string
 ): Promise<DailyPlanContent> {
   const openai = getOpenAI();
 
@@ -574,11 +595,21 @@ export async function generateDailyPlanWithAI(
       {
         role: "system",
         content:
-          "You are an execution planner. Never invent vague tasks from broad goals. Explain your reasoning. JSON only.",
+          "You are an execution planner. Never invent vague tasks from broad goals. When context is thin, use hedged language and cite evidence. JSON only.",
       },
       { role: "user", content: buildPrompt(ctx) },
     ],
   });
+
+  if (userId) {
+    logAiUsage(
+      userId,
+      "daily_plan",
+      "gpt-4o-mini",
+      completion.usage?.prompt_tokens ?? 0,
+      completion.usage?.completion_tokens ?? 0
+    ).catch(() => {});
+  }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Empty AI response");
@@ -589,6 +620,7 @@ export async function generateDailyPlanWithAI(
     daySummary?: string;
     whyTheseTasks?: string;
     assumptions?: string[];
+    evidenceUsed?: string[];
     tasks?: Array<
       DailyPlanTask & { isContextBuilding?: boolean; linkedInitiative?: string }
     >;
@@ -643,23 +675,36 @@ export async function generateDailyPlanWithAI(
     throw new Error("AI produced only vague or oversized tasks");
   }
 
+  const score = ctx.confidence.score;
+  const evidence =
+    (parsed.evidenceUsed?.filter(Boolean).length ?? 0) > 0
+      ? parsed.evidenceUsed!.filter(Boolean).slice(0, 6)
+      : buildPlanEvidence(ctx);
+
   return {
-    whatMattersNow: parsed.whatMattersNow?.trim(),
-    topObstacle: parsed.topObstacle?.trim(),
+    whatMattersNow: applyPlanLanguageGuard(parsed.whatMattersNow?.trim(), score),
+    topObstacle: applyPlanLanguageGuard(parsed.topObstacle?.trim(), score),
     whyTheseTasks:
-      parsed.whyTheseTasks?.trim() ||
-      (ctx.planMode === "context_building"
-        ? "Your context is still thin. Today focuses on getting clearer — add initiatives, deadlines, or log any time-sensitive opportunities."
-        : "These tasks target your active initiatives and the biggest gap between where you are and your next deadline."),
+      applyPlanLanguageGuard(
+        parsed.whyTheseTasks?.trim() ||
+          (ctx.planMode === "context_building"
+            ? "Based on the information available, your context is still thin. Today focuses on getting clearer — add initiatives, deadlines, or log any time-sensitive opportunities."
+            : "These tasks target your active initiatives and the biggest gap between where you are and your next deadline."),
+        score
+      ) || "",
     daySummary:
-      parsed.daySummary?.trim() ||
-      "Today is about specific actions that move your initiatives forward.",
+      applyPlanLanguageGuard(
+        parsed.daySummary?.trim() ||
+          "Today is about specific actions that move your initiatives forward.",
+        score
+      ) || "",
     confidence: ctx.confidence,
     planMode: ctx.planMode,
     assumptions: parsed.assumptions?.filter(Boolean).slice(0, 3),
     lifeAreaInsight: ctx.lifeAreaInsight,
     timeEstimationInsight: ctx.timeEstimationInsight ?? undefined,
     executionRate7d: ctx.executionRate7d,
+    evidence,
     tasks,
   };
 }
@@ -706,7 +751,13 @@ export async function ensureTodayPlan(
   }
 
   const ctx = await fetchPlanUserContext(supabase, userId);
-  const planContent = await generateDailyPlanWithAI(ctx);
+
+  const quota = await checkAiQuota(userId, "daily_plan");
+  if (!quota.allowed) {
+    throw new Error(AI_UNAVAILABLE_MESSAGE);
+  }
+
+  const planContent = await generateDailyPlanWithAI(ctx, userId);
 
   const { data: inserted, error } = await supabase
     .from("daily_plans")
@@ -722,6 +773,7 @@ export async function ensureTodayPlan(
   if (error) throw error;
 
   await recordPlanGeneration(supabase, userId, today);
+  trackProductEventOnce(userId, "first_plan_generated").catch(() => {});
 
   const { data: existingTodayTasks } = await supabase
     .from("tasks")
@@ -789,6 +841,7 @@ function normalizePlanContent(raw: unknown): DailyPlanContent {
     lifeAreaInsight: content.lifeAreaInsight as string | undefined,
     timeEstimationInsight: content.timeEstimationInsight as string | undefined,
     executionRate7d: content.executionRate7d as number | undefined,
+    evidence: (content.evidence as string[]) || [],
     tasks,
   };
 }

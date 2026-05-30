@@ -16,16 +16,19 @@ import {
   Calendar,
   FileText,
   Target,
+  Activity,
 } from "lucide-react";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
   { href: "/dashboard/plans", icon: Calendar, label: "Daily Plans" },
-  { href: "/dashboard/goals", icon: Target, label: "Goals & Execution" },
+  { href: "/dashboard/goals", icon: Target, label: "Goals & Initiatives" },
   { href: "/dashboard/reports", icon: FileText, label: "Reports" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
+
+const adminNav = { href: "/dashboard/admin", icon: Activity, label: "Admin" };
 
 export default function DashboardLayout({
   children,
@@ -66,7 +69,6 @@ export default function DashboardLayout({
         avatar_url:
           profile?.avatar_url || authUser.user_metadata?.avatar_url || "",
         role: profile?.role || "user",
-        subscription_tier: profile?.subscription_tier || "free",
         onboarding_completed: profile?.onboarding_completed || false,
       });
     };
@@ -188,6 +190,17 @@ export default function DashboardLayout({
               </Link>
             );
           })}
+          {user?.role === "admin" && (
+            <Link
+              href={adminNav.href}
+              className={`sidebar-link ${pathname.startsWith(adminNav.href) ? "active" : ""}`}
+              onClick={() => setMobileMenuOpen(false)}
+              style={{ marginTop: "8px", borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}
+            >
+              <adminNav.icon size={18} strokeWidth={pathname.startsWith(adminNav.href) ? 2 : 1.5} />
+              {adminNav.label}
+            </Link>
+          )}
         </nav>
 
         {/* User Info (Minimal) */}
@@ -293,7 +306,7 @@ export default function DashboardLayout({
           <div style={{ width: 24 }} />
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: pathname.startsWith("/dashboard/chat") ? "hidden" : undefined }}>
           {children}
         </div>
       </main>

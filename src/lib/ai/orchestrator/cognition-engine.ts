@@ -731,11 +731,11 @@ export function formatCognitiveStateForDashboard(state: CognitiveState): {
 
 function _formatMomentum(momentum: MomentumState): string | null {
   const texts: Record<MomentumState, string | null> = {
-    surging: "Strong execution momentum. Keep this rhythm.",
-    building: "Momentum building through consistent action.",
-    stable: "Steady progress. Small pushes compound.",
-    stalling: "Momentum starting to slow. Re-engage with one concrete action.",
-    declining: "Execution dropping. Simplify and focus on just one thing today.",
+    surging: "Based on recent activity, execution momentum looks strong.",
+    building: "Based on recent activity, momentum is building through consistent action.",
+    stable: "Based on available data, progress appears steady.",
+    stalling: "Based on limited recent activity, momentum may be slowing.",
+    declining: "Based on available data, execution activity appears to be dropping.",
     unknown: null,
   };
   return texts[momentum];

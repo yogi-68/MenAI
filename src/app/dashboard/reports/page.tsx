@@ -35,7 +35,7 @@ export default function ReportsPage() {
   const review = data?.review;
 
   return (
-    <div style={{ padding: "64px 48px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
+    <div className="page-shell">
       <div className="animate-fade-in" style={{ marginBottom: "48px" }}>
         <h1 style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
           Weekly Review

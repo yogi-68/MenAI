@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
 import { computeInitiativeHealth, healthColor } from "@/lib/plans/initiative-health";
+import { InfoTip, HEALTH_LEGEND } from "@/components/ui/info-tip";
+import { auditInitiatives } from "@/lib/plans/data-quality";
 
 interface Goal {
   id: string;
@@ -66,6 +68,7 @@ interface Task {
   due_date: string | null;
   streak_count: number;
   goal_id: string | null;
+  initiative_id: string | null;
   recurrence: string | null;
   created_at: string;
 }
@@ -106,14 +109,13 @@ export default function GoalsPage() {
   const { data: tasksData, isLoading: tasksLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return [];
-      const { data } = await supabase
-        .from("tasks").select("*").eq("user_id", user.id)
-        .in("status", ["pending", "in_progress", "completed"])
-        .order("due_date", { ascending: true });
-      return (data || []) as Task[];
+      const res = await fetch("/api/tasks?status=all");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.tasks || []) as Task[];
     },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   // Fetch initiatives
@@ -141,6 +143,22 @@ export default function GoalsPage() {
   const tasks = tasksData || [];
   const initiatives = initiativesData || [];
   const opportunities = opportunitiesData || [];
+
+  const tasksByInitiative = new Map<string, Task[]>();
+  for (const t of tasks) {
+    if (!t.initiative_id) continue;
+    const list = tasksByInitiative.get(t.initiative_id) ?? [];
+    list.push(t);
+    tasksByInitiative.set(t.initiative_id, list);
+  }
+
+  const taskCountByInitiative = new Map<string, number>();
+  for (const [id, list] of tasksByInitiative) taskCountByInitiative.set(id, list.length);
+
+  const dataIssues = auditInitiatives(
+    initiatives.filter((i) => i.status === "active"),
+    taskCountByInitiative
+  );
 
   const createInitiative = useMutation({
     mutationFn: async () => {
@@ -278,13 +296,13 @@ export default function GoalsPage() {
   const getCatColor = (cat: string) => CATEGORIES.find((c) => c.value === cat)?.color || "#888";
 
   return (
-    <div style={{ padding: "32px", maxWidth: "1000px", margin: "0 auto" }}>
+    <div className="page-shell">
       {/* Header */}
       <div className="animate-fade-in" style={{ marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
             <Target size={28} style={{ color: "var(--accent-primary)" }} />
-            Goals & Tasks
+            Goals & Initiatives
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
             Goals are direction. Initiatives are what you&apos;re actually executing — they drive your daily plan.
@@ -332,11 +350,24 @@ export default function GoalsPage() {
 
       {/* Active Initiatives — primary input for daily plans */}
       <section style={{ marginBottom: "32px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
           <Zap size={18} style={{ color: "var(--accent-primary)" }} />
-          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Active Initiatives</h2>
-          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>feeds daily plan</span>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Initiatives</h2>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>each needs a deadline · feeds daily plan</span>
         </div>
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>
+          <span title={HEALTH_LEGEND.on_track} style={{ marginRight: "12px" }}>● On Track</span>
+          <span title={HEALTH_LEGEND.at_risk} style={{ marginRight: "12px" }}>● At Risk</span>
+          <span title={HEALTH_LEGEND.stalled}>● Stalled</span>
+          <InfoTip text="Hover each status for meaning. Health is based on deadline proximity and recent task activity." />
+        </p>
+        {dataIssues.length > 0 && (
+          <div style={{ padding: "12px 14px", marginBottom: "12px", borderRadius: "var(--radius-md)", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+            {dataIssues.slice(0, 3).map((issue) => (
+              <p key={issue.message} style={{ margin: "0 0 4px" }}>· {issue.message}</p>
+            ))}
+          </div>
+        )}
         {initiativesLoading ? (
           <div className="skeleton" style={{ height: "72px" }} />
         ) : initiatives.length === 0 ? (
@@ -360,7 +391,7 @@ export default function GoalsPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                     {init.title}
-                    <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: "999px", background: "var(--bg-glass)", color: healthColor(health.health) }}>
+                    <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: "999px", background: "var(--bg-glass)", color: healthColor(health.health) }} title={HEALTH_LEGEND[health.health]}>
                       {health.label}
                     </span>
                   </div>
@@ -372,6 +403,15 @@ export default function GoalsPage() {
                   </div>
                   {init.description && (
                     <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>{init.description}</p>
+                  )}
+                  {(tasksByInitiative.get(init.id) || []).length > 0 && (
+                    <ul style={{ marginTop: "10px", paddingLeft: "0", listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {(tasksByInitiative.get(init.id) || []).slice(0, 5).map((t) => (
+                        <li key={t.id} style={{ fontSize: "0.8rem", color: t.status === "completed" ? "var(--text-muted)" : "var(--text-secondary)", textDecoration: t.status === "completed" ? "line-through" : "none" }}>
+                          {t.title}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
                 <button
@@ -673,14 +713,16 @@ export default function GoalsPage() {
             <input
               className="input-field"
               type="date"
+              required
               value={newInitiative.targetDate}
               onChange={(e) => setNewInitiative({ ...newInitiative, targetDate: e.target.value })}
             />
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "-6px" }}>Deadline is required — it drives your daily plan.</p>
             <button
               className="btn-primary"
               style={{ width: "100%", marginTop: "4px" }}
               onClick={() => createInitiative.mutate()}
-              disabled={!newInitiative.title || createInitiative.isPending}
+              disabled={!newInitiative.title || !newInitiative.targetDate || createInitiative.isPending}
             >
               {createInitiative.isPending ? "Creating..." : "Create Initiative"}
             </button>

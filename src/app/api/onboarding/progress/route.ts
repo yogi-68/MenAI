@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
+import { trackProductEvent } from "@/lib/analytics/track-event";
 
 export const runtime = "nodejs";
 
@@ -83,6 +84,8 @@ export async function POST(request: NextRequest) {
           onboarding_completed: true,
           updated_at: new Date().toISOString()
         });
+
+      trackProductEvent(user.id, "onboarding_completed").catch(() => {});
     }
 
     await supabase

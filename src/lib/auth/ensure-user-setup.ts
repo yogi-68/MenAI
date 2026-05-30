@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { trackProductEventOnce } from "@/lib/analytics/track-event";
 
 /**
  * Ensures every authenticated user has a profile and onboarding_progress row.
@@ -46,6 +47,8 @@ export async function ensureUserSetup(user: User): Promise<{
     } else {
       profileCreated = true;
     }
+
+    trackProductEventOnce(user.id, "signup").catch(() => {});
 
     // Profile was deleted — treat as fresh user, reset onboarding
     await service.from("onboarding_progress").upsert(

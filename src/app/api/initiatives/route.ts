@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
+import { trackProductEventOnce } from "@/lib/analytics/track-event";
 
 async function invalidatePlanForUser(userId: string) {
   const supabase = await createServerSupabaseClient();
@@ -45,6 +46,12 @@ export async function POST(req: NextRequest) {
   if (!title?.trim()) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
+  if (!targetDate) {
+    return NextResponse.json(
+      { error: "targetDate is required — initiatives need a deadline for reliable planning" },
+      { status: 400 }
+    );
+  }
 
   const { data, error } = await supabase
     .from("initiatives")
@@ -62,6 +69,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  trackProductEventOnce(user.id, "first_initiative_created").catch(() => {});
   return NextResponse.json({ initiative: data }, { status: 201 });
 }
 

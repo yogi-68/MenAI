@@ -5,6 +5,7 @@ import {
   computeMomentumScore,
   computePlanReturnRate,
 } from "@/lib/plans/momentum-score";
+import { formatMomentumLabel } from "@/lib/plans/language-guard";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -19,5 +20,11 @@ export async function GET() {
     computePlanReturnRate(supabase, user.id),
   ]);
 
-  return NextResponse.json({ metrics, momentum, planReturn });
+  const momentumDisplay = formatMomentumLabel(
+    momentum.label,
+    momentum.factors,
+    momentum.executionRate7d
+  );
+
+  return NextResponse.json({ metrics, momentum, momentumDisplay, planReturn });
 }

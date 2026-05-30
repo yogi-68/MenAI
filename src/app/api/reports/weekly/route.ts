@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
         .eq("user_id", user.id)
         .eq("week_start", weekStart);
     }
-    const result = await generateWeeklyReview(supabase, user.id);
+    const result = await generateWeeklyReview(supabase, user.id, force);
     return NextResponse.json(result);
   } catch (error) {
     console.error("Weekly review error:", error);

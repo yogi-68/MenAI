@@ -3,6 +3,7 @@ import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
 import { computeLifeAreaBalance, lifeAreaLabel } from "@/lib/plans/life-areas";
+import { logAiUsage, checkAiQuota, AI_UNAVAILABLE_MESSAGE } from "@/lib/ai/usage-guard";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface WeeklyReviewContent {
@@ -31,7 +32,8 @@ function weekBounds(date = new Date()) {
 
 export async function generateWeeklyReview(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  forceRegenerate = false
 ): Promise<{ review: WeeklyReviewContent; weekStart: string; weekEnd: string; cached: boolean }> {
   const { weekStart, weekEnd } = weekBounds();
 
@@ -42,13 +44,18 @@ export async function generateWeeklyReview(
     .eq("week_start", weekStart)
     .maybeSingle();
 
-  if (existing?.content) {
+  if (existing?.content && !forceRegenerate) {
     return {
       review: existing.content as WeeklyReviewContent,
       weekStart,
       weekEnd,
       cached: true,
     };
+  }
+
+  const quota = await checkAiQuota(userId, "weekly_review");
+  if (!quota.allowed) {
+    throw new Error(AI_UNAVAILABLE_MESSAGE);
   }
 
   const [execution, momentum, tasksRes, initiativesRes, opportunitiesRes, reflectionsRes] =
@@ -128,14 +135,15 @@ ${reflectionLines.join("\n") || "No reflections logged"}
 
 Return JSON:
 {
-  "biggestWin": "One sentence",
-  "biggestBottleneck": "One sentence",
-  "initiativeHealthChanges": ["bullet points"],
-  "lifeAreaDistribution": "2-3 sentences on where attention went",
-  "opportunitiesSummary": "What was gained/lost/untouched",
+  "biggestWin": "One sentence — cite specific completed task or initiative progress",
+  "biggestBottleneck": "One sentence — cite execution rate, missed tasks, or reflection data",
+  "initiativeHealthChanges": ["bullet with evidence"],
+  "lifeAreaDistribution": "2-3 sentences citing task counts per area",
+  "opportunitiesSummary": "What was gained/lost — cite opportunity list",
   "focusRecommendation": "Clear focus for next week",
-  "executionSummary": "One sentence on execution quality",
-  "narrative": "3-5 sentence coach summary tying it all together"
+  "executionSummary": "One sentence citing 7-day execution rate: ${execution.last7Days.rate}%",
+  "evidenceUsed": ["list each metric you referenced"],
+  "narrative": "3-5 sentence coach summary — every claim must trace to evidenceUsed"
 }`;
 
   const openai = getOpenAI();
@@ -144,13 +152,22 @@ Return JSON:
     temperature: 0.4,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: "Execution coach weekly review. JSON only." },
+      { role: "system", content: "Execution coach weekly review. Every statement must cite data provided. Use hedged language if data is sparse. JSON only." },
       { role: "user", content: prompt },
     ],
   });
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("Empty AI response");
+
+  const usage = completion.usage;
+  await logAiUsage(
+    userId,
+    "weekly_review",
+    "gpt-4o-mini",
+    usage?.prompt_tokens ?? 0,
+    usage?.completion_tokens ?? 0
+  );
 
   const parsed = JSON.parse(raw) as Omit<WeeklyReviewContent, "momentumScore">;
 

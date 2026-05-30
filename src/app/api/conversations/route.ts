@@ -11,10 +11,11 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("conversations")
-    .select("*")
+    .select("id, title, summary, updated_at, message_count, created_at")
     .eq("user_id", user.id)
+    .is("deleted_at", null)
     .order("updated_at", { ascending: false })
-    .limit(50);
+    .limit(30);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -1,6 +1,7 @@
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { trackProductEvent } from "@/lib/analytics/track-event";
 
 export interface MomentumScore {
   score: number;
@@ -145,6 +146,17 @@ export async function computeMomentumScore(
 
   score = Math.min(100, Math.max(0, score));
 
+  if (factors.length === 0) {
+    if (executionRate7d === 0 && initiatives.length === 0) {
+      factors.push("No initiatives or completed tasks logged yet");
+    } else if (executionRate7d === 0) {
+      factors.push("7-day execution rate: 0% on planned tasks");
+    }
+    if (reflections.length === 0) {
+      factors.push("No daily reflections in the last 14 days");
+    }
+  }
+
   return {
     score,
     label: scoreLabel(score),
@@ -203,4 +215,6 @@ export async function recordPlanGeneration(
     .eq("user_id", userId)
     .eq("plan_date", yStr)
     .eq("returned_next_day", false);
+
+  trackProductEvent(userId, "daily_return", { plan_date: planDate }).catch(() => {});
 }

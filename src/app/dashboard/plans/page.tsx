@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Calendar, CheckCircle2, Circle, Clock, Target, AlertTriangle, Sparkles, TrendingUp } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Target, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { InfoTip, CONFIDENCE_HELP } from "@/components/ui/info-tip";
+import { SetupChecklist } from "@/components/onboarding/setup-checklist";
+import { confidenceDisplayLabel, isLowPlanConfidence } from "@/lib/plans/language-guard";
 
 interface DailyPlanContent {
   daySummary: string;
@@ -21,6 +23,7 @@ interface DailyPlanContent {
     gaps: string[];
     strengths: string[];
   };
+  evidence?: string[];
   tasks: DailyPlanTask[];
 }
 
@@ -43,12 +46,6 @@ interface Task {
   actual_minutes: number | null;
 }
 
-function planModeLabel(mode?: string) {
-  if (mode === "context_building") return "Context-building";
-  if (mode === "aggressive") return "Aggressive execution";
-  return "Standard";
-}
-
 function formatDuration(minutes: number) {
   if (minutes < 60) return `${minutes}m`;
   const h = Math.floor(minutes / 60);
@@ -56,18 +53,12 @@ function formatDuration(minutes: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function confidenceColor(score: number) {
-  if (score >= 75) return "var(--accent-primary)";
-  if (score >= 45) return "#f59e0b";
-  return "#ef4444";
-}
-
 export default function DailyPlansPage() {
-  const supabase = createClient();
   const queryClient = useQueryClient();
   const todayKey = new Date().toISOString().split("T")[0];
   const [timePromptTask, setTimePromptTask] = useState<{ id: string; estimated: number } | null>(null);
   const [actualMinutesInput, setActualMinutesInput] = useState("");
+  const [showContext, setShowContext] = useState(false);
 
   const { data: planData, isLoading: planLoading } = useQuery({
     queryKey: ["daily-plan", todayKey],
@@ -77,27 +68,18 @@ export default function DailyPlansPage() {
       return res.json() as Promise<{ plan: DailyPlanContent; created: boolean }>;
     },
     staleTime: 5 * 60_000,
-    retry: 1,
+    refetchOnWindowFocus: false,
   });
 
   const { data: tasks, isLoading: tasksLoading } = useQuery({
     queryKey: ["today-tasks", todayKey],
     queryFn: async () => {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      if (!authUser) return [];
-
-      const { data } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", authUser.id)
-        .eq("due_date", todayKey)
-        .order("created_at", { ascending: true });
-
-      return (data || []) as Task[];
+      const res = await fetch(`/api/tasks?dueDate=today&status=all`);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return (json.tasks || []) as Task[];
     },
-    staleTime: 30_000,
+    staleTime: 15_000,
   });
 
   const { data: executionData } = useQuery({
@@ -126,6 +108,7 @@ export default function DailyPlansPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["execution-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
       setTimePromptTask(null);
       setActualMinutesInput("");
     },
@@ -146,10 +129,12 @@ export default function DailyPlansPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["execution-metrics"] });
     },
   });
 
   const plan = planData?.plan;
+  const topPriority = plan?.whatMattersNow || plan?.daySummary;
   const metrics = executionData?.metrics;
   const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
   const totalTasks = tasks?.length || 0;
@@ -157,6 +142,19 @@ export default function DailyPlansPage() {
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const isLoading = planLoading || tasksLoading;
+  const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
+  const evidence = plan?.evidence || [];
+  const showSetup =
+    lowContext ||
+    plan?.planMode === "context_building" ||
+    (plan?.confidence?.gaps?.length ?? 0) >= 2;
+
+  const hasInitiatives = !evidence.some((e) => e.includes("No active initiatives"));
+  const hasReflections = !evidence.some((e) => e.includes("No daily reflections"));
+  const hasOpportunities = evidence.some((e) => e.includes("opportunit"));
+  const hasCommitments = (plan?.confidence?.strengths || []).some((s) =>
+    s.toLowerCase().includes("commitment")
+  );
 
   // Match plan tasks to DB tasks by title for checkboxes
   const taskByTitle = new Map(
@@ -164,203 +162,126 @@ export default function DailyPlansPage() {
   );
 
   return (
-    <div
-      style={{
-        padding: "64px 48px",
-        maxWidth: "1100px",
-        margin: "0 auto",
-        width: "100%",
-      }}
-    >
-      <div className="animate-fade-in" style={{ marginBottom: "48px" }}>
-        <h1
-          style={{
-            fontSize: "2.5rem",
-            fontWeight: 400,
-            letterSpacing: "-0.03em",
-            lineHeight: 1.2,
-          }}
-        >
+    <div className="page-shell">
+      <header className="animate-fade-in" style={{ marginBottom: "32px" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", marginBottom: "8px" }}>
+          {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+        </p>
+        <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.5rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
           Today&apos;s Plan
         </h1>
-        <p
+      </header>
+
+      {!isLoading && showSetup && (
+        <SetupChecklist
+          hasInitiatives={hasInitiatives}
+          hasOpportunities={hasOpportunities}
+          hasCommitments={hasCommitments}
+          hasReflections={hasReflections}
+        />
+      )}
+
+      {topPriority && !isLoading && (
+        <section
+          className="glass-card"
           style={{
-            color: "var(--text-secondary)",
-            fontSize: "1.1rem",
-            marginTop: "12px",
-            fontWeight: 300,
-            lineHeight: 1.6,
+            padding: "24px 28px",
+            marginBottom: "24px",
+            borderLeft: "3px solid var(--accent-primary)",
           }}
         >
-          {new Date().toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
-        </p>
-        {plan?.daySummary && (
-          <p
+          <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
+            Top priority
+          </p>
+          <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "var(--text-primary)", fontWeight: 400 }}>
+            {topPriority}
+          </p>
+          {plan?.confidence && (
+            <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                Context
+                <InfoTip text={CONFIDENCE_HELP} />
+              </span>
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  color: lowContext ? "#f59e0b" : "var(--accent-primary)",
+                }}
+              >
+                {confidenceDisplayLabel(plan.confidence.score)}
+              </span>
+              {totalTasks > 0 && (
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  · {completedTasks}/{totalTasks} done today ({completionRate}%)
+                </span>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {(plan?.whyTheseTasks || plan?.topObstacle) && (
+        <section className="glass-card" style={{ padding: "20px 24px", marginBottom: "24px" }}>
+          <button
+            type="button"
+            onClick={() => setShowContext((v) => !v)}
             style={{
-              color: "var(--text-primary)",
-              fontSize: "1rem",
-              marginTop: "20px",
-              fontWeight: 300,
-              lineHeight: 1.7,
-              maxWidth: "640px",
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              padding: 0,
+              fontSize: "0.85rem",
             }}
           >
-            {plan.daySummary}
-            {plan.planMode && (
-              <span style={{ display: "block", marginTop: "8px", fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                Mode: {planModeLabel(plan.planMode)}
-              </span>
-            )}
-          </p>
-        )}
-
-        {metrics && (
-          <section className="glass-card" style={{ padding: "20px 24px", marginTop: "24px", marginBottom: "24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-              <TrendingUp size={16} style={{ color: "var(--accent-primary)" }} />
-              <span style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>
-                Execution rate (planned tasks)
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: "1.5rem", fontWeight: 300 }}>{metrics.last7Days.rate}%</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>7-day ({metrics.last7Days.completed}/{metrics.last7Days.total})</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "1.5rem", fontWeight: 300 }}>{metrics.last30Days.rate}%</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>30-day ({metrics.last30Days.completed}/{metrics.last30Days.total})</div>
-              </div>
-            </div>
-          </section>
-        )}
-        {(plan?.whatMattersNow || plan?.topObstacle || plan?.whyTheseTasks) && (
-          <section
-            className="glass-card"
-            style={{ padding: "28px 32px", marginBottom: "32px" }}
-          >
-            {plan.confidence && (
-              <div style={{ marginBottom: "20px" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    flexWrap: "wrap",
-                    gap: "12px",
-                    marginBottom: "12px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: "0.8rem",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                      color: "var(--text-muted)",
-                    }}
-                  >
-                    Plan confidence
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "1.25rem",
-                      fontWeight: 600,
-                      color: confidenceColor(plan.confidence.score),
-                    }}
-                  >
-                    {plan.confidence.score}%
-                  </span>
+            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Sparkles size={16} />
+              Why these tasks?
+            </span>
+            {showContext ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          {showContext && (
+            <div style={{ marginTop: "16px" }}>
+              {plan.evidence && plan.evidence.length > 0 && (
+                <div style={{ marginBottom: "12px" }}>
+                  <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: "6px" }}>
+                    Based on
+                  </p>
+                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                    {plan.evidence.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
                 </div>
-                {plan.confidence.score < 50 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: "8px",
-                      padding: "12px 14px",
-                      borderRadius: "var(--radius-md)",
-                      background: "rgba(239, 68, 68, 0.08)",
-                      border: "1px solid rgba(239, 68, 68, 0.2)",
-                      marginBottom: "12px",
-                      fontSize: "0.85rem",
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px", color: "#ef4444" }} />
-                    Low context — don&apos;t blindly trust this plan.{" "}
-                    <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-                      Add initiatives with deadlines
-                    </Link>
-                    .
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {plan.confidence.gaps.map((gap) => (
-                    <p key={gap} style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>
-                      · {gap}
-                    </p>
-                  ))}
-                  {plan.confidence.strengths.map((s) => (
-                    <p key={s} style={{ fontSize: "0.8rem", color: "var(--accent-primary)", margin: 0, opacity: 0.9 }}>
-                      ✓ {s}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <Sparkles size={16} style={{ color: "var(--accent-secondary)" }} />
-              <span style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>
-                Why these tasks?
-              </span>
+              )}
+              {lowContext && (
+                <p style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5 }}>
+                  Limited context — complete setup tasks above or{" "}
+                  <Link href="/dashboard/goals">add initiatives with deadlines</Link>.
+                </p>
+              )}
+              {plan.topObstacle && (
+                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                  <strong style={{ fontWeight: 500, color: "var(--text-muted)" }}>Blocker: </strong>
+                  {plan.topObstacle}
+                </p>
+              )}
+              {plan.whyTheseTasks && (
+                <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-primary)" }}>{plan.whyTheseTasks}</p>
+              )}
             </div>
-
-            {plan.whatMattersNow && (
-              <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "8px" }}>
-                <span style={{ color: "var(--text-muted)" }}>What matters today: </span>
-                {plan.whatMattersNow}
-              </p>
-            )}
-            {plan.topObstacle && (
-              <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "12px" }}>
-                <span style={{ color: "var(--text-muted)" }}>Main obstacle: </span>
-                {plan.topObstacle}
-              </p>
-            )}
-            {plan.whyTheseTasks && (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.7, fontWeight: 300 }}>
-                {plan.whyTheseTasks}
-              </p>
-            )}
-            {plan.lifeAreaInsight && (
-              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "12px", lineHeight: 1.6 }}>
-                {plan.lifeAreaInsight}
-              </p>
-            )}
-            {plan.assumptions && plan.assumptions.length > 0 && (
-              <div style={{ marginTop: "12px" }}>
-                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "4px" }}>Assumptions</p>
-                {plan.assumptions.map((a) => (
-                  <p key={a} style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0 }}>· {a}</p>
-                ))}
-              </div>
-            )}
-            {plan.timeEstimationInsight && (
-              <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "12px" }}>{plan.timeEstimationInsight}</p>
-            )}
-          </section>
-        )}
-      </div>
+          )}
+        </section>
+      )}
 
       {timePromptTask && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
-          <div className="glass-card" style={{ padding: "28px", maxWidth: 360, width: "100%" }}>
+          <div className="glass-card modal-sheet" style={{ padding: "28px", maxWidth: 360, width: "calc(100% - 32px)" }}>
             <h3 style={{ fontSize: "1rem", marginBottom: "8px" }}>How long did it take?</h3>
             <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "16px" }}>
               Planned: {timePromptTask.estimated}m — actual time helps personalize future plans.
@@ -401,64 +322,14 @@ export default function DailyPlansPage() {
         </div>
       )}
 
-      {totalTasks > 0 && (
-        <section
-          className="glass-card"
-          style={{ padding: "28px 36px", marginBottom: "32px" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "16px",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--text-muted)",
-                  marginBottom: "6px",
-                }}
-              >
-                Done today
-              </div>
-              <div style={{ fontSize: "1.75rem", fontWeight: 300 }}>
-                {completedTasks} / {totalTasks}
-              </div>
-            </div>
-            <div style={{ fontSize: "1.75rem", fontWeight: 300, color: "var(--accent-primary)" }}>
-              {completionRate}%
-            </div>
-          </div>
-        </section>
-      )}
-
-      <section className="glass-card" style={{ padding: "40px" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "12px",
-            marginBottom: "28px",
-          }}
-        >
-          <Calendar size={20} style={{ color: "var(--text-muted)" }} />
-          <h2
-            style={{
-              fontSize: "0.85rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: "var(--text-secondary)",
-              fontWeight: 500,
-            }}
-          >
-            Today&apos;s Actions
-          </h2>
+      <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>Tasks</h2>
+          {totalTasks > 0 && (
+            <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+              {completedTasks}/{totalTasks} complete
+            </span>
+          )}
         </div>
 
         {isLoading ? (
@@ -631,7 +502,7 @@ export default function DailyPlansPage() {
           >
             Add active initiatives with deadlines on{" "}
             <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-              Goals &amp; Tasks
+              Goals &amp; Initiatives
             </Link>
             {" "}— they drive your daily plan.
           </p>
@@ -691,7 +562,7 @@ function ReflectionSection({ todayKey }: { todayKey: string }) {
   if (!showReflection && !isLoading) return null;
 
   return (
-    <section className="glass-card" style={{ padding: "36px 40px", marginTop: "32px" }}>
+    <section id="reflection" className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)", marginTop: "32px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
         <Sparkles size={18} style={{ color: "var(--accent-secondary)" }} />
         <h2 style={{ fontSize: "1rem", fontWeight: 500 }}>End of day reflection</h2>
@@ -743,14 +614,16 @@ function ReflectionSection({ todayKey }: { todayKey: string }) {
               style={{ resize: "vertical" }}
             />
           </div>
-          <button
-            className="btn-primary"
-            style={{ alignSelf: "flex-start" }}
-            onClick={() => saveReflection.mutate()}
-            disabled={!movedForward.trim() || !blockedBy.trim() || !tomorrowContext.trim() || saveReflection.isPending}
-          >
-            {saveReflection.isPending ? "Saving..." : existing ? "Update reflection" : "Save reflection"}
-          </button>
+          <div className="sticky-action">
+            <button
+              className="btn-primary"
+              style={{ width: "100%", maxWidth: 320 }}
+              onClick={() => saveReflection.mutate()}
+              disabled={!movedForward.trim() || !blockedBy.trim() || !tomorrowContext.trim() || saveReflection.isPending}
+            >
+              {saveReflection.isPending ? "Saving..." : existing ? "Update reflection" : "Save reflection"}
+            </button>
+          </div>
         </div>
       )}
     </section>
