@@ -99,6 +99,20 @@ export async function GET() {
       longTermThemes: modelSummary.longTerm,
       whoAmI: userModel.whoAmIAnswer,
       confidence: userModel.confidence,
+      activePortfolio: userModel.activePortfolio.map((p) => ({
+        id: p.initiativeId,
+        title: p.title,
+        lifeArea: p.lifeArea,
+        healthLabel: p.healthLabel,
+        isFocus: p.isFocus,
+      })),
+      executionAllocation: userModel.executionAllocation.map((a) => ({
+        initiativeId: a.initiativeId,
+        title: a.title,
+        percent: a.percent,
+        role: a.role,
+        rationale: a.rationale,
+      })),
     },
     currentFocus,
     focusTasks: focusTasks.map((t) => ({

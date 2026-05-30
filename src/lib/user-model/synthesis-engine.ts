@@ -14,6 +14,7 @@ import {
   buildWhoAmIAnswer,
   emptyUserModel,
 } from "@/lib/user-model/narrative";
+import { computeExecutionAllocation } from "@/lib/user-model/execution-allocation";
 
 function computeConfidence(input: {
   hasPrimary: boolean;
@@ -93,6 +94,11 @@ export async function synthesizeUserModel(
 
     return empty;
   }
+
+  const { allocation, portfolio } = computeExecutionAllocation(
+    ctx.initiatives,
+    ctx.focusInitiativeId ?? primary.id
+  );
 
   const planContext = await loadPlanContextData(supabase, userId, primary.id);
   const linkedGoal = primary.goal_id
@@ -180,6 +186,8 @@ export async function synthesizeUserModel(
       targetDate: primary.target_date,
     },
     secondaryOutcomes,
+    activePortfolio: portfolio,
+    executionAllocation: allocation,
     obstacles,
     stillNeeds: goalAnalysis.missingVariables.map((m) => m.label),
     understands: goalAnalysis.knownFacts.filter((f) => !f.startsWith("Initiative:")),
@@ -203,6 +211,8 @@ export async function synthesizeUserModel(
     primaryDomain: domain,
     primaryHeadline,
     secondaryTitles: secondaryOutcomes.map((o) => o.title),
+    portfolioTitles: portfolio.filter((p) => !p.isFocus).map((p) => p.title),
+    allocation: allocation.map((a) => ({ title: a.title, percent: a.percent, role: a.role })),
     obstacles,
     stillNeeds: model.stillNeeds,
     recentActivity,

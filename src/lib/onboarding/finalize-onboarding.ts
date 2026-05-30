@@ -6,6 +6,7 @@ import {
 import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 import { cancelLegacyDirectionTasks } from "@/lib/plans/legacy-task-cleanup";
 import { ensureTodayPlan } from "@/lib/plans/daily-plan-generator";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 
 interface StoredResponse {
@@ -218,6 +219,8 @@ export async function finalizeOnboarding(
       console.error("[onboarding] first plan generation:", err);
     }
   }
+
+  scheduleUserModelRefresh(supabase, userId);
 
   return { initiativeId, goalsCreated };
 }

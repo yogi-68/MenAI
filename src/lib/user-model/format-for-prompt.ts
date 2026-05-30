@@ -17,10 +17,31 @@ export function formatUserModelForPrompt(model: UserModel): string {
     sections.push(`Current milestone (focus initiative only): ${model.currentMilestone}`);
   }
 
+  if (model.executionAllocation.length > 0) {
+    sections.push(
+      "Execution allocation (today's time budget — mix tasks proportionally):",
+      ...model.executionAllocation.map(
+        (a) => `- ${a.title}: ${a.percent}% (${a.role}) — ${a.rationale}`
+      )
+    );
+  }
+
+  if (model.activePortfolio.length > 0) {
+    sections.push(
+      "Active portfolio:",
+      ...model.activePortfolio.map(
+        (p) =>
+          `- ${p.title}${p.isFocus ? " [FOCUS]" : ""} (${p.healthLabel})`
+      )
+    );
+  }
+
   if (model.secondaryOutcomes.length > 0) {
     sections.push(
-      "Secondary outcomes (long-term — NOT today's primary):",
-      ...model.secondaryOutcomes.map((o) => `- [${o.role}] ${o.title}`)
+      "Long-term direction (goals — maintenance only, not primary daily blocks):",
+      ...model.secondaryOutcomes
+        .filter((o) => o.role === "direction")
+        .map((o) => `- ${o.title}`)
     );
   }
 
@@ -30,8 +51,9 @@ export function formatUserModelForPrompt(model: UserModel): string {
 
   sections.push(
     "",
-    "When the user asks 'who am I' or about their direction, use the primary vs secondary distinction above.",
-    "Never attribute a secondary theme's outcome to the primary focus initiative."
+    "One person, multiple pursuits. Keep initiative interview contexts separate — never use fitness context for business tasks.",
+    "Today's plan SHOULD mix initiatives using execution allocation. Focus gets the largest block; portfolio initiatives get proportional time.",
+    "When the user asks 'who am I', describe focus + portfolio + long-term direction distinctly."
   );
 
   return sections.join("\n");

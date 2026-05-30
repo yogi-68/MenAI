@@ -30,6 +30,9 @@ import {
   loadExecutionContext,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import { getUserModel } from "@/lib/user-model/loader";
+import { formatExecutionAllocationForPrompt } from "@/lib/user-model/execution-allocation";
+import type { PlanContextData } from "@/lib/plans/plan-interview";
 import {
   buildGoalAnalysis,
   COACH_WRITING_RULES,
@@ -38,6 +41,7 @@ import {
   type GoalAnalysis,
 } from "@/lib/plans/coach-insights";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
 
@@ -122,9 +126,98 @@ export interface PlanUserContext {
   timeEstimationInsight?: string;
   planPhase: PlanPhase;
   middayCompleted: string[];
+  userModelNarrative: string;
+  executionAllocationLines: string[];
+  initiativeContextBlocks: string[];
 }
 
-import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
+function buildDomainScopedContextNotes(
+  init: { title: string; description: string | null; life_area: string | null },
+  planContext: PlanContextData
+): string[] {
+  const notes: string[] = [];
+  const domain = detectDomain(`${init.title} ${init.description || ""}`, init.life_area);
+
+  if (planContext.biggestObstacle?.trim()) {
+    notes.push(`Blocker: ${planContext.biggestObstacle}`);
+  }
+  if (typeof planContext.weeklyAvailableHours === "number") {
+    notes.push(`Weekly capacity: ${planContext.weeklyAvailableHours} hours`);
+  }
+  if (planContext.initiativeOutcome90d?.trim()) {
+    notes.push(`90-day outcome: ${planContext.initiativeOutcome90d}`);
+  }
+  if (domain === "business" && planContext.businessFocus?.trim()) {
+    notes.push(`Building toward: ${planContext.businessFocus}`);
+  }
+  if (domain === "fitness") {
+    if (planContext.currentWeight) notes.push(`Current weight: ${planContext.currentWeight}`);
+    if (planContext.currentBodyFatPct) notes.push(`Body-fat: ${planContext.currentBodyFatPct}%`);
+    if (planContext.trainingDaysPerWeek) {
+      notes.push(`Training: ${planContext.trainingDaysPerWeek} days/week`);
+    }
+  }
+  if (domain === "learning" && planContext.studyHoursPerDay) {
+    notes.push(`Study: ${planContext.studyHoursPerDay} hrs/day`);
+  }
+  if (planContext.currentMetric?.trim()) {
+    notes.push(`Baseline: ${planContext.currentMetric}`);
+  }
+
+  return notes;
+}
+
+async function buildInitiativeContextBlocks(
+  supabase: SupabaseClient,
+  userId: string,
+  initiatives: Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    life_area: string | null;
+  }>,
+  allocationIds: string[]
+): Promise<string[]> {
+  const blocks: string[] = [];
+  const idSet = new Set(allocationIds);
+
+  for (const init of initiatives.filter((i) => idSet.has(i.id))) {
+    const planContext = await loadPlanContextData(supabase, userId, init.id);
+    const notes = buildDomainScopedContextNotes(init, planContext);
+    if (notes.length === 0) continue;
+    const domain = detectDomain(`${init.title} ${init.description || ""}`, init.life_area);
+    blocks.push(
+      `${init.title} (${domain} — use ONLY for tasks linked to "${init.title}"):\n${notes.map((n) => `  - ${n}`).join("\n")}`
+    );
+  }
+
+  return blocks;
+}
+
+function buildMilestoneLinesForAllocation(
+  milestonesData: Array<{
+    initiative_id: string;
+    title: string;
+    status: string;
+    initiatives: { title?: string } | { title?: string }[] | null;
+  }>,
+  allocationIds: string[]
+): string[] {
+  const lines: string[] = [];
+  for (const initId of allocationIds) {
+    const initMilestones = milestonesData.filter((m) => m.initiative_id === initId);
+    const current =
+      initMilestones.find((m) => m.status === "in_progress") ||
+      initMilestones.find((m) => m.status === "pending");
+    if (!current) continue;
+    const initRaw = current.initiatives;
+    const initTitle = Array.isArray(initRaw)
+      ? initRaw[0]?.title
+      : initRaw?.title || "Initiative";
+    lines.push(`${initTitle}: [CURRENT] ${current.title}`);
+  }
+  return lines;
+}
 
 export { isVagueTask } from "@/lib/tasks/finishable-today";
 
@@ -269,7 +362,10 @@ export async function fetchPlanUserContext(
 
   const initiativesRaw = initiativesRes.data || [];
   const execCtx = await loadExecutionContext(supabase, userId);
-  const primaryId = execCtx.primaryInitiative?.id ?? null;
+  const userModel = await getUserModel(supabase, userId);
+  const allocationIds = userModel.executionAllocation.map((a) => a.initiativeId);
+  const primaryId =
+    userModel.currentFocus.initiativeId ?? execCtx.primaryInitiative?.id ?? null;
   const initiatives = primaryId
     ? [
         ...initiativesRaw.filter((i) => i.id === primaryId),
@@ -354,12 +450,10 @@ export async function fetchPlanUserContext(
       return `[URGENT — beats routine plans] ${o.title} — ${o.urgency} urgency${due}`;
     });
 
-  const milestoneLines = (milestonesData || []).map((m) => {
-    const initTitle = (m.initiatives as { title?: string } | null)?.title || "Initiative";
-    const status =
-      m.status === "completed" ? "done" : m.status === "in_progress" ? "CURRENT" : "upcoming";
-    return `${initTitle}: [${status}] ${m.title}`;
-  });
+  const milestoneLines = buildMilestoneLinesForAllocation(
+    milestonesData || [],
+    allocationIds.length > 0 ? allocationIds : primaryInit ? [primaryInit.id] : []
+  );
 
   let currentFocusTitle: string | null = primaryInit?.title ?? null;
   let currentFocusUntil: string | null =
@@ -526,23 +620,22 @@ export async function fetchPlanUserContext(
   confidence.gaps = improvementHints(dimensionInput);
 
   const planContextNotes: string[] = [];
-  if (planContext.businessFocus?.trim()) {
-    planContextNotes.push(`Building toward: ${planContext.businessFocus}`);
+  const initiativeContextBlocks = await buildInitiativeContextBlocks(
+    supabase,
+    userId,
+    initiativesRaw.map((i) => ({
+      id: i.id,
+      title: i.title,
+      description: i.description,
+      life_area: i.life_area,
+    })),
+    allocationIds.length > 0 ? allocationIds : primaryInit ? [primaryInit.id] : []
+  );
+
+  if (primaryInit && initiativeContextBlocks.length === 0) {
+    const fallbackContext = await loadPlanContextData(supabase, userId, primaryInit.id);
+    planContextNotes.push(...buildDomainScopedContextNotes(primaryInit, fallbackContext));
   }
-  if (planContext.initiativeOutcome90d?.trim()) {
-    planContextNotes.push(`90-day outcome: ${planContext.initiativeOutcome90d}`);
-  }
-  if (planContext.biggestObstacle?.trim()) {
-    planContextNotes.push(`Biggest blocker: ${planContext.biggestObstacle}`);
-  }
-  if (typeof planContext.weeklyAvailableHours === "number") {
-    planContextNotes.push(`Weekly capacity: ${planContext.weeklyAvailableHours} hours`);
-  }
-  if (planContext.currentWeight) planContextNotes.push(`Current weight: ${planContext.currentWeight}`);
-  if (planContext.currentBodyFatPct) planContextNotes.push(`Current body-fat: ${planContext.currentBodyFatPct}%`);
-  if (planContext.trainingDaysPerWeek) planContextNotes.push(`Training: ${planContext.trainingDaysPerWeek} days/week`);
-  if (planContext.studyHoursPerDay) planContextNotes.push(`Study: ${planContext.studyHoursPerDay} hrs/day`);
-  if (planContext.currentMetric) planContextNotes.push(`Current baseline: ${planContext.currentMetric}`);
 
   const planMode: PlanMode =
     effectiveScore < 55
@@ -550,7 +643,13 @@ export async function fetchPlanUserContext(
       : effectiveScore >= 78
         ? "aggressive"
         : "normal";
-  const maxTasks = planMode === "context_building" ? 2 : planMode === "aggressive" ? 5 : 4;
+  const allocSlots = userModel.executionAllocation.filter((a) => a.percent >= 10).length || 1;
+  const maxTasks =
+    planMode === "context_building"
+      ? 2
+      : planMode === "aggressive"
+        ? Math.min(6, 2 + allocSlots * 2)
+        : Math.min(5, 1 + allocSlots * 2);
 
   const baseMinutes = 480;
   const availableMinutes =
@@ -566,6 +665,16 @@ export async function fetchPlanUserContext(
   if (planPhase === "afternoon" && middayCompleted.length > 0) {
     availableMinutesAdjusted = Math.max(90, Math.round(availableMinutes * 0.55));
   }
+
+  const executionAllocationLines =
+    userModel.executionAllocation.length > 0
+      ? formatExecutionAllocationForPrompt(
+          userModel.executionAllocation,
+          availableMinutesAdjusted
+        )
+      : primaryInit
+        ? [`[FOCUS — 100%] ${primaryInit.title}: current focus only`]
+        : [];
 
   return {
     initiatives: initiativeLines,
@@ -611,6 +720,9 @@ export async function fetchPlanUserContext(
     timeEstimationInsight: timeProfile.insight ?? undefined,
     planPhase,
     middayCompleted,
+    userModelNarrative: userModel.narrative,
+    executionAllocationLines,
+    initiativeContextBlocks,
   };
 }
 
@@ -651,33 +763,45 @@ function buildPrompt(ctx: PlanUserContext): string {
 - Include at least one task that advances the highest-urgency opportunity if any exist
 - Tasks should be ambitious but still concrete and measurable today`
         : `NORMAL MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
-- Generate up to ${ctx.maxTasks} tasks
+- Generate up to ${ctx.maxTasks} tasks across the active portfolio using EXECUTION ALLOCATION
+- Include at least one task per initiative with allocation >= 15% unless urgent opportunity overrides
 - Include "assumptions" array listing 1–3 assumptions you made due to imperfect context
-- Balance across life areas if one area dominates`;
+- Explain the mix in whyTheseTasks — e.g. "Fitness gets 60% because it's your focus; real estate gets 30% as an active 90-day objective"`;
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
 
-PRIORITY STACK (strict — higher beats lower):
-1. URGENT OPPORTUNITIES — time-sensitive events (interviews, deadlines, crises) override everything
-2. CURRENT FOCUS initiative milestone — one active focus only; secondary initiatives get zero tasks unless opportunity demands
-3. Other initiative milestones (in_progress milestone only)
-4. Routine / maintenance tasks last
+USER MODEL (authoritative — one person, multiple pursuits):
+${ctx.userModelNarrative}
 
-CURRENT FOCUS (only one — everything else is secondary):
-${ctx.currentFocus ? `  - ${ctx.currentFocus}${ctx.currentFocusUntil ? ` until ${ctx.currentFocusUntil}` : ""}` : "  - Not set — spread tasks across initiatives or ask user to pick focus"}
+EXECUTION ALLOCATION (distribute tasks and time proportionally — intelligently mixed day):
+${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% to current focus initiative")}
 
-Plan phase: ${ctx.planPhase}${ctx.middayCompleted.length > 0 ? `\nAlready completed this morning:\n${ctx.middayCompleted.map((t) => `  - ${t}`).join("\n")}\nGenerate ONLY remaining afternoon tasks.` : ""}
+PRIORITY STACK:
+1. URGENT OPPORTUNITIES — time-sensitive events override routine allocation
+2. FOCUS initiative (${ctx.executionAllocationLines[0]?.match(/(\d+)%/)?.[1] ?? "60"}%+ of tasks) — highest-leverage milestone work
+3. SECONDARY portfolio initiatives — proportional blocks per allocation above
+4. MAINTENANCE — quick touches on neglected or low-% initiatives
+5. Goals (direction only) — never primary task source unless no initiatives exist
 
-URGENT OPPORTUNITIES (override routine plans — rearrange day around these):
-${listOrFallback(ctx.urgentOpportunities, "None — proceed with initiative milestones")}
+CURRENT FOCUS (gets largest share — not the only share):
+${ctx.currentFocus ? `  - ${ctx.currentFocus}${ctx.currentFocusUntil ? ` until ${ctx.currentFocusUntil}` : ""}` : "  - Not set — spread across active portfolio"}
 
-Initiative milestones (generate tasks ONLY from the CURRENT in_progress milestone — each task must advance that milestone today):
-${listOrFallback(ctx.initiativeMilestones, "No milestones yet — one context-building task to define the first milestone")}
+CONTEXT ISOLATION RULE — critical:
+- Each initiative has its own interview context below. NEVER apply fitness metrics to business tasks or vice versa.
+- Tasks must use ONLY the context block matching their linkedInitiative.
 
-Every task in "tasks" MUST include linkedMilestone set to the exact title of the current in_progress milestone.
-Tasks must be smaller than the milestone — e.g. milestone "Create calorie deficit plan" → tasks "Calculate maintenance calories", "Draft 7-day meal template".
+Plan phase: ${ctx.planPhase}${ctx.middayCompleted.length > 0 ? `\nAlready completed this morning:\n${ctx.middayCompleted.map((t) => `  - ${t}`).join("\n")}\nGenerate ONLY remaining afternoon tasks — preserve allocation ratios.` : ""}
 
-PRIMARY INPUT — Active initiatives:
+URGENT OPPORTUNITIES (override allocation — rearrange day around these):
+${listOrFallback(ctx.urgentOpportunities, "None — proceed with allocated initiative blocks")}
+
+Initiative milestones (one CURRENT milestone per initiative — tasks advance that milestone):
+${listOrFallback(ctx.initiativeMilestones, "No milestones yet — include one context-building task per initiative missing milestones")}
+
+Every non-context-building task MUST include linkedInitiative AND linkedMilestone matching its initiative's CURRENT milestone.
+Task estimatedMinutes should roughly fit the allocation percentages above.
+
+PRIMARY INPUT — Active initiatives (full portfolio):
 ${listOrFallback(ctx.initiatives, "NONE — context is thin; prefer context-building tasks")}
 
 Initiative health (narrative — use these labels in whyItMatters, not percentages):
@@ -715,8 +839,8 @@ Each task needs a deliverable + successMetric that is yes/no verifiable today.
 Commitments:
 ${listOrFallback(ctx.commitments, "None")}
 
-Interview context (user-provided — prioritize in planning):
-${listOrFallback(ctx.planContextNotes, "None yet — gaps remain in obstacle/time clarity")}
+Interview context (per-initiative — NEVER cross-contaminate domains):
+${ctx.initiativeContextBlocks.length > 0 ? ctx.initiativeContextBlocks.join("\n\n") : listOrFallback(ctx.planContextNotes, "None yet — gaps remain in obstacle/time clarity")}
 
 Vision: ${ctx.vision}
 
@@ -756,10 +880,10 @@ LANGUAGE RULES:
 - Include "evidenceUsed" array listing each specific data point you relied on.
 - Do NOT use hedging phrases. Say what's missing or what to do today.
 
-CRITICAL: Generate tasks only when evidence shows highest-leverage action today.
-Urgent opportunities ALWAYS beat routine initiative tasks.
-Tasks must advance the current in_progress milestone — never repeat generic work.
-Each task whyItMatters MUST answer "Why this task?" with user-specific evidence (e.g. "You've delayed outreach for 5 days. This unblocks that.").
+CRITICAL: Generate an intelligently mixed plan — not random, not single-domain-only.
+Urgent opportunities ALWAYS beat routine allocation.
+Each task advances its initiative's CURRENT milestone using ONLY that initiative's context.
+whyTheseTasks MUST explain the allocation mix and why each initiative got its share today.
 
 ${TASK_QUALITY_PROMPT}
 

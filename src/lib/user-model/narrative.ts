@@ -43,7 +43,14 @@ export function buildWhoAmIAnswer(model: UserModel): string {
       .slice(0, 3)
       .map((o) => o.title)
       .join("; ");
-    parts.push(`Longer-term themes also in play: ${secondary}.`);
+    parts.push(`Also actively pursuing: ${secondary}.`);
+  }
+
+  if (model.executionAllocation.length > 1) {
+    const mix = model.executionAllocation
+      .map((a) => `${a.title} (${a.percent}%)`)
+      .join(", ");
+    parts.push(`Today's execution mix: ${mix}.`);
   }
 
   if (model.stillNeeds.length > 0) {
@@ -66,6 +73,8 @@ export function buildUserModelNarrative(input: {
   primaryDomain: CoachDomain;
   primaryHeadline: string | null;
   secondaryTitles: string[];
+  portfolioTitles: string[];
+  allocation: Array<{ title: string; percent: number; role: string }>;
   obstacles: string[];
   stillNeeds: string[];
   recentActivity: string | null;
@@ -81,13 +90,26 @@ export function buildUserModelNarrative(input: {
 
   if (input.primaryTitle) {
     lines.push(
-      `CURRENT EXECUTION FOCUS (${domainThemeLabel(input.primaryDomain)}): ${input.primaryHeadline || input.primaryTitle}`
+      `CURRENT FOCUS (${domainThemeLabel(input.primaryDomain)}): ${input.primaryHeadline || input.primaryTitle}`
+    );
+  }
+
+  if (input.portfolioTitles.length > 0) {
+    lines.push(`Active portfolio: ${input.portfolioTitles.join("; ")}`);
+  }
+
+  if (input.allocation.length > 0) {
+    lines.push(
+      "Execution allocation (today's time budget):",
+      ...input.allocation.map(
+        (a) => `- ${a.title}: ${a.percent}% (${a.role})`
+      )
     );
   }
 
   if (input.secondaryTitles.length > 0) {
     lines.push(
-      `Secondary themes (direction, not today's primary): ${input.secondaryTitles.join("; ")}`
+      `Long-term direction (goals, not daily tasks): ${input.secondaryTitles.join("; ")}`
     );
   }
 
@@ -104,7 +126,7 @@ export function buildUserModelNarrative(input: {
   }
 
   lines.push(
-    "RULE: When answering about the user, treat CURRENT EXECUTION FOCUS as primary. Secondary themes are long-term direction — do not merge them into today's plan or primary outcome."
+    "RULE: One person, multiple pursuits. Keep initiative contexts separate (fitness answers stay on fitness). Today's plan intelligently mixes initiatives using execution allocation — focus gets the largest share, portfolio initiatives get proportional blocks."
   );
 
   return lines.join("\n");
@@ -149,6 +171,8 @@ export function emptyUserModel(): UserModel {
     },
     primaryOutcome: { headline: null, ninetyDayOutcome: null, targetDate: null },
     secondaryOutcomes: [],
+    activePortfolio: [],
+    executionAllocation: [],
     obstacles: [],
     stillNeeds: ["A specific initiative with a deadline"],
     understands: [],

@@ -38,6 +38,20 @@ interface TodayPayload {
     longTermThemes: string | null;
     whoAmI: string;
     confidence: string;
+    activePortfolio?: Array<{
+      id: string;
+      title: string;
+      lifeArea: string | null;
+      healthLabel: string;
+      isFocus: boolean;
+    }>;
+    executionAllocation?: Array<{
+      initiativeId: string;
+      title: string;
+      percent: number;
+      role: string;
+      rationale: string;
+    }>;
   };
 }
 
@@ -144,7 +158,7 @@ export default function DashboardOverview() {
             }}
           >
             <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
-              Current execution focus
+              Current focus
             </p>
             <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>
               {data.userModel?.primaryOutcome || data.currentFocus.title}
@@ -171,20 +185,68 @@ export default function DashboardOverview() {
           </section>
         )}
 
+        {data?.userModel?.executionAllocation && data.userModel.executionAllocation.length > 0 && (
+          <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
+              Today&apos;s execution mix
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {data.userModel.executionAllocation.map((slot) => (
+                <div key={slot.initiativeId}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)" }}>
+                      {slot.title}
+                      {slot.role === "focus" && (
+                        <span style={{ marginLeft: 8, fontSize: "0.72rem", color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          Focus
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ fontSize: "0.9rem", color: "var(--accent-primary)", fontWeight: 500 }}>
+                      {slot.percent}%
+                    </span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 2, background: "var(--bg-glass)", overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${slot.percent}%`,
+                        height: "100%",
+                        background: slot.role === "focus" ? "var(--accent-primary)" : "var(--text-muted)",
+                        opacity: slot.role === "focus" ? 1 : 0.55,
+                      }}
+                    />
+                  </div>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "6px 0 0", lineHeight: 1.5 }}>
+                    {slot.rationale}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {data?.coachBriefing && data.hasInitiatives && (
           <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
               What MenAI understands
             </h2>
-            {data.coachBriefing.understands.length > 0 ? (
-              <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
-                {data.coachBriefing.understands.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>Initiative created — baseline details still missing.</p>
+            {data.userModel?.whoAmI && (
+              <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.75, marginBottom: 16, whiteSpace: "pre-wrap" }}>
+                {data.userModel.whoAmI}
+              </p>
             )}
+            {!data.userModel?.whoAmI &&
+              (data.coachBriefing.understands.length > 0 ? (
+                <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
+                  {data.coachBriefing.understands.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>
+                  Initiative created — baseline details still missing.
+                </p>
+              ))}
             {data.coachBriefing.stillNeeds.length > 0 && (
               <>
                 <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
@@ -282,7 +344,7 @@ export default function DashboardOverview() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
                 <Zap size={16} />
-                Active initiatives
+                Active portfolio
               </h2>
               <Link href="/dashboard/goals" style={{ fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
                 Manage →
@@ -292,19 +354,30 @@ export default function DashboardOverview() {
               <div className="skeleton shimmer" style={{ height: 60, borderRadius: 8 }} />
             ) : (
               <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-                {data?.initiatives.map((init) => (
+                {(
+                  data?.userModel?.activePortfolio ??
+                  (data?.initiatives ?? []).map((init) => ({
+                    id: init.id,
+                    title: init.title,
+                    lifeArea: init.lifeArea,
+                    healthLabel: "",
+                    isFocus: false,
+                  }))
+                ).map((init) => (
                   <span
                     key={init.id}
                     style={{
                       padding: "8px 14px",
                       borderRadius: "var(--radius-full)",
-                      background: "var(--bg-glass)",
-                      border: "1px solid var(--border-color)",
+                      background: init.isFocus ? "rgba(var(--accent-primary-rgb, 99, 102, 241), 0.12)" : "var(--bg-glass)",
+                      border: init.isFocus ? "1px solid var(--accent-primary)" : "1px solid var(--border-color)",
                       fontSize: "0.9rem",
                       color: "var(--text-primary)",
                     }}
                   >
                     {init.title}
+                    {init.isFocus ? " · focus" : ""}
+                    {init.healthLabel ? ` · ${init.healthLabel}` : ""}
                   </span>
                 ))}
               </div>

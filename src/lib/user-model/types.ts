@@ -1,6 +1,13 @@
 import type { CoachDomain } from "@/lib/plans/coach-insights";
+import type {
+  ActivePortfolioEntry,
+  AllocationRole,
+  ExecutionAllocationEntry,
+} from "@/lib/user-model/execution-allocation";
 
-export const USER_MODEL_VERSION = 1 as const;
+export const USER_MODEL_VERSION = 2 as const;
+
+export type { ActivePortfolioEntry, AllocationRole, ExecutionAllocationEntry };
 
 export type UserModelConfidence = "low" | "moderate" | "high";
 
@@ -37,6 +44,12 @@ export interface UserModel {
   };
 
   secondaryOutcomes: UserModelSecondaryOutcome[];
+
+  /** All active initiatives — one person, multiple pursuits */
+  activePortfolio: ActivePortfolioEntry[];
+
+  /** How today's execution time should split across initiatives */
+  executionAllocation: ExecutionAllocationEntry[];
 
   obstacles: string[];
   stillNeeds: string[];

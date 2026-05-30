@@ -5,6 +5,7 @@ import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 import { trackProductEvent } from "@/lib/analytics/track-event";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
       type: suggestion.suggestion_type,
       title: suggestion.title,
     }).catch(() => {});
+    scheduleUserModelRefresh(supabase, user.id);
     return NextResponse.json({ success: true });
   }
 
@@ -138,6 +140,7 @@ export async function POST(req: NextRequest) {
     type: suggestion.suggestion_type,
     title: suggestion.title,
   }).catch(() => {});
+  scheduleUserModelRefresh(supabase, user.id);
 
   return NextResponse.json({ success: true });
 }

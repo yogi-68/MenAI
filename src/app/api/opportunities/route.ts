@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 async function invalidatePlanForUser(userId: string) {
   const supabase = await createServerSupabaseClient();
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   return NextResponse.json({ opportunity: data }, { status: 201 });
 }
 
@@ -94,6 +96,7 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   return NextResponse.json({ opportunity: data });
 }
 
@@ -116,5 +119,6 @@ export async function DELETE(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   return NextResponse.json({ success: true });
 }

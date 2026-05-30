@@ -305,7 +305,8 @@ export async function generateWeeklyReview(
   });
 
   if (!hasExecutionEvidence && initiatives.length > 0) {
-    const initTitle = initiatives[0]?.title || "your initiative";
+    const userModel = await getUserModel(supabase, userId);
+    const initTitle = userModel.currentFocus.title || initiatives[0]?.title || "your initiative";
     const honest: WeeklyReviewContent = {
       whatHappened: `This week there isn't enough execution data to identify meaningful progress. You have ${initiatives.length} active initiative${initiatives.length > 1 ? "s" : ""} set up${initTitle ? ` including "${initTitle}"` : ""}, but no completed tasks or daily reflections were logged.`,
       patternDetected:
@@ -338,7 +339,7 @@ export async function generateWeeklyReview(
 
   const prompt = `Generate this user's weekly review for ${weekStart} to ${weekEnd}.
 
-=== USER MODEL (authoritative — primary vs secondary themes) ===
+=== USER MODEL (authoritative — focus + active portfolio + execution allocation) ===
 ${formatUserModelForPrompt(await getUserModel(supabase, userId))}
 
 === LONG-TERM DIRECTION ===

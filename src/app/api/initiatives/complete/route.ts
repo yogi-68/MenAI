@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { completeInitiative } from "@/lib/plans/initiative-completion";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest) {
     const result = await completeInitiative(supabase, user.id, initiativeId);
     await invalidateTodayPlan(supabase, user.id);
     invalidateUserCache(user.id, "initiative completed");
+    scheduleUserModelRefresh(supabase, user.id);
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
