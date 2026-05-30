@@ -5,6 +5,7 @@
 
 import { createClient } from "@/lib/supabase/client";
 import { getOpenAI } from "@/lib/ai/openai";
+import { FAST_MODEL } from "@/lib/ai/models";
 
 interface ExtractionResult {
   goals?: Array<{ title: string; category: string; priority: string; confidence: number }>;
@@ -76,7 +77,7 @@ async function extractPersonalGoals(response: string, _data: any): Promise<Extra
 
   const openai = getOpenAI();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: FAST_MODEL,
     messages: [
       {
         role: "system",
@@ -128,7 +129,7 @@ async function extractFutureVision(response: string, _data: any): Promise<Extrac
 
   const openai = getOpenAI();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: FAST_MODEL,
     messages: [
       {
         role: "system",
@@ -235,7 +236,7 @@ async function extractObstacles(response: string, responseData: any): Promise<Ex
   if (response && response.trim().length > 5) {
     const openai = getOpenAI();
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: FAST_MODEL,
       messages: [
         {
           role: "system",
@@ -464,7 +465,7 @@ async function extractInitialCommitment(response: string, _data: any): Promise<E
 
   const openai = getOpenAI();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: FAST_MODEL,
     messages: [
       {
         role: "system",

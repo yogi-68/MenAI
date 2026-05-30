@@ -1,4 +1,5 @@
 import { getOpenAI } from "@/lib/ai/openai";
+import { FAST_MODEL } from "@/lib/ai/models";
 import {
   computePlanConfidence,
   type PlanConfidence,
@@ -676,7 +677,7 @@ export async function generateDailyPlanWithAI(
   const openai = getOpenAI();
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: FAST_MODEL,
     temperature: 0.35,
     response_format: { type: "json_object" },
     messages: [
@@ -693,7 +694,7 @@ export async function generateDailyPlanWithAI(
     logAiUsage(
       userId,
       "daily_plan",
-      "gpt-4o-mini",
+      FAST_MODEL,
       completion.usage?.prompt_tokens ?? 0,
       completion.usage?.completion_tokens ?? 0
     ).catch(() => {});

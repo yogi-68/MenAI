@@ -4,6 +4,7 @@ import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
+import { trackProductEvent } from "@/lib/analytics/track-event";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -59,6 +60,10 @@ export async function POST(req: NextRequest) {
       .from("ai_suggestions")
       .update({ status: "dismissed", resolved_at: new Date().toISOString() })
       .eq("id", id);
+    trackProductEvent(user.id, "suggestion_dismissed", {
+      type: suggestion.suggestion_type,
+      title: suggestion.title,
+    }).catch(() => {});
     return NextResponse.json({ success: true });
   }
 
@@ -128,6 +133,11 @@ export async function POST(req: NextRequest) {
     .from("ai_suggestions")
     .update({ status: "accepted", resolved_at: new Date().toISOString() })
     .eq("id", id);
+
+  trackProductEvent(user.id, "suggestion_accepted", {
+    type: suggestion.suggestion_type,
+    title: suggestion.title,
+  }).catch(() => {});
 
   return NextResponse.json({ success: true });
 }

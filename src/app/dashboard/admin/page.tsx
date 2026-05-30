@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "@/lib/store";
-import { Activity, AlertTriangle, Cpu, DollarSign, Users, Zap, Timer } from "lucide-react";
+import { Activity, AlertTriangle, Cpu, DollarSign, Users, Zap, Timer, Target, TrendingUp } from "lucide-react";
 
 function fmtMs(ms: number | null) {
   if (ms === null) return "—";
@@ -150,6 +150,64 @@ export default function AdminMonitoringPage() {
           </section>
 
           <section className="glass-card" style={{ padding: "24px" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Target size={14} />
+              Launch KPIs ({data.launchMetrics?.periodDays ?? 30} days)
+            </h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginBottom: "16px" }}>
+              Monitor before scaling — models: fast {data.launchMetrics?.models?.fast ?? "—"} · deep {data.launchMetrics?.models?.deep ?? "—"}
+            </p>
+            {data.launchMetrics ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
+                  <LaunchKpi
+                    label="Initiative acceptance"
+                    value={`${data.launchMetrics.initiativeAcceptance.acceptanceRate}%`}
+                    sub={`${data.launchMetrics.initiativeAcceptance.accepted} accepted / ${data.launchMetrics.initiativeAcceptance.dismissed + data.launchMetrics.initiativeAcceptance.accepted} resolved · ${data.launchMetrics.initiativeAcceptance.pending} pending`}
+                    health={data.launchMetrics.initiativeAcceptance.health}
+                    hint="Target ≥30%. Below = weak extraction."
+                  />
+                  <LaunchKpi
+                    label="Reflection completion"
+                    value={`${data.launchMetrics.reflection.rate}%`}
+                    sub={`${data.launchMetrics.reflection.reflectionDays} reflections / ${data.launchMetrics.reflection.planDays} plan days`}
+                    health={data.launchMetrics.reflection.health}
+                    hint="Target ≥30% night reflection rate."
+                  />
+                  <LaunchKpi
+                    label="7-day return rate"
+                    value={`${data.launchMetrics.retention7Day.rate}%`}
+                    sub={`${data.launchMetrics.retention7Day.returned} / ${data.launchMetrics.retention7Day.signups} signups`}
+                    health={data.launchMetrics.retention7Day.health}
+                    hint="Most important retention signal."
+                  />
+                </div>
+
+                {data.launchMetrics.taskCompletionByDomain.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: "10px", display: "flex", alignItems: "center", gap: "6px" }}>
+                      <TrendingUp size={12} />
+                      Task completion by domain
+                    </h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {data.launchMetrics.taskCompletionByDomain.map((row: { lifeArea: string; completed: number; planned: number; rate: number }) => (
+                        <div key={row.lifeArea} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", gap: "12px", flexWrap: "wrap" }}>
+                          <span style={{ textTransform: "capitalize" }}>{row.lifeArea.replace(/_/g, " ")}</span>
+                          <span style={{ color: "var(--text-muted)" }}>
+                            {row.rate}% · {row.completed}/{row.planned} tasks
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No launch metrics yet.</p>
+            )}
+          </section>
+
+          <section className="glass-card" style={{ padding: "24px" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "16px" }}>
               Usage by feature (this month)
             </h2>
@@ -212,6 +270,33 @@ export default function AdminMonitoringPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function LaunchKpi({
+  label,
+  value,
+  sub,
+  health,
+  hint,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  health: "weak" | "ok" | "strong";
+  hint: string;
+}) {
+  const color = health === "strong" ? "#22c55e" : health === "ok" ? "#f59e0b" : "#ef4444";
+  return (
+    <div style={{ padding: "12px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+        <span style={{ fontSize: "0.65rem", fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{health}</span>
+      </div>
+      <div style={{ fontSize: "1.25rem", fontWeight: 500 }}>{value}</div>
+      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "2px" }}>{sub}</div>
+      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "4px", opacity: 0.85 }}>{hint}</div>
     </div>
   );
 }

@@ -7,7 +7,10 @@ export type ProductEventName =
   | "first_plan_generated"
   | "task_completed"
   | "reflection_submitted"
-  | "daily_return";
+  | "daily_return"
+  | "suggestion_shown"
+  | "suggestion_accepted"
+  | "suggestion_dismissed";
 
 /** Server-side product analytics — invisible to regular users. */
 export async function trackProductEvent(
@@ -50,5 +53,29 @@ export async function trackProductEventOnce(
     }
   } catch (err) {
     console.error("[analytics-once]", eventName, err);
+  }
+}
+
+/** Once per user per calendar day — for retention tracking. */
+export async function trackDailyReturn(userId: string): Promise<void> {
+  try {
+    const db = await createServiceRoleClient();
+    const today = new Date().toISOString().split("T")[0];
+    const { count } = await db
+      .from("product_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("event_name", "daily_return")
+      .contains("metadata", { date: today });
+
+    if ((count ?? 0) > 0) return;
+
+    await db.from("product_events").insert({
+      user_id: userId,
+      event_name: "daily_return",
+      metadata: { date: today },
+    });
+  } catch (err) {
+    console.error("[analytics-daily-return]", err);
   }
 }

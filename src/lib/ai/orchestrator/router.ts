@@ -1,6 +1,6 @@
 /**
  * LLM Router — Cost-Optimized Model Selection
- * Routes requests to gpt-4.1-nano/mini/4.1 based on context
+ * Routes requests to fast/deep models based on context
  * Now includes rhythm-aware streaming for emotional pacing
  */
 
@@ -8,22 +8,24 @@ import { getOpenAI } from "@/lib/ai/openai";
 import { determineRhythm, applyRhythm } from "./rhythm-engine";
 import type { ModelConfig, ModelTier, EmotionAnalysis, SafetyResult, ConversationState } from "./types";
 
-// Model configurations — OpenAI Model Strategy
+import { FAST_MODEL, DEEP_MODEL } from "@/lib/ai/models";
+
+// Model configurations — fast for ~90% traffic, deep for rare coaching/safety
 const MODELS: Record<ModelTier, ModelConfig> = {
   cheap: {
-    model: "gpt-4o-mini",
+    model: FAST_MODEL,
     maxTokens: 400,
     temperature: 0.7,
     tier: "cheap",
   },
   standard: {
-    model: "gpt-4o-mini", // The operational brain (handles 70-85% of traffic)
+    model: FAST_MODEL,
     maxTokens: 800,
     temperature: 0.75,
     tier: "standard",
   },
   premium: {
-    model: "gpt-4o", // The mentor brain (handles deep reasoning & coaching)
+    model: DEEP_MODEL,
     maxTokens: 1200,
     temperature: 0.8,
     tier: "premium",

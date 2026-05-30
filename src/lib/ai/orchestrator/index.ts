@@ -16,6 +16,7 @@
  * 12. Data Persistence     → Persist extracted life data
  */
 
+import { FAST_MODEL } from "@/lib/ai/models";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/ai/usage-guard";
 import { runSafetyPipeline } from "./safety-engine";
@@ -342,7 +343,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   logAiUsage(
     input.userId,
     "chat",
-    llmResult.model || "gpt-4o-mini",
+    llmResult.model || FAST_MODEL,
     Math.round(llmResult.tokensUsed * 0.6),
     Math.round(llmResult.tokensUsed * 0.4)
   ).catch(() => {});

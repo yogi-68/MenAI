@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildCognitiveState, formatCognitiveStateForDashboard } from "@/lib/ai/orchestrator/cognition-engine";
 import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+import { trackDailyReturn } from "@/lib/analytics/track-event";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,8 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  trackDailyReturn(user.id).catch(() => {});
 
   const today = new Date().toISOString().split("T")[0];
   const hour = new Date().getHours();

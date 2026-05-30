@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { finishableTaskError } from "@/lib/tasks/finishable-today";
-import { trackProductEventOnce } from "@/lib/analytics/track-event";
+import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { autoEvolveAndApply } from "@/lib/ai/orchestrator/task-evolution-engine";
 
@@ -153,15 +153,20 @@ export async function PATCH(req: NextRequest) {
   }
 
   // If completing a task, update last_completed_at and potentially streak
+  let completedMeta: { lifeArea: string; title?: string } | null = null;
   if (updates.status === "completed") {
     const { data: existing } = await supabase
       .from("tasks")
-      .select("streak_count, last_completed_at, recurrence, title, goal_id, description, scheduled_time, estimated_minutes")
+      .select("streak_count, last_completed_at, recurrence, title, goal_id, description, scheduled_time, estimated_minutes, initiative_id, initiatives(life_area)")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
 
     if (existing) {
+      const lifeArea =
+        (existing as { initiatives?: { life_area?: string } | null }).initiatives?.life_area ||
+        "personal";
+      completedMeta = { lifeArea, title: existing.title ?? undefined };
       updates.last_completed_at = new Date().toISOString();
 
       // Update streak
@@ -204,8 +209,12 @@ export async function PATCH(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (updates.status === "completed") {
+  if (updates.status === "completed" && completedMeta) {
     trackProductEventOnce(user.id, "task_completed").catch(() => {});
+    trackProductEvent(user.id, "task_completed", {
+      lifeArea: completedMeta.lifeArea,
+      title: completedMeta.title,
+    }).catch(() => {});
   }
 
   invalidateUserCache(user.id, "task updated");

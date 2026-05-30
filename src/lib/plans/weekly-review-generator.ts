@@ -1,4 +1,5 @@
 import { getOpenAI } from "@/lib/ai/openai";
+import { DEEP_MODEL } from "@/lib/ai/models";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
@@ -185,7 +186,7 @@ Return JSON:
 
   const openai = getOpenAI();
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: DEEP_MODEL,
     temperature: 0.4,
     response_format: { type: "json_object" },
     messages: [
@@ -201,7 +202,7 @@ Return JSON:
   await logAiUsage(
     userId,
     "weekly_review",
-    "gpt-4o-mini",
+    DEEP_MODEL,
     usage?.prompt_tokens ?? 0,
     usage?.completion_tokens ?? 0
   );

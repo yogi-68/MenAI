@@ -2,6 +2,7 @@ import {
   MAX_ACTIVE_INITIATIVES,
   MEMORY_CONFIDENCE,
 } from "@/lib/product/constants";
+import { trackProductEvent } from "@/lib/analytics/track-event";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function countActiveInitiatives(
@@ -67,6 +68,12 @@ export async function queueSuggestion(
     status: "pending",
     source_conversation_id: opts.conversationId || null,
   });
+
+  trackProductEvent(opts.userId, "suggestion_shown", {
+    type: opts.type,
+    title,
+    confidence: opts.confidence,
+  }).catch(() => {});
 }
 
 /** Archive prior active identity signals when direction shifts. */

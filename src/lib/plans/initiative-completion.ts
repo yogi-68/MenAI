@@ -1,4 +1,5 @@
 import { getOpenAI } from "@/lib/ai/openai";
+import { DEEP_MODEL } from "@/lib/ai/models";
 import { logAiUsage } from "@/lib/ai/usage-guard";
 import { queueSuggestion } from "@/lib/ai/memory-confidence";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -131,7 +132,7 @@ Use language matching the life area — no startup jargon for fitness/study init
   try {
     const openai = getOpenAI();
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: DEEP_MODEL,
       temperature: 0.35,
       response_format: { type: "json_object" },
       messages: [
@@ -143,7 +144,7 @@ Use language matching the life area — no startup jargon for fitness/study init
     await logAiUsage(
       userId,
       "initiative_complete",
-      "gpt-4o-mini",
+      DEEP_MODEL,
       completion.usage?.prompt_tokens ?? 0,
       completion.usage?.completion_tokens ?? 0
     );

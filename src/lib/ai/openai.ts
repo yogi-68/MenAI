@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { FAST_MODEL } from "@/lib/ai/models";
 
 // Lazy-init singleton to avoid build-time credential errors
 let _openai: OpenAI | null = null;
@@ -14,7 +15,7 @@ export function getOpenAI(): OpenAI {
 
 // Models
 export const EMBEDDING_MODEL = "text-embedding-3-small";
-export const CHAT_MODEL = "gpt-4o";
+export const CHAT_MODEL = FAST_MODEL;
 export const MODERATION_MODEL = "omni-moderation-latest";
 
 // Generate embeddings for text
