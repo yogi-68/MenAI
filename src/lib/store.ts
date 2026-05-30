@@ -17,7 +17,7 @@ const idbStorage: StateStorage = {
     if (persistTimer) clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
       if (pendingPersist) {
-        void idbStorage.setItem(pendingPersist.name, pendingPersist.value);
+        void set(pendingPersist.name, pendingPersist.value);
       }
     }, PERSIST_DEBOUNCE_MS);
     return Promise.resolve();

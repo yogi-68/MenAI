@@ -63,7 +63,8 @@ export default function DashboardOverview() {
       setCheckingOnboarding(false);
     };
     checkOnboarding();
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-today"],

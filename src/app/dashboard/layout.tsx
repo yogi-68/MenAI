@@ -90,7 +90,8 @@ export default function DashboardLayout({
     };
 
     fetchUser();
-  }, [setUser, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setUser]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
