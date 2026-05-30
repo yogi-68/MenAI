@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { buildCognitiveState, formatCognitiveStateForDashboard } from "@/lib/ai/orchestrator/cognition-engine";
+import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
+import { buildSetupFacts } from "@/lib/dashboard/setup-facts";
 import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
@@ -20,7 +21,7 @@ export async function GET() {
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
 
-  const [profileRes, tasksRes, initiativesRes, planRes, patternsRes, cogState] =
+  const [profileRes, tasksRes, initiativesRes, planRes, setupFacts, cogState] =
     await Promise.all([
       supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
       supabase
@@ -42,12 +43,7 @@ export async function GET() {
         .eq("user_id", user.id)
         .eq("plan_date", today)
         .maybeSingle(),
-      supabase
-        .from("execution_patterns")
-        .select("pattern, behavioral_impact, severity")
-        .eq("user_id", user.id)
-        .order("severity", { ascending: false })
-        .limit(3),
+      buildSetupFacts(supabase, user.id),
       buildCognitiveState(user.id),
     ]);
 
@@ -60,8 +56,6 @@ export async function GET() {
     whatMattersNow?: string;
     tasks?: Array<{ title: string }>;
   } | null;
-
-  const dashboardCog = formatCognitiveStateForDashboard(cogState);
 
   let topMomentumInitiative: string | null = null;
   if (initiatives.length > 0) {
@@ -78,18 +72,6 @@ export async function GET() {
     scored.sort((a, b) => b.score - a.score);
     topMomentumInitiative = scored[0]?.title ?? null;
   }
-
-  const patternInsight = patternsRes.data?.[0]?.behavioral_impact;
-  const hasRealData =
-    initiatives.length > 0 ||
-    (cogState.maturity_level !== "new" && (patternsRes.data?.length ?? 0) > 0);
-
-  const insight = hasRealData
-    ? dashboardCog.observation ||
-      (patternInsight
-        ? `You tend to ${patternInsight.charAt(0).toLowerCase()}${patternInsight.slice(1)}`
-        : null)
-    : null;
 
   const topMomentum =
     initiatives.length > 0 && cogState.maturity_level !== "new" ? topMomentumInitiative : null;
@@ -126,7 +108,7 @@ export async function GET() {
       progress: i.progress,
     })),
     topMomentumInitiative: topMomentum,
-    insight,
+    setupFacts,
     hasInitiatives: initiatives.length > 0,
     maturityLevel: cogState.maturity_level,
     isEmptyState: initiatives.length === 0 && !planRes.data?.plan_content,

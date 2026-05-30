@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { regenerateMilestonesIfAbstract } from "@/lib/plans/milestone-generator";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 
 export async function GET(req: NextRequest) {
@@ -70,4 +71,46 @@ export async function PATCH(req: NextRequest) {
 
   await invalidateTodayPlan(supabase, user.id);
   return NextResponse.json({ success: true });
+}
+
+/** Regenerate abstract milestones into concrete, actionable steps. */
+export async function POST(req: NextRequest) {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+  const { initiativeId } = body as { initiativeId?: string };
+  if (!initiativeId) {
+    return NextResponse.json({ error: "initiativeId required" }, { status: 400 });
+  }
+
+  const { data: initiative } = await supabase
+    .from("initiatives")
+    .select("id, title, description, life_area")
+    .eq("id", initiativeId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!initiative) {
+    return NextResponse.json({ error: "Initiative not found" }, { status: 404 });
+  }
+
+  const updated = await regenerateMilestonesIfAbstract(
+    supabase,
+    user.id,
+    initiative.id,
+    initiative.title,
+    initiative.description,
+    initiative.life_area
+  );
+
+  if (!updated) {
+    return NextResponse.json({ regenerated: false, message: "Milestones already look concrete" });
+  }
+
+  await invalidateTodayPlan(supabase, user.id);
+  return NextResponse.json({ regenerated: true });
 }

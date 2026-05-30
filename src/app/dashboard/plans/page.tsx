@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Clock, Target, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
-import { InfoTip, CONFIDENCE_HELP } from "@/components/ui/info-tip";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
-import { confidenceDisplayLabel, isLowPlanConfidence } from "@/lib/plans/language-guard";
+import { PlanContextInterview } from "@/components/plans/plan-context-interview";
+import { isLowPlanConfidence } from "@/lib/plans/language-guard";
 
 interface DailyPlanContent {
   daySummary: string;
@@ -22,6 +22,11 @@ interface DailyPlanContent {
     score: number;
     gaps: string[];
     strengths: string[];
+  };
+  planningContext?: {
+    planningQuality: "Strong" | "Good" | "Fair" | "Needs context";
+    dimensions: Array<{ id: string; label: string; satisfied: boolean; gapHint?: string }>;
+    improvementHints: string[];
   };
   evidence?: string[];
   tasks: DailyPlanTask[];
@@ -176,6 +181,7 @@ export default function DailyPlansPage() {
 
   const isLoading = planLoading || tasksLoading;
   const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
+  const planningQuality = plan?.planningContext?.planningQuality;
   const evidence = plan?.evidence || [];
   const hasInitiatives = !evidence.some((e) => e.includes("No active initiatives"));
   const showSetup = !hasInitiatives;
@@ -227,6 +233,8 @@ export default function DailyPlansPage() {
 
       {!isLoading && showSetup && <SetupChecklist hasInitiatives={hasInitiatives} />}
 
+      {!isLoading && hasInitiatives && <PlanContextInterview hasInitiatives={hasInitiatives} />}
+
       {topPriority && !isLoading && (
         <section
           className="glass-card"
@@ -242,26 +250,37 @@ export default function DailyPlansPage() {
           <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "var(--text-primary)", fontWeight: 400 }}>
             {topPriority}
           </p>
-          {plan?.confidence && (
+          {(planningQuality || plan?.planningContext?.improvementHints?.length) && (
             <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                Context
-                <InfoTip text={CONFIDENCE_HELP} />
-              </span>
-              <span
-                style={{
-                  fontSize: "0.85rem",
-                  fontWeight: 600,
-                  color: lowContext ? "#f59e0b" : "var(--accent-primary)",
-                }}
-              >
-                {confidenceDisplayLabel(plan.confidence.score)}
-              </span>
-              {totalTasks > 0 && (
+              {planningQuality && (
                 <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  · {completedTasks}/{totalTasks} done today ({completionRate}%)
+                  Planning quality:{" "}
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color:
+                        planningQuality === "Strong" || planningQuality === "Good"
+                          ? "var(--accent-primary)"
+                          : "#f59e0b",
+                    }}
+                  >
+                    {planningQuality}
+                  </span>
                 </span>
               )}
+              {totalTasks > 0 && (
+                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  {planningQuality ? "· " : ""}
+                  {completedTasks}/{totalTasks} done today ({completionRate}%)
+                </span>
+              )}
+            </div>
+          )}
+          {!planningQuality && totalTasks > 0 && (
+            <div style={{ marginTop: "14px" }}>
+              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                {completedTasks}/{totalTasks} done today ({completionRate}%)
+              </span>
             </div>
           )}
         </section>
@@ -305,12 +324,18 @@ export default function DailyPlansPage() {
                   </ul>
                 </div>
               )}
-              {lowContext && (
+              {lowContext && plan?.planningContext?.improvementHints?.length ? (
+                <ul style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5, paddingLeft: "18px" }}>
+                  {plan.planningContext.improvementHints.map((hint) => (
+                    <li key={hint}>{hint}</li>
+                  ))}
+                </ul>
+              ) : lowContext ? (
                 <p style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5 }}>
-                  Limited context — complete setup tasks above or{" "}
+                  Limited context — use the questions above or{" "}
                   <Link href="/dashboard/goals">add initiatives with deadlines</Link>.
                 </p>
-              )}
+              ) : null}
               {plan.topObstacle && (
                 <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "8px" }}>
                   <strong style={{ fontWeight: 500, color: "var(--text-muted)" }}>Blocker: </strong>

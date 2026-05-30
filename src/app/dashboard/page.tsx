@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Zap, MessageSquare, Calendar, Target, Sparkles, History } from "lucide-react";
+import { ArrowRight, Zap, MessageSquare, Calendar, Target, History } from "lucide-react";
 import { AiSuggestionsBanner } from "@/components/dashboard/ai-suggestions";
 
 interface TodayPayload {
@@ -21,7 +21,14 @@ interface TodayPayload {
   hasPlan: boolean;
   initiatives: Array<{ id: string; title: string; lifeArea: string; progress: number }>;
   topMomentumInitiative: string | null;
-  insight: string | null;
+  setupFacts: {
+    bullets: string[];
+    footer: string;
+    directionCount: number;
+    activeInitiatives: number;
+    opportunityCount: number;
+    plannedMilestones: number;
+  };
   hasInitiatives: boolean;
   maturityLevel: string;
   isEmptyState?: boolean;
@@ -262,14 +269,21 @@ export default function DashboardOverview() {
           </section>
         )}
 
-        {data?.insight && (
+        {data?.setupFacts && (
           <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-              <Sparkles size={14} />
-              Recent insight
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 12 }}>
+              Your setup
             </h2>
-            <p style={{ fontSize: "1rem", lineHeight: 1.75, color: "var(--text-primary)", fontWeight: 300, fontStyle: "italic" }}>
-              {data.insight}
+            <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.6 }}>
+              Based on your current data:
+            </p>
+            <ul style={{ margin: "0 0 12px", paddingLeft: 20, fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.8 }}>
+              {data.setupFacts.bullets.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
+              {data.setupFacts.footer}
             </p>
           </section>
         )}

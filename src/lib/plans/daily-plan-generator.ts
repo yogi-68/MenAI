@@ -3,7 +3,6 @@ import { FAST_MODEL } from "@/lib/ai/models";
 import {
   computePlanConfidence,
   type PlanConfidence,
-  confidenceTier,
 } from "@/lib/plans/plan-confidence";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import {
@@ -23,6 +22,12 @@ import {
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildPatternGuidanceLines } from "@/lib/plans/pattern-task-guidance";
 import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
+import {
+  buildPlanContextSnapshot,
+  improvementHints,
+  type PlanContextSnapshot,
+} from "@/lib/plans/plan-context-dimensions";
+import { loadPlanContextData } from "@/lib/plans/plan-interview";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -39,6 +44,12 @@ export interface DailyPlanTask {
   linkedMilestone?: string;
 }
 
+export interface PlanningContextSummary {
+  planningQuality: PlanContextSnapshot["planningQuality"];
+  dimensions: Array<{ id: string; label: string; satisfied: boolean; gapHint?: string }>;
+  improvementHints: string[];
+}
+
 export interface DailyPlanContent {
   daySummary: string;
   whatMattersNow?: string;
@@ -46,6 +57,7 @@ export interface DailyPlanContent {
   whyTheseTasks: string;
   confidence: PlanConfidence;
   planMode: PlanMode;
+  planningContext?: PlanningContextSummary;
   assumptions?: string[];
   lifeAreaInsight?: string;
   timeEstimationInsight?: string;
@@ -80,12 +92,14 @@ export interface PlanUserContext {
   recentProgress: string[];
   obstacles: string[];
   patternGuidance: string[];
+  planContextNotes: string[];
   availableMinutes: number;
   energyLevel: string;
   identityContext: string;
   lifeContext: string;
   confidence: PlanConfidence;
   planMode: PlanMode;
+  contextSnapshot: PlanContextSnapshot;
   maxTasks: number;
   timeEstimationRatio: number;
   executionRate7d: number;
@@ -449,10 +463,49 @@ export async function fetchPlanUserContext(
     opportunities: opportunityLines.length,
   });
 
-  const tier = confidenceTier(confidence.score);
+  const planContext = await loadPlanContextData(supabase, userId);
+  const contextSnapshot = buildPlanContextSnapshot({
+    goals: goals.map((g) => ({ title: g.title, description: g.description })),
+    initiatives: initiatives.map((i) => ({
+      title: i.title,
+      description: i.description,
+      target_date: i.target_date,
+    })),
+    patterns: patterns.map((p) => ({
+      pattern: p.pattern,
+      behavioral_impact: p.behavioral_impact,
+    })),
+    recentCompletedTasks: completedTasks.length,
+    recentReflections: recentReflectionsData.map((r) => ({ blocked_by: r.blocked_by })),
+    planContext,
+    questionsAskedToday: planContext.interviewAskedToday || [],
+  });
+
+  const effectiveScore = contextSnapshot.overall;
+  confidence.score = effectiveScore;
+  confidence.gaps = improvementHints(contextSnapshot.dimensions);
+
+  const planContextNotes: string[] = [];
+  if (planContext.businessFocus?.trim()) {
+    planContextNotes.push(`Building toward: ${planContext.businessFocus}`);
+  }
+  if (planContext.initiativeOutcome90d?.trim()) {
+    planContextNotes.push(`90-day outcome: ${planContext.initiativeOutcome90d}`);
+  }
+  if (planContext.biggestObstacle?.trim()) {
+    planContextNotes.push(`Biggest blocker: ${planContext.biggestObstacle}`);
+  }
+  if (typeof planContext.weeklyAvailableHours === "number") {
+    planContextNotes.push(`Weekly capacity: ${planContext.weeklyAvailableHours} hours`);
+  }
+
   const planMode: PlanMode =
-    tier === "low" ? "context_building" : tier === "high" ? "aggressive" : "normal";
-  const maxTasks = tier === "low" ? 2 : tier === "high" ? 5 : 4;
+    effectiveScore < 55
+      ? "context_building"
+      : effectiveScore >= 78
+        ? "aggressive"
+        : "normal";
+  const maxTasks = planMode === "context_building" ? 2 : planMode === "aggressive" ? 5 : 4;
 
   const baseMinutes = 480;
   const availableMinutes =
@@ -493,6 +546,7 @@ export async function fetchPlanUserContext(
     recentProgress: recentProgressLines,
     obstacles: obstacleLines,
     patternGuidance,
+    planContextNotes,
     availableMinutes: availableMinutesAdjusted,
     energyLevel,
     identityContext:
@@ -501,6 +555,7 @@ export async function fetchPlanUserContext(
       lifeParts.length > 0 ? lifeParts.join("; ") : "Limited life context on file",
     confidence,
     planMode,
+    contextSnapshot,
     maxTasks: planPhase === "afternoon" && middayCompleted.length > 0 ? Math.min(maxTasks, 3) : maxTasks,
     timeEstimationRatio: timeProfile.estimationRatio,
     executionRate7d: executionMetrics.last7Days.rate,
@@ -512,24 +567,38 @@ export async function fetchPlanUserContext(
   };
 }
 
+function planningContextFromSnapshot(
+  snapshot: PlanContextSnapshot
+): PlanningContextSummary {
+  return {
+    planningQuality: snapshot.planningQuality,
+    dimensions: snapshot.dimensions.map((d) => ({
+      id: d.id,
+      label: d.label,
+      satisfied: d.satisfied,
+      gapHint: d.gapHint,
+    })),
+    improvementHints: improvementHints(snapshot.dimensions),
+  };
+}
+
 function buildPrompt(ctx: PlanUserContext): string {
   const availableHours = Math.round(ctx.availableMinutes / 60);
-  const tier = confidenceTier(ctx.confidence.score);
 
   const modeInstructions =
     ctx.planMode === "context_building"
-      ? `CONTEXT-BUILDING MODE (confidence ${ctx.confidence.score}%):
+      ? `CONTEXT-BUILDING MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
 - Generate ONLY 1–2 context-building tasks
-- Ask for missing information in whyTheseTasks (initiatives, deadlines, opportunities)
+- Ask for missing information in whyTheseTasks (initiatives, deadlines, obstacles, available time)
 - Mark ALL tasks isContextBuilding: true
 - Do NOT invent execution work from vague goals`
       : ctx.planMode === "aggressive"
-        ? `AGGRESSIVE EXECUTION MODE (confidence ${ctx.confidence.score}%):
+        ? `AGGRESSIVE EXECUTION MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
 - Generate up to ${ctx.maxTasks} high-leverage tasks tied to initiatives and opportunities
 - Prioritize at-risk and stalled initiatives
 - Include at least one task that advances the highest-urgency opportunity if any exist
 - Tasks should be ambitious but still concrete and measurable today`
-        : `NORMAL MODE (confidence ${ctx.confidence.score}%):
+        : `NORMAL MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
 - Generate up to ${ctx.maxTasks} tasks
 - Include "assumptions" array listing 1–3 assumptions you made due to imperfect context
 - Balance across life areas if one area dominates`;
@@ -550,8 +619,11 @@ Plan phase: ${ctx.planPhase}${ctx.middayCompleted.length > 0 ? `\nAlready comple
 URGENT OPPORTUNITIES (override routine plans — rearrange day around these):
 ${listOrFallback(ctx.urgentOpportunities, "None — proceed with initiative milestones")}
 
-Initiative milestones (generate tasks from CURRENT / in_progress milestone — not vague initiative titles):
-${listOrFallback(ctx.initiativeMilestones, "No milestones yet — suggest 1 context-building task to define milestones")}
+Initiative milestones (generate tasks ONLY from the CURRENT in_progress milestone — each task must advance that milestone today):
+${listOrFallback(ctx.initiativeMilestones, "No milestones yet — one context-building task to define the first milestone")}
+
+Every task in "tasks" MUST include linkedMilestone set to the exact title of the current in_progress milestone.
+Tasks must be smaller than the milestone — e.g. milestone "Create calorie deficit plan" → tasks "Calculate maintenance calories", "Draft 7-day meal template".
 
 PRIMARY INPUT — Active initiatives:
 ${listOrFallback(ctx.initiatives, "NONE — context is thin; prefer context-building tasks")}
@@ -591,6 +663,9 @@ Each task needs a deliverable + successMetric that is yes/no verifiable today.
 Commitments:
 ${listOrFallback(ctx.commitments, "None")}
 
+Interview context (user-provided — prioritize in planning):
+${listOrFallback(ctx.planContextNotes, "None yet — gaps remain in obstacle/time clarity")}
+
 Vision: ${ctx.vision}
 
 Unfinished tasks:
@@ -608,13 +683,14 @@ ${ctx.timeEstimationInsight ? `Time estimation: ${ctx.timeEstimationInsight}` : 
 Available time: ${availableHours} hours (${ctx.availableMinutes} minutes)
 Energy: ${ctx.energyLevel}
 
-PLAN CONFIDENCE: ${ctx.confidence.score}%
-Gaps: ${ctx.confidence.gaps.join("; ") || "None"}
-Strengths: ${ctx.confidence.strengths.join("; ") || "None"}
+PLANNING QUALITY: ${ctx.contextSnapshot.planningQuality}
+Context dimensions:
+${ctx.contextSnapshot.dimensions.map((d) => `- ${d.label}: ${d.satisfied ? "clear" : `gap — ${d.gapHint || "needs detail"}`}`).join("\n")}
+To improve specificity: ${ctx.confidence.gaps.join("; ") || "None"}
 
 ${modeInstructions}
 
-LANGUAGE RULES (confidence ${ctx.confidence.score}%):
+LANGUAGE RULES (planning quality: ${ctx.contextSnapshot.planningQuality}):
 ${
   isLowPlanConfidence(ctx.confidence.score)
     ? `- LOW CONTEXT: Use hedged language only. Start summaries with "Based on the information available..." or "Your current goals suggest..."
@@ -648,8 +724,8 @@ Return JSON only:
     "successMetric": "Measurable done criteria",
     "isContextBuilding": false,
     "lifeArea": "career|business|finance|health|learning|relationships|personal",
-    "linkedInitiative": "initiative title if applicable",
-    "linkedMilestone": "current in_progress milestone title if applicable"
+    "linkedInitiative": "initiative title",
+    "linkedMilestone": "exact current in_progress milestone title — required for non-context-building tasks"
   }]
 }`;
 }
@@ -792,6 +868,7 @@ export async function generateDailyPlanWithAI(
       ) || "",
     confidence: ctx.confidence,
     planMode: ctx.planMode,
+    planningContext: planningContextFromSnapshot(ctx.contextSnapshot),
     assumptions: parsed.assumptions?.filter(Boolean).slice(0, 3),
     lifeAreaInsight: ctx.lifeAreaInsight,
     timeEstimationInsight: ctx.timeEstimationInsight ?? undefined,
@@ -872,7 +949,8 @@ export async function ensureTodayPlan(
       content.tasks.some((t) => !t.deliverable || !t.successMetric) ||
       !content.whyTheseTasks ||
       !content.confidence ||
-      !content.planMode;
+      !content.planMode ||
+      !content.planningContext;
 
     if (!stale && content.tasks.length > 0) {
       return { plan: content, planId: existing.id, created: false };
@@ -1067,6 +1145,7 @@ function normalizePlanContent(raw: unknown): DailyPlanContent {
       strengths: [],
     },
     planMode: (content.planMode as PlanMode) || "normal",
+    planningContext: content.planningContext as PlanningContextSummary | undefined,
     assumptions: content.assumptions as string[] | undefined,
     lifeAreaInsight: content.lifeAreaInsight as string | undefined,
     timeEstimationInsight: content.timeEstimationInsight as string | undefined,

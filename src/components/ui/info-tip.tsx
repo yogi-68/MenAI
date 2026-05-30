@@ -28,5 +28,5 @@ export const HEALTH_LEGEND = {
   completed: "Initiative marked complete.",
 } as const;
 
-export const CONFIDENCE_HELP =
-  "How much structured context the planner has (initiatives, deadlines, reflections). Low context means hedged suggestions — not that you should skip today.";
+export const PLANNING_QUALITY_HELP =
+  "How specific MenAI's context is across goals, initiatives, deadlines, obstacles, and time. Answer a few questions to fill gaps — not a score to optimize to 100%.";

@@ -349,47 +349,24 @@ async function _rebuildCognitiveState(userId: string): Promise<CognitiveState> {
 function _computeDirection(
   goals: DbGoal[],
   identitySignals: DbIdentitySignal[],
-  commitments: DbCommitment[],
+  _commitments: DbCommitment[],
   profile: Record<string, unknown>,
 ): string {
-  const parts: string[] = [];
-
-  // Identity-driven
-  if (identitySignals.length > 0) {
-    const primary = identitySignals[0];
-    if (primary.long_term_direction) {
-      parts.push(`Moving toward ${primary.long_term_direction.toLowerCase()}`);
-    } else if (primary.type !== "other") {
-      parts.push(`Building ${primary.type} identity`);
-    }
-  }
-
-  // Vision-driven
-  const vision = profile.vision as string | undefined;
-  if (vision && parts.length === 0) {
-    parts.push(vision);
-  }
-
-  // Goal-driven
   if (goals.length > 0) {
-    const topGoals = goals.slice(0, 2).map(g => g.title.toLowerCase());
-    if (topGoals.length === 1) {
-      parts.push(`focused on ${topGoals[0]}`);
-    } else {
-      parts.push(`balancing ${topGoals.join(" and ")}`);
-    }
+    return goals
+      .slice(0, 4)
+      .map((g) => g.title)
+      .join(" · ");
   }
 
-  if (parts.length === 0 && commitments.length > 0) {
-    parts.push("Building consistency through active commitments");
+  const vision = profile.vision as string | undefined;
+  if (vision?.trim()) return vision.trim();
+
+  if (identitySignals.length > 0 && identitySignals[0].long_term_direction) {
+    return identitySignals[0].long_term_direction;
   }
 
-  if (parts.length === 0) {
-    return "";
-  }
-
-  const result = parts.join(", ");
-  return result.charAt(0).toUpperCase() + result.slice(1) + ".";
+  return "";
 }
 
 function _mapGoals(goals: DbGoal[]): CognitiveGoal[] {
@@ -700,10 +677,8 @@ export function formatCognitiveStateForDashboard(state: CognitiveState): {
     return {
       greeting_context: "Patterns are starting to form. Keep sharing what's on your mind.",
       direction_text: state.direction,
-      observation: state.main_patterns.length > 0
-        ? `Early pattern: ${state.main_patterns[0].behavioral_impact}`
-        : null,
-      momentum_text: _formatMomentum(state.momentum_state),
+      observation: null,
+      momentum_text: null,
       weakness_text: null,
     };
   }
@@ -719,10 +694,8 @@ export function formatCognitiveStateForDashboard(state: CognitiveState): {
   return {
     greeting_context: _buildSmartGreeting(state),
     direction_text: state.direction,
-    observation: state.main_patterns.length > 0
-      ? state.main_patterns[0].behavioral_impact
-      : null,
-    momentum_text: _formatMomentum(state.momentum_state),
+    observation: null,
+    momentum_text: null,
     weakness_text: topWeakness
       ? topWeakness.adaptation_hint
       : null,

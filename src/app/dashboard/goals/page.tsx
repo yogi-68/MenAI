@@ -21,6 +21,7 @@ import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
 import { computeInitiativeHealth, healthColor } from "@/lib/plans/initiative-health";
 import { InfoTip, HEALTH_LEGEND } from "@/components/ui/info-tip";
 import { auditInitiatives } from "@/lib/plans/data-quality";
+import { isAbstractMilestone, milestoneProgressLabel } from "@/lib/plans/milestone-quality";
 
 interface Goal {
   id: string;
@@ -155,7 +156,16 @@ export default function GoalsPage() {
   }
 
   const taskCountByInitiative = new Map<string, number>();
+  const completedTasksByInitiative = new Map<string, number>();
   for (const [id, list] of tasksByInitiative) taskCountByInitiative.set(id, list.length);
+  for (const t of tasks) {
+    if (t.initiative_id && t.status === "completed") {
+      completedTasksByInitiative.set(
+        t.initiative_id,
+        (completedTasksByInitiative.get(t.initiative_id) ?? 0) + 1
+      );
+    }
+  }
 
   const dataIssues = auditInitiatives(
     initiatives.filter((i) => i.status === "active"),
@@ -294,6 +304,21 @@ export default function GoalsPage() {
     },
   });
 
+  const regenerateMilestones = useMutation({
+    mutationFn: async (initiativeId: string) => {
+      const res = await fetch("/api/milestones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initiativeId }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["initiatives"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+    },
+  });
+
   // Delete goal
   const deleteGoal = useMutation({
     mutationFn: async (id: string) => {
@@ -421,6 +446,12 @@ export default function GoalsPage() {
                 lastActionAt: init.last_action_at,
                 progress: init.progress,
               });
+              const milestones = [...(init.initiative_milestones || [])].sort(
+                (a, b) => a.sort_order - b.sort_order
+              );
+              const currentMilestone = milestones.find((m) => m.status === "in_progress");
+              const abstractMilestones = milestones.filter((m) => isAbstractMilestone(m.title));
+              const completedToward = completedTasksByInitiative.get(init.id) ?? 0;
               return (
               <div key={init.id} className="glass-card" style={{ padding: "16px 18px", cursor: "default", display: "flex", alignItems: "flex-start", gap: "12px" }}>
                 <Flag size={16} style={{ color: healthColor(health.health), marginTop: "3px", flexShrink: 0 }} />
@@ -443,36 +474,60 @@ export default function GoalsPage() {
                   {init.description && (
                     <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>{init.description}</p>
                   )}
-                  {(init.initiative_milestones || []).length > 0 && (
+                  {abstractMilestones.length > 0 && (
+                    <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      <p style={{ margin: "0 0 8px" }}>These milestones read like phases, not actions. Regenerate them into steps you can finish and measure.</p>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.75rem", padding: "4px 10px" }}
+                        disabled={regenerateMilestones.isPending}
+                        onClick={() => regenerateMilestones.mutate(init.id)}
+                      >
+                        {regenerateMilestones.isPending ? "Regenerating…" : "Make milestones actionable"}
+                      </button>
+                    </div>
+                  )}
+                  {currentMilestone && (
+                    <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: "var(--radius-md)", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.15)" }}>
+                      <p style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", margin: "0 0 4px" }}>
+                        Current milestone
+                      </p>
+                      <p style={{ fontSize: "0.92rem", fontWeight: 500, margin: "0 0 6px", color: "var(--text-primary)" }}>
+                        {currentMilestone.title}
+                      </p>
+                      <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: 0 }}>
+                        Progress: {milestoneProgressLabel(currentMilestone.title, completedToward)}
+                      </p>
+                    </div>
+                  )}
+                  {milestones.length > 0 && (
                     <ul style={{ marginTop: "12px", paddingLeft: "0", listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
-                      {[...(init.initiative_milestones || [])]
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .map((m) => (
-                          <li key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem" }}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleMilestone.mutate({
-                                  id: m.id,
-                                  status: m.status === "completed" ? "in_progress" : "completed",
-                                })
-                              }
-                              style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: m.status === "completed" ? "var(--accent-primary)" : "var(--text-muted)" }}
-                            >
-                              {m.status === "completed" ? <CheckCircle2 size={14} /> : <Circle size={14} />}
-                            </button>
-                            <span
-                              style={{
-                                color: m.status === "in_progress" ? "var(--text-primary)" : m.status === "completed" ? "var(--text-muted)" : "var(--text-secondary)",
-                                textDecoration: m.status === "completed" ? "line-through" : "none",
-                                fontWeight: m.status === "in_progress" ? 500 : 400,
-                              }}
-                            >
-                              {m.title}
-                              {m.status === "in_progress" && " ← current milestone"}
-                            </span>
-                          </li>
-                        ))}
+                      {milestones.map((m) => (
+                        <li key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem" }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleMilestone.mutate({
+                                id: m.id,
+                                status: m.status === "completed" ? "in_progress" : "completed",
+                              })
+                            }
+                            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: m.status === "completed" ? "var(--accent-primary)" : "var(--text-muted)" }}
+                          >
+                            {m.status === "completed" ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                          </button>
+                          <span
+                            style={{
+                              color: m.status === "in_progress" ? "var(--text-primary)" : m.status === "completed" ? "var(--text-muted)" : "var(--text-secondary)",
+                              textDecoration: m.status === "completed" ? "line-through" : "none",
+                              fontWeight: m.status === "in_progress" ? 500 : 400,
+                            }}
+                          >
+                            {m.title}
+                          </span>
+                        </li>
+                      ))}
                     </ul>
                   )}
                   <button
@@ -533,8 +588,11 @@ export default function GoalsPage() {
           <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Opportunities</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>can outweigh routine tasks</span>
         </div>
-        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>
-          Example: interview tomorrow rearranges your plan — opportunities rank above initiative milestones.
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.55 }}>
+          Time-sensitive events that deserve priority over routine plans.
+        </p>
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.55 }}>
+          Examples: interview invitation · client lead · scholarship deadline · sales opportunity
         </p>
         {opportunitiesLoading ? (
           <div className="skeleton" style={{ height: "72px" }} />
