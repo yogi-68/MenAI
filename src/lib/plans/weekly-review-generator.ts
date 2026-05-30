@@ -22,28 +22,29 @@ export interface WeeklyReviewContent {
   };
 }
 
-const REVIEW_SYSTEM_PROMPT = `You are MenAI's weekly review writer — not an analytics dashboard.
+const REVIEW_SYSTEM_PROMPT = `You are MenAI's weekly review writer — an honest coach, not a cheerleader or analytics dashboard.
 
-Never lead with metrics. Never open with "Execution rate", "Momentum score", or percentages.
-Metrics may appear in your reasoning but must NOT appear in user-facing text unless they support a meaningful, specific observation (rare).
+NEVER lead with metrics. NEVER open with "Execution rate", "Momentum score", or percentages.
+NEVER celebrate milestones, plans, or initiatives that only exist as database records.
+NEVER praise completing "Nutrition Plan Development" or similar auto-generated milestone titles unless TASKS COMPLETED THIS WEEK proves the user actually did that work.
+
+If there are zero completed tasks AND zero reflections this week:
+- Say plainly there is not enough execution data to identify meaningful progress.
+- Do NOT invent wins. Leave biggestWin empty string "".
+- focusNextWeek should ask for one completed task + one reflection.
+
+If milestones completed but zero tasks completed — treat milestones as structural setup, NOT achievements.
 
 Write as if speaking to someone who already knows their numbers. Focus on understanding, not reporting.
+Cite initiative names, reflection language, and actual completed task titles — never generic praise.
 
-Your review must feel like it could ONLY apply to this user — cite their initiative names, reflection language, patterns, and commitments.
-
-Adapt tone to their domain:
-- Founder/SaaS: shipping vs researching, feedback loops, MVP scope
-- Fitness: consistency, scheduled action vs intention, recovery
-- UPSC/study: revision vs new learning, retention bottlenecks
-- Career: applications, skill gaps, follow-through
-
-Return JSON only with exactly these keys:
+Return JSON only:
 {
-  "whatHappened": "2-4 sentences. What they actually spent effort on this week. Name initiatives and concrete actions.",
-  "patternDetected": "2-3 sentences. One recurring pattern from their data — hesitation, overplanning, inconsistency, etc. Connect to reflections or behavior.",
-  "biggestWin": "1-2 sentences. The most meaningful progress — not generic praise.",
-  "biggestRisk": "1-2 sentences. What is most likely to slow them down next — be direct.",
-  "focusNextWeek": "2-3 sentences. One thing worth protecting. Actionable, not 'be more productive'."
+  "whatHappened": "2-4 sentences. What they actually did — or honest admission if they didn't execute.",
+  "patternDetected": "2-3 sentences. Pattern from behavior, or what's missing if no behavior logged.",
+  "biggestWin": "1-2 sentences. Only if real execution evidence exists. Otherwise empty string.",
+  "biggestRisk": "1-2 sentences. What will slow them down — including 'no execution data yet'.",
+  "focusNextWeek": "2-3 sentences. One concrete thing to protect or start."
 }`;
 
 function weekBounds(date = new Date()) {
@@ -290,6 +291,49 @@ export async function generateWeeklyReview(
   const prevReview = prevReviewRes.data?.content as Record<string, unknown> | undefined;
   const prevNormalized = prevReview ? normalizeWeeklyReview(prevReview) : null;
 
+  const hasExecutionEvidence =
+    completedTasks.length > 0 || reflections.length > 0;
+
+  const verifiedMilestones = milestonesCompletedThisWeek.filter((m) => {
+    const init = initiatives.find((i) => i.id === m.initiative_id);
+    const initTasks = completedTasks.filter(
+      (t) => (t.initiatives as { title?: string } | null)?.title === init?.title
+    );
+    return initTasks.length > 0;
+  });
+
+  if (!hasExecutionEvidence && initiatives.length > 0) {
+    const initTitle = initiatives[0]?.title || "your initiative";
+    const honest: WeeklyReviewContent = {
+      whatHappened: `This week there isn't enough execution data to identify meaningful progress. You have ${initiatives.length} active initiative${initiatives.length > 1 ? "s" : ""} set up${initTitle ? ` including "${initTitle}"` : ""}, but no completed tasks or daily reflections were logged.`,
+      patternDetected:
+        reflections.length === 0 && completedTasks.length === 0
+          ? "Structure without execution — MenAI can plan, but it can't learn your patterns until you complete tasks and reflect."
+          : "",
+      biggestWin: "",
+      biggestRisk:
+        "Plans will stay generic until MenAI sees real behavior — workouts, study blocks, outreach, or reflections about what blocked you.",
+      focusNextWeek:
+        "Complete one task from your daily plan and log one end-of-day reflection. That's enough for MenAI to start identifying what works for you.",
+      internalMetrics: {
+        momentumScore: momentum.score,
+        executionRate7d: execution.last7Days.rate,
+      },
+    };
+
+    await supabase.from("weekly_reviews").upsert(
+      {
+        user_id: userId,
+        week_start: weekStart,
+        week_end: weekEnd,
+        content: honest,
+      },
+      { onConflict: "user_id,week_start" }
+    );
+
+    return { review: honest, weekStart, weekEnd, cached: false };
+  }
+
   const prompt = `Generate this user's weekly review for ${weekStart} to ${weekEnd}.
 
 === LONG-TERM DIRECTION ===
@@ -301,8 +345,16 @@ ${initiativeLines.join("\n") || "No initiatives."}
 === CURRENT FOCUS ===
 ${focusInitiative ? `${focusInitiative.title} until ${profile?.current_focus_until || "unset"}` : "No explicit focus set."}
 
-=== MILESTONES COMPLETED THIS WEEK ===
-${milestonesCompletedThisWeek.map((m) => `- ${m.title}`).join("\n") || "None completed this week."}
+=== MILESTONES COMPLETED THIS WEEK (verify against tasks — do NOT praise if unverified) ===
+${verifiedMilestones.map((m) => `- ${m.title} (user completed related tasks)`).join("\n") || "None with execution evidence."}
+${
+  milestonesCompletedThisWeek.length > verifiedMilestones.length
+    ? `\nAuto-tracked only (NO task completions — do NOT celebrate): ${milestonesCompletedThisWeek
+        .filter((m) => !verifiedMilestones.includes(m))
+        .map((m) => m.title)
+        .join(", ")}`
+    : ""
+}
 
 === TASKS COMPLETED THIS WEEK ===
 ${completedTaskLines.join("\n") || "None."}

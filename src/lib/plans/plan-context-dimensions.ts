@@ -1,4 +1,9 @@
 import { isVagueContextText } from "@/lib/plans/plan-confidence";
+import {
+  buildGoalAnalysis,
+  detectDomain,
+  type KnownFacts,
+} from "@/lib/plans/coach-insights";
 
 export type ContextDimensionId =
   | "goal_clarity"
@@ -28,7 +33,7 @@ export interface PlanContextSnapshot {
 
 export interface DimensionInput {
   goals: Array<{ title: string; description?: string | null }>;
-  initiatives: Array<{ title: string; description?: string | null; target_date?: string | null }>;
+  initiatives: Array<{ title: string; description?: string | null; target_date?: string | null; life_area?: string | null }>;
   patterns: Array<{ pattern: string; behavioral_impact?: string | null }>;
   recentCompletedTasks: number;
   recentReflections: Array<{ blocked_by?: string | null }>;
@@ -37,8 +42,14 @@ export interface DimensionInput {
     biggestObstacle?: string | null;
     initiativeOutcome90d?: string | null;
     businessFocus?: string | null;
+    currentWeight?: number | null;
+    currentBodyFatPct?: number | null;
+    trainingDaysPerWeek?: number | null;
+    studyHoursPerDay?: number | null;
+    currentMetric?: string | null;
+    interviewAskedToday?: string[];
   };
-  questionsAskedToday: ContextDimensionId[];
+  questionsAskedToday: string[];
 }
 
 const STOP_OVERALL = 78;
@@ -52,32 +63,32 @@ const DIMENSION_META: Record<
 > = {
   goal_clarity: {
     label: "Goal",
-    gapHint: "Tell MenAI what you're building toward",
-    interviewable: true,
+    gapHint: "Share a baseline MenAI doesn't have yet (weight, users, study hours)",
+    interviewable: false,
     weight: 0.15,
   },
   initiative_clarity: {
     label: "Initiative",
-    gapHint: "Name what you're actively working on for the next 30–90 days",
-    interviewable: true,
+    gapHint: "Add a measurable 90-day outcome",
+    interviewable: false,
     weight: 0.25,
   },
   deadline_clarity: {
     label: "Deadline",
-    gapHint: "Add a target date for your initiative",
-    interviewable: true,
+    gapHint: "Set a target date",
+    interviewable: false,
     weight: 0.2,
   },
   obstacle_clarity: {
     label: "Biggest obstacle",
-    gapHint: "Tell MenAI what's blocking progress",
-    interviewable: true,
+    gapHint: "Name what's actually blocking progress",
+    interviewable: false,
     weight: 0.2,
   },
   available_time: {
     label: "Available time",
-    gapHint: "Tell MenAI how much time you can spend this week",
-    interviewable: true,
+    gapHint: "Share how much time you can spend this week",
+    interviewable: false,
     weight: 0.15,
   },
   recent_activity: {
@@ -89,22 +100,36 @@ const DIMENSION_META: Record<
 };
 
 function scoreGoalClarity(input: DimensionInput): number {
-  if (input.goals.length === 0) return 10;
-  const specific = input.goals.filter((g) => !isVagueContextText(g.title)).length;
-  if (input.planContext.businessFocus?.trim()) return 95;
-  if (specific >= 2) return 90;
-  if (specific === 1) return 70;
-  return 40;
+  if (input.initiatives.length === 0) return 10;
+  const init = input.initiatives[0];
+  const facts = knownFactsFromInput(input);
+  const missing = buildGoalAnalysis(facts).missingVariables;
+  if (missing.length === 0) return 95;
+  if (missing.length <= 2) return 72;
+  return 45;
 }
 
 function scoreInitiativeClarity(input: DimensionInput): number {
   if (input.initiatives.length === 0) return 5;
   const init = input.initiatives[0];
   if (input.planContext.initiativeOutcome90d?.trim()) return 95;
-  if (init.description && init.description.length > 20) return 90;
+  if (init.description && init.description.length > 20) return 88;
   if (isVagueContextText(init.title)) return 35;
-  if (init.title.length > 12) return 85;
+  if (init.title.length > 12) return 82;
   return 60;
+}
+
+function knownFactsFromInput(input: DimensionInput): KnownFacts {
+  const init = input.initiatives[0];
+  return {
+    domain: detectDomain(`${init?.title || ""} ${init?.description || ""}`, init?.life_area),
+    initiativeTitle: init?.title,
+    initiativeDescription: init?.description ?? undefined,
+    targetDate: init?.target_date,
+    lifeArea: init?.life_area,
+    goalTexts: input.goals.map((g) => g.title),
+    planContext: input.planContext as Record<string, unknown>,
+  };
 }
 
 function scoreDeadlineClarity(input: DimensionInput): number {
@@ -227,9 +252,24 @@ export function buildPlanContextSnapshot(input: DimensionInput): PlanContextSnap
     stopReason = "no_gaps";
   }
 
-  // No initiative → always need setup, not interview
   if (input.initiatives.length === 0) {
     shouldInterview = false;
+  } else {
+    const missing = buildGoalAnalysis(knownFactsFromInput(input)).missingVariables;
+    const asked = input.questionsAskedToday || [];
+    const unanswered = missing.filter((m) => !asked.includes(m.id));
+    if (unanswered.length === 0) {
+      shouldInterview = false;
+      if (!stopReason) stopReason = "no_gaps";
+    } else if (input.questionsAskedToday.length >= MAX_QUESTIONS_PER_DAY) {
+      shouldInterview = false;
+      stopReason = "threshold_met";
+    } else if (overall >= STOP_OVERALL && unanswered.length <= 1) {
+      shouldInterview = false;
+      stopReason = "threshold_met";
+    } else {
+      shouldInterview = true;
+    }
   }
 
   return {
@@ -303,10 +343,16 @@ export function questionForDimension(
   }
 }
 
-export function improvementHints(dimensions: ContextDimension[]): string[] {
-  return dimensions
-    .filter((d) => !d.satisfied && d.gapHint && DIMENSION_META[d.id].interviewable)
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 3)
-    .map((d) => d.gapHint!);
+export function improvementHints(input: DimensionInput | ContextDimension[]): string[] {
+  if (Array.isArray(input)) {
+    return input
+      .filter((d) => !d.satisfied && d.gapHint)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+      .map((d) => d.gapHint!);
+  }
+  const facts = knownFactsFromInput(input);
+  return buildGoalAnalysis(facts)
+    .missingVariables.slice(0, 3)
+    .map((m) => m.why);
 }

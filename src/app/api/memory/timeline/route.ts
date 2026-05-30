@@ -29,6 +29,7 @@ export async function GET() {
       headline: e.headline,
       subline: e.subline,
       category: e.category,
+      dayLabel: e.dayLabel,
     })),
   }));
 

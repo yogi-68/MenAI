@@ -12,23 +12,24 @@ import { AiSuggestionsBanner } from "@/components/dashboard/ai-suggestions";
 interface TodayPayload {
   greeting: string;
   whatMattersNow: string | null;
+  coachBriefing: {
+    tryingToAchieve: string | null;
+    understands: string[];
+    stillNeeds: string[];
+    insight: string;
+    mattersToday: string | null;
+    recentActivity: string | null;
+  } | null;
   currentFocus: {
     title: string;
     until: string | null;
+    coachInsight?: string;
     health: { label: string; reason: string; health: string };
   } | null;
   focusTasks: Array<{ id: string; title: string; status: string }>;
   hasPlan: boolean;
   initiatives: Array<{ id: string; title: string; lifeArea: string; progress: number }>;
   topMomentumInitiative: string | null;
-  setupFacts: {
-    bullets: string[];
-    footer: string;
-    directionCount: number;
-    activeInitiatives: number;
-    opportunityCount: number;
-    plannedMilestones: number;
-  };
   hasInitiatives: boolean;
   maturityLevel: string;
   isEmptyState?: boolean;
@@ -117,6 +118,10 @@ export default function DashboardOverview() {
           <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
             {data.whatMattersNow}
           </p>
+        ) : data?.coachBriefing?.insight && data.hasInitiatives ? (
+          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
+            {data.coachBriefing.insight}
+          </p>
         ) : null}
       </header>
 
@@ -132,17 +137,58 @@ export default function DashboardOverview() {
             }}
           >
             <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
-              Current focus
+              What you&apos;re trying to achieve
             </p>
-            <p style={{ fontSize: "1.15rem", fontWeight: 500, marginBottom: "6px" }}>{data.currentFocus.title}</p>
-            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "4px" }}>
-              {data.currentFocus.until ? `Until ${data.currentFocus.until}` : "No end date set"}
+            <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>{data.currentFocus.title}</p>
+            {data.currentFocus.coachInsight && (
+              <p style={{ fontSize: "0.92rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "10px" }}>
+                {data.currentFocus.coachInsight}
+              </p>
+            )}
+            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
+              {data.currentFocus.until ? `Deadline ${data.currentFocus.until}` : "No deadline set"}
               {" · "}
               <span style={{ color: data.currentFocus.health.health === "at_risk" ? "#f59e0b" : "var(--accent-primary)" }}>
                 {data.currentFocus.health.label}
               </span>
+              {" — "}
+              {data.currentFocus.health.reason}
             </p>
-            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>{data.currentFocus.health.reason}</p>
+          </section>
+        )}
+
+        {data?.coachBriefing && data.hasInitiatives && (
+          <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
+              What MenAI understands
+            </h2>
+            {data.coachBriefing.understands.length > 0 ? (
+              <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
+                {data.coachBriefing.understands.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>Initiative created — baseline details still missing.</p>
+            )}
+            {data.coachBriefing.stillNeeds.length > 0 && (
+              <>
+                <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
+                  Still needs to know
+                </h3>
+                <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.9rem", color: "#f59e0b", lineHeight: 1.6 }}>
+                  {data.coachBriefing.stillNeeds.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {data.coachBriefing.recentActivity && (
+              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.6, borderTop: "1px solid var(--border-color)", paddingTop: 14 }}>
+                <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>Recently: </span>
+                {data.coachBriefing.recentActivity}
+              </p>
+            )}
           </section>
         )}
 
@@ -210,7 +256,9 @@ export default function DashboardOverview() {
 
           {data?.topMomentumInitiative && data.focusTasks.length > 0 && data.hasInitiatives && (
             <p style={{ marginTop: 20, fontSize: "0.88rem", color: "var(--text-muted)" }}>
-              Most momentum right now: <strong style={{ color: "var(--accent-primary)", fontWeight: 500 }}>{data.topMomentumInitiative}</strong>
+              {data.coachBriefing?.mattersToday || (
+                <>Today&apos;s priority: <strong style={{ color: "var(--accent-primary)", fontWeight: 500 }}>{data.focusTasks[0]?.title}</strong></>
+              )}
             </p>
           )}
         </section>
@@ -266,25 +314,6 @@ export default function DashboardOverview() {
                 <MessageSquare size={14} /> Tell MenAI what you&apos;re building
               </Link>
             </div>
-          </section>
-        )}
-
-        {data?.setupFacts && (
-          <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 12 }}>
-              Your setup
-            </h2>
-            <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: 12, lineHeight: 1.6 }}>
-              Based on your current data:
-            </p>
-            <ul style={{ margin: "0 0 12px", paddingLeft: 20, fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.8 }}>
-              {data.setupFacts.bullets.map((b) => (
-                <li key={b}>{b}</li>
-              ))}
-            </ul>
-            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.6 }}>
-              {data.setupFacts.footer}
-            </p>
           </section>
         )}
 

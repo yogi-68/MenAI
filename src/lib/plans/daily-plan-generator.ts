@@ -15,9 +15,7 @@ import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { recordPlanGeneration } from "@/lib/plans/momentum-score";
 import { logAiUsage, checkAiQuota, AI_UNAVAILABLE_MESSAGE } from "@/lib/ai/usage-guard";
 import {
-  applyPlanLanguageGuard,
   buildPlanEvidence,
-  isLowPlanConfidence,
 } from "@/lib/plans/language-guard";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildPatternGuidanceLines } from "@/lib/plans/pattern-task-guidance";
@@ -28,6 +26,13 @@ import {
   type PlanContextSnapshot,
 } from "@/lib/plans/plan-context-dimensions";
 import { loadPlanContextData } from "@/lib/plans/plan-interview";
+import {
+  buildGoalAnalysis,
+  COACH_WRITING_RULES,
+  detectDomain,
+  sanitizeCoachText,
+  type GoalAnalysis,
+} from "@/lib/plans/coach-insights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -48,6 +53,9 @@ export interface PlanningContextSummary {
   planningQuality: PlanContextSnapshot["planningQuality"];
   dimensions: Array<{ id: string; label: string; satisfied: boolean; gapHint?: string }>;
   improvementHints: string[];
+  coachInsight?: string;
+  missingLabels?: string[];
+  daysRemaining?: number | null;
 }
 
 export interface DailyPlanContent {
@@ -100,6 +108,8 @@ export interface PlanUserContext {
   confidence: PlanConfidence;
   planMode: PlanMode;
   contextSnapshot: PlanContextSnapshot;
+  goalAnalysis: GoalAnalysis | null;
+  primaryInitiativeTitle: string | null;
   maxTasks: number;
   timeEstimationRatio: number;
   executionRate7d: number;
@@ -464,12 +474,13 @@ export async function fetchPlanUserContext(
   });
 
   const planContext = await loadPlanContextData(supabase, userId);
-  const contextSnapshot = buildPlanContextSnapshot({
+  const dimensionInput = {
     goals: goals.map((g) => ({ title: g.title, description: g.description })),
     initiatives: initiatives.map((i) => ({
       title: i.title,
       description: i.description,
       target_date: i.target_date,
+      life_area: i.life_area,
     })),
     patterns: patterns.map((p) => ({
       pattern: p.pattern,
@@ -479,11 +490,25 @@ export async function fetchPlanUserContext(
     recentReflections: recentReflectionsData.map((r) => ({ blocked_by: r.blocked_by })),
     planContext,
     questionsAskedToday: planContext.interviewAskedToday || [],
-  });
+  };
+  const contextSnapshot = buildPlanContextSnapshot(dimensionInput);
+  const primaryInit = initiatives[0];
+  const goalAnalysis =
+    primaryInit
+      ? buildGoalAnalysis({
+          domain: detectDomain(`${primaryInit.title} ${primaryInit.description || ""}`, primaryInit.life_area),
+          initiativeTitle: primaryInit.title,
+          initiativeDescription: primaryInit.description,
+          targetDate: primaryInit.target_date,
+          lifeArea: primaryInit.life_area,
+          goalTexts: goals.map((g) => g.title),
+          planContext: planContext as Record<string, unknown>,
+        })
+      : null;
 
   const effectiveScore = contextSnapshot.overall;
   confidence.score = effectiveScore;
-  confidence.gaps = improvementHints(contextSnapshot.dimensions);
+  confidence.gaps = improvementHints(dimensionInput);
 
   const planContextNotes: string[] = [];
   if (planContext.businessFocus?.trim()) {
@@ -498,6 +523,11 @@ export async function fetchPlanUserContext(
   if (typeof planContext.weeklyAvailableHours === "number") {
     planContextNotes.push(`Weekly capacity: ${planContext.weeklyAvailableHours} hours`);
   }
+  if (planContext.currentWeight) planContextNotes.push(`Current weight: ${planContext.currentWeight}`);
+  if (planContext.currentBodyFatPct) planContextNotes.push(`Current body-fat: ${planContext.currentBodyFatPct}%`);
+  if (planContext.trainingDaysPerWeek) planContextNotes.push(`Training: ${planContext.trainingDaysPerWeek} days/week`);
+  if (planContext.studyHoursPerDay) planContextNotes.push(`Study: ${planContext.studyHoursPerDay} hrs/day`);
+  if (planContext.currentMetric) planContextNotes.push(`Current baseline: ${planContext.currentMetric}`);
 
   const planMode: PlanMode =
     effectiveScore < 55
@@ -556,6 +586,8 @@ export async function fetchPlanUserContext(
     confidence,
     planMode,
     contextSnapshot,
+    goalAnalysis,
+    primaryInitiativeTitle: primaryInit?.title ?? null,
     maxTasks: planPhase === "afternoon" && middayCompleted.length > 0 ? Math.min(maxTasks, 3) : maxTasks,
     timeEstimationRatio: timeProfile.estimationRatio,
     executionRate7d: executionMetrics.last7Days.rate,
@@ -568,7 +600,8 @@ export async function fetchPlanUserContext(
 }
 
 function planningContextFromSnapshot(
-  snapshot: PlanContextSnapshot
+  snapshot: PlanContextSnapshot,
+  goalAnalysis: GoalAnalysis | null
 ): PlanningContextSummary {
   return {
     planningQuality: snapshot.planningQuality,
@@ -578,7 +611,11 @@ function planningContextFromSnapshot(
       satisfied: d.satisfied,
       gapHint: d.gapHint,
     })),
-    improvementHints: improvementHints(snapshot.dimensions),
+    improvementHints:
+      goalAnalysis?.missingVariables.slice(0, 3).map((m) => m.why) ?? [],
+    coachInsight: goalAnalysis?.coachInsight,
+    missingLabels: goalAnalysis?.missingVariables.map((m) => m.label),
+    daysRemaining: goalAnalysis?.daysRemaining,
   };
 }
 
@@ -688,18 +725,21 @@ Context dimensions:
 ${ctx.contextSnapshot.dimensions.map((d) => `- ${d.label}: ${d.satisfied ? "clear" : `gap — ${d.gapHint || "needs detail"}`}`).join("\n")}
 To improve specificity: ${ctx.confidence.gaps.join("; ") || "None"}
 
+${ctx.goalAnalysis ? `GOAL ANALYSIS (use this for whatMattersNow — do NOT repeat verbatim):
+${ctx.goalAnalysis.coachInsight}
+Days remaining: ${ctx.goalAnalysis.daysRemaining ?? "unknown"}
+Missing variables: ${ctx.goalAnalysis.missingVariables.map((m) => m.label).join(", ") || "none"}
+Once known, MenAI can estimate: ${ctx.goalAnalysis.onceKnown.join(", ")}` : ""}
+
+${COACH_WRITING_RULES}
+
 ${modeInstructions}
 
-LANGUAGE RULES (planning quality: ${ctx.contextSnapshot.planningQuality}):
-${
-  isLowPlanConfidence(ctx.confidence.score)
-    ? `- LOW CONTEXT: Use hedged language only. Start summaries with "Based on the information available..." or "Your current goals suggest..."
-- NEVER state conclusions as facts (avoid "You're focused on X", "Your priority is X")
-- whyTheseTasks MUST cite specific gaps from the Gaps list above
-- Include "evidenceUsed" array listing each data point you relied on`
-    : `- Medium/high context: be direct but still cite initiatives, deadlines, or execution rate when making claims
-- Include "evidenceUsed" array listing each data point you relied on`
-}
+LANGUAGE RULES:
+- whatMattersNow must use GOAL ANALYSIS insight or cite missing variable + deadline — never restate the initiative title alone.
+- If missing variables exist, whatMattersNow should name the biggest gap (e.g. "MenAI doesn't know your current body-fat %").
+- Include "evidenceUsed" array listing each specific data point you relied on.
+- Do NOT use hedging phrases. Say what's missing or what to do today.
 
 CRITICAL: Generate tasks only when evidence shows highest-leverage action today.
 Urgent opportunities ALWAYS beat routine initiative tasks.
@@ -849,26 +889,38 @@ export async function generateDailyPlanWithAI(
       ? parsed.evidenceUsed!.filter(Boolean).slice(0, 6)
       : buildPlanEvidence(ctx);
 
+  const coachCtx = {
+    userGoal: ctx.primaryInitiativeTitle || undefined,
+    missingVariables: ctx.goalAnalysis?.missingVariables.map((m) => m.label),
+  };
+
+  const fallbackWhatMatters =
+    ctx.goalAnalysis?.coachInsight ||
+    (ctx.planMode === "context_building"
+      ? `MenAI still needs ${ctx.goalAnalysis?.missingVariables[0]?.label.toLowerCase() || "more context"} before tasks can be precise.`
+      : undefined);
+
   return {
-    whatMattersNow: applyPlanLanguageGuard(parsed.whatMattersNow?.trim(), score),
-    topObstacle: applyPlanLanguageGuard(parsed.topObstacle?.trim(), score),
+    whatMattersNow:
+      sanitizeCoachText(parsed.whatMattersNow?.trim(), coachCtx) ||
+      fallbackWhatMatters,
+    topObstacle: sanitizeCoachText(parsed.topObstacle?.trim(), coachCtx),
     whyTheseTasks:
-      applyPlanLanguageGuard(
+      sanitizeCoachText(
         parsed.whyTheseTasks?.trim() ||
           (ctx.planMode === "context_building"
-            ? "Based on the information available, your context is still thin. Today focuses on getting clearer — add initiatives, deadlines, or log any time-sensitive opportunities."
-            : "These tasks target your active initiatives and the biggest gap between where you are and your next deadline."),
-        score
+            ? ctx.goalAnalysis?.coachInsight
+            : "These tasks advance your current milestone — each ties to a specific deliverable today."),
+        coachCtx
       ) || "",
     daySummary:
-      applyPlanLanguageGuard(
-        parsed.daySummary?.trim() ||
-          "Today is about specific actions that move your initiatives forward.",
-        score
-      ) || "",
+      sanitizeCoachText(
+        parsed.daySummary?.trim(),
+        coachCtx
+      ) || ctx.goalAnalysis?.coachInsight || "",
     confidence: ctx.confidence,
     planMode: ctx.planMode,
-    planningContext: planningContextFromSnapshot(ctx.contextSnapshot),
+    planningContext: planningContextFromSnapshot(ctx.contextSnapshot, ctx.goalAnalysis),
     assumptions: parsed.assumptions?.filter(Boolean).slice(0, 3),
     lifeAreaInsight: ctx.lifeAreaInsight,
     timeEstimationInsight: ctx.timeEstimationInsight ?? undefined,

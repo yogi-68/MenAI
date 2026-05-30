@@ -3,35 +3,30 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface TimelineEvent {
   sortKey: string;
   month: string;
+  dayLabel: string;
   headline: string;
   subline?: string;
-  category: "direction" | "initiative" | "milestone" | "completion" | "execution";
+  category: "initiative" | "milestone" | "completion" | "execution" | "reflection" | "decision";
 }
 
 export async function buildMemoryTimeline(
   supabase: SupabaseClient,
   userId: string,
-  limit = 32
+  limit = 40
 ): Promise<TimelineEvent[]> {
   const since = new Date();
   since.setMonth(since.getMonth() - 18);
   const sinceIso = since.toISOString();
 
-  const [goalsRes, initiativesRes, milestonesRes, tasksRes] = await Promise.all([
-    supabase
-      .from("goals")
-      .select("title, created_at, status")
-      .eq("user_id", userId)
-      .gte("created_at", sinceIso)
-      .order("created_at", { ascending: true }),
+  const [initiativesRes, milestonesRes, tasksRes, reflectionsRes] = await Promise.all([
     supabase
       .from("initiatives")
-      .select("id, title, created_at, status, completed_at, completion_review, life_area")
+      .select("id, title, created_at, status, completed_at, completion_review, life_area, target_date")
       .eq("user_id", userId)
       .order("created_at", { ascending: true }),
     supabase
       .from("initiative_milestones")
-      .select("title, status, completed_at, created_at, initiatives(title)")
+      .select("title, status, completed_at, created_at, initiatives(title, created_at)")
       .eq("user_id", userId)
       .eq("status", "completed")
       .not("completed_at", "is", null)
@@ -43,36 +38,46 @@ export async function buildMemoryTimeline(
       .eq("status", "completed")
       .gte("completed_at", sinceIso)
       .order("completed_at", { ascending: true })
-      .limit(60),
+      .limit(80),
+    supabase
+      .from("daily_reflections")
+      .select("moved_forward, blocked_by, reflection_date, created_at")
+      .eq("user_id", userId)
+      .gte("reflection_date", sinceIso.split("T")[0])
+      .order("reflection_date", { ascending: true })
+      .limit(40),
   ]);
 
   const events: TimelineEvent[] = [];
-
-  for (const g of goalsRes.data || []) {
-    events.push({
-      sortKey: g.created_at,
-      month: monthLabel(g.created_at),
-      headline: `Wanted ${stripPrefix(g.title)}`,
-      subline: "Long-term direction",
-      category: "direction",
-    });
-  }
 
   for (const i of initiativesRes.data || []) {
     events.push({
       sortKey: i.created_at,
       month: monthLabel(i.created_at),
-      headline: `Started ${stripPrefix(i.title)}`,
+      dayLabel: dayLabel(i.created_at),
+      headline: `Created ${stripPrefix(i.title)} initiative`,
       category: "initiative",
     });
+
+    if (i.target_date) {
+      events.push({
+        sortKey: i.created_at,
+        month: monthLabel(i.created_at),
+        dayLabel: dayLabel(i.created_at),
+        headline: `Defined target: ${formatTarget(i.title, i.target_date)}`,
+        subline: `Deadline ${formatDate(i.target_date)}`,
+        category: "decision",
+      });
+    }
 
     if (i.status === "completed" && i.completed_at) {
       const review = i.completion_review as { timelineEntry?: string; summary?: string } | null;
       events.push({
         sortKey: i.completed_at,
         month: monthLabel(i.completed_at),
-        headline: review?.timelineEntry || `Completed ${stripPrefix(i.title)}`,
-        subline: review?.summary?.slice(0, 100),
+        dayLabel: dayLabel(i.completed_at),
+        headline: review?.timelineEntry || `Finished ${stripPrefix(i.title)}`,
+        subline: review?.summary?.slice(0, 120),
         category: "completion",
       });
     }
@@ -80,52 +85,76 @@ export async function buildMemoryTimeline(
 
   for (const m of milestonesRes.data || []) {
     if (!m.completed_at) continue;
-    const initTitle = (m.initiatives as { title?: string } | null)?.title;
+    const init = m.initiatives as { title?: string; created_at?: string } | null;
+    const createdAt = init?.created_at || m.created_at;
+    const hoursSinceCreate =
+      (new Date(m.completed_at).getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+    if (hoursSinceCreate < 24) continue;
+
     events.push({
       sortKey: m.completed_at,
       month: monthLabel(m.completed_at),
-      headline: milestoneHeadline(m.title),
-      subline: initTitle ? `Part of ${initTitle}` : undefined,
+      dayLabel: dayLabel(m.completed_at),
+      headline: `Completed milestone: ${m.title}`,
+      subline: init?.title ? `Part of ${init.title}` : undefined,
       category: "milestone",
     });
   }
 
-  const notableTasks = (tasksRes.data || []).filter((t) => isNotableCompletion(t.title));
-  for (const t of notableTasks.slice(-8)) {
-    if (!t.completed_at) continue;
+  for (const t of tasksRes.data || []) {
+    if (!t.completed_at || !isExecutionEvent(t.title)) continue;
     events.push({
       sortKey: t.completed_at,
       month: monthLabel(t.completed_at),
-      headline: taskHeadline(t.title),
+      dayLabel: dayLabel(t.completed_at),
+      headline: executionHeadline(t.title),
       category: "execution",
     });
   }
 
-  events.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  for (const r of reflectionsRes.data || []) {
+    const key = r.created_at || `${r.reflection_date}T12:00:00Z`;
+    const moved = r.moved_forward?.trim();
+    if (!moved || moved.length < 8) continue;
+    events.push({
+      sortKey: key,
+      month: monthLabel(key),
+      dayLabel: dayLabel(key),
+      headline: moved.length > 80 ? `${moved.slice(0, 77)}…` : moved,
+      subline: r.blocked_by ? `Blocked by: ${r.blocked_by.slice(0, 60)}` : "Daily reflection",
+      category: "reflection",
+    });
+  }
 
+  events.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   return dedupeEvents(events).slice(-limit);
 }
 
-function milestoneHeadline(title: string): string {
+function formatTarget(title: string, targetDate: string): string {
   const t = title.trim();
-  if (/^(define|build|ship|launch|get|reach|complete)/i.test(t)) {
-    return t.charAt(0).toUpperCase() + t.slice(1);
-  }
-  return t;
+  if (/\d{1,2}\s*%/.test(t)) return `${t} by ${formatDate(targetDate)}`;
+  return `${t} by ${formatDate(targetDate)}`;
 }
 
-function taskHeadline(title: string): string {
+function formatDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function executionHeadline(title: string): string {
   const lower = title.toLowerCase();
-  if (/first (user|customer|sale|paying)/i.test(title)) return title;
-  if (/launch/i.test(lower)) return title;
-  if (/mvp/i.test(lower)) return `Shipped ${title}`;
-  return title;
+  if (/workout|train|gym|run|walk|cardio|lift/.test(lower)) return `Completed workout: ${title}`;
+  if (/log|track|nutrition|meal|calorie/.test(lower)) return `Logged: ${title}`;
+  if (/first (user|customer|paying|sale)/i.test(title)) return title;
+  if (/launch|mvp|shipped|published|passed|hired|signed/i.test(lower)) return title;
+  return `Completed: ${title}`;
 }
 
-function isNotableCompletion(title: string): boolean {
-  return /first (user|customer|paying|sale)|launch|mvp|shipped|published|passed|hired|signed/i.test(
-    title
-  );
+function isExecutionEvent(title: string): boolean {
+  const lower = title.toLowerCase();
+  if (/make progress on|context-building|add initiative|define milestone/i.test(lower)) return false;
+  if (/workout|train|gym|run|walk|cardio|lift|nutrition|meal|calorie|study|chapter|mock|outreach|email|user|customer|launch|mvp|shipped|completed|finished|logged/i.test(lower))
+    return true;
+  return /first (user|customer|paying|sale)|launch|mvp|passed|signed/i.test(title);
 }
 
 function stripPrefix(title: string): string {
@@ -135,6 +164,11 @@ function stripPrefix(title: string): string {
 function monthLabel(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function dedupeEvents(events: TimelineEvent[]): TimelineEvent[] {
@@ -159,7 +193,6 @@ export function groupTimelineByMonth(events: TimelineEvent[]): Map<string, Timel
   return map;
 }
 
-/** Months sorted chronologically for story reading (oldest → newest). */
 export function sortedTimelineMonths(events: TimelineEvent[]): string[] {
   const keys = new Map<string, string>();
   for (const e of events) {

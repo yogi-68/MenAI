@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getPlanContextState } from "@/lib/plans/plan-interview";
+import { buildDimensionInput, getPlanContextState } from "@/lib/plans/plan-interview";
 import { improvementHints } from "@/lib/plans/plan-context-dimensions";
 
 export const runtime = "nodejs";
@@ -16,7 +16,8 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { snapshot, nextQuestion } = await getPlanContextState(supabase, user.id);
+    const input = await buildDimensionInput(supabase, user.id);
+    const { snapshot, goalAnalysis, nextQuestion } = await getPlanContextState(supabase, user.id);
 
     return NextResponse.json({
       snapshot: {
@@ -28,8 +29,9 @@ export async function GET() {
         })),
         planningQuality: snapshot.planningQuality,
         shouldInterview: snapshot.shouldInterview,
-        improvementHints: improvementHints(snapshot.dimensions),
+        improvementHints: improvementHints(input),
       },
+      goalAnalysis,
       nextQuestion,
     });
   } catch (error) {

@@ -10,15 +10,17 @@ interface TimelineMonth {
     headline: string;
     subline?: string;
     category: string;
+    dayLabel?: string;
   }>;
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
-  direction: "var(--text-muted)",
   initiative: "var(--accent-primary)",
+  decision: "var(--accent-secondary)",
   milestone: "#22c55e",
   completion: "#22c55e",
   execution: "var(--accent-secondary)",
+  reflection: "var(--text-secondary)",
 };
 
 export default function TimelinePage() {
@@ -63,7 +65,7 @@ export default function TimelinePage() {
           </h1>
         </div>
         <p style={{ color: "var(--text-muted)", marginTop: "8px", maxWidth: 560, lineHeight: 1.6 }}>
-          Your story over time — what you started, what you shipped, what you learned.
+          Real events — workouts completed, reflections logged, milestones finished. Not onboarding history.
         </p>
       </header>
 
@@ -71,14 +73,9 @@ export default function TimelinePage() {
         <div className="skeleton shimmer" style={{ height: 320, borderRadius: 8 }} />
       ) : !data?.months.length ? (
         <div className="glass-card" style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
-          <p style={{ lineHeight: 1.7, marginBottom: 8 }}>
-            April — wanted to start something
-            <br />
-            May — first milestone done
-            <br />
-            June — shipped v1
+          <p style={{ lineHeight: 1.7, marginBottom: 16, fontSize: "0.95rem" }}>
+            No execution events yet. Complete a task, log a reflection, or finish a milestone — those become your timeline.
           </p>
-          <p style={{ fontSize: "0.9rem" }}>Your timeline fills in as you add initiatives, complete milestones, and finish work.</p>
           <Link href="/dashboard/goals" className="btn-primary" style={{ display: "inline-flex", marginTop: 16, textDecoration: "none" }}>
             Add an initiative
           </Link>
@@ -119,6 +116,7 @@ export default function TimelinePage() {
                           lineHeight: 1.45,
                         }}
                       >
+                        {ev.dayLabel ? `${ev.dayLabel} — ` : ""}
                         {ev.headline}
                       </p>
                       {ev.subline && (

@@ -23,10 +23,13 @@ interface DailyPlanContent {
     gaps: string[];
     strengths: string[];
   };
-  planningContext?: {
+    planningContext?: {
     planningQuality: "Strong" | "Good" | "Fair" | "Needs context";
     dimensions: Array<{ id: string; label: string; satisfied: boolean; gapHint?: string }>;
     improvementHints: string[];
+    coachInsight?: string;
+    missingLabels?: string[];
+    daysRemaining?: number | null;
   };
   evidence?: string[];
   tasks: DailyPlanTask[];
@@ -172,13 +175,16 @@ export default function DailyPlansPage() {
   });
 
   const plan = planData?.plan;
-  const topPriority = plan?.whatMattersNow || plan?.daySummary;
+  const coachInsight = plan?.planningContext?.coachInsight;
+  const topPriority =
+    coachInsight ||
+    plan?.whatMattersNow ||
+    plan?.daySummary;
   const metrics = executionData?.metrics;
   const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
   const totalTasks = tasks?.length || 0;
   const completionRate =
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
   const isLoading = planLoading || tasksLoading;
   const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
   const planningQuality = plan?.planningContext?.planningQuality;

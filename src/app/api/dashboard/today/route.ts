@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
-import { buildSetupFacts } from "@/lib/dashboard/setup-facts";
+import { buildDashboardCoachBriefing } from "@/lib/dashboard/setup-facts";
 import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
@@ -21,7 +21,7 @@ export async function GET() {
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
 
-  const [profileRes, tasksRes, initiativesRes, planRes, setupFacts, cogState] =
+  const [profileRes, tasksRes, initiativesRes, planRes, milestonesRes, cogState] =
     await Promise.all([
       supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
       supabase
@@ -32,7 +32,7 @@ export async function GET() {
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase
         .from("initiatives")
-        .select("id, title, life_area, progress, last_action_at, target_date, status")
+        .select("id, title, life_area, progress, last_action_at, target_date, status, description")
         .eq("user_id", user.id)
         .eq("status", "active")
         .order("last_action_at", { ascending: false, nullsFirst: false })
@@ -43,7 +43,12 @@ export async function GET() {
         .eq("user_id", user.id)
         .eq("plan_date", today)
         .maybeSingle(),
-      buildSetupFacts(supabase, user.id),
+      supabase
+        .from("initiative_milestones")
+        .select("title, status")
+        .eq("user_id", user.id)
+        .eq("status", "in_progress")
+        .limit(1),
       buildCognitiveState(user.id),
     ]);
 
@@ -54,30 +59,18 @@ export async function GET() {
 
   const planContent = planRes.data?.plan_content as {
     whatMattersNow?: string;
+    planningContext?: { coachInsight?: string };
     tasks?: Array<{ title: string }>;
   } | null;
 
-  let topMomentumInitiative: string | null = null;
-  if (initiatives.length > 0) {
-    const scored = initiatives.map((i) => {
-      const health = computeInitiativeHealth({
-        status: i.status,
-        targetDate: i.target_date,
-        lastActionAt: i.last_action_at,
-        progress: i.progress,
-      });
-      const recency = i.last_action_at ? new Date(i.last_action_at).getTime() : 0;
-      return { title: i.title, score: recency + (health.health === "on_track" ? 1000 : 0) };
-    });
-    scored.sort((a, b) => b.score - a.score);
-    topMomentumInitiative = scored[0]?.title ?? null;
-  }
-
-  const topMomentum =
-    initiatives.length > 0 && cogState.maturity_level !== "new" ? topMomentumInitiative : null;
+  const currentMilestone = milestonesRes.data?.[0]?.title ?? null;
+  const coachBriefing = await buildDashboardCoachBriefing(supabase, user.id, {
+    whatMattersNow: planContent?.planningContext?.coachInsight || planContent?.whatMattersNow,
+    currentMilestone,
+  });
 
   const focusId = profileRes.data?.current_focus_initiative_id;
-  const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : null;
+  const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : initiatives[0];
   const currentFocus = focusInit
     ? {
         title: focusInit.title,
@@ -88,12 +81,14 @@ export async function GET() {
           lastActionAt: focusInit.last_action_at,
           progress: focusInit.progress,
         }),
+        coachInsight: coachBriefing.insight,
       }
     : null;
 
   return NextResponse.json({
     greeting: `${timeOfDay}, ${firstName}.`,
-    whatMattersNow: planContent?.whatMattersNow || null,
+    whatMattersNow: coachBriefing.mattersToday || planContent?.planningContext?.coachInsight || planContent?.whatMattersNow || null,
+    coachBriefing,
     currentFocus,
     focusTasks: focusTasks.map((t) => ({
       id: t.id,
@@ -107,8 +102,6 @@ export async function GET() {
       lifeArea: i.life_area,
       progress: i.progress,
     })),
-    topMomentumInitiative: topMomentum,
-    setupFacts,
     hasInitiatives: initiatives.length > 0,
     maturityLevel: cogState.maturity_level,
     isEmptyState: initiatives.length === 0 && !planRes.data?.plan_content,

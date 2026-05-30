@@ -2,22 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   applyInterviewAnswer,
+  buildDimensionInput,
   getPlanContextState,
   markInterviewSkipped,
 } from "@/lib/plans/plan-interview";
 import { improvementHints } from "@/lib/plans/plan-context-dimensions";
-import type { ContextDimensionId } from "@/lib/plans/plan-context-dimensions";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 
 export const runtime = "nodejs";
-
-const VALID_DIMENSIONS = new Set<ContextDimensionId>([
-  "goal_clarity",
-  "initiative_clarity",
-  "deadline_clarity",
-  "obstacle_clarity",
-  "available_time",
-]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,18 +24,20 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const action = body.action as "answer" | "skip" | "generate_now";
-    const dimension = body.dimension as ContextDimensionId | undefined;
+    const variableId = typeof body.variableId === "string" ? body.variableId : body.dimension;
     const answer = typeof body.answer === "string" ? body.answer.trim() : "";
 
     if (action === "generate_now") {
       await invalidateTodayPlan(supabase, user.id);
-      const { snapshot } = await getPlanContextState(supabase, user.id);
+      const input = await buildDimensionInput(supabase, user.id);
+      const { snapshot, goalAnalysis } = await getPlanContextState(supabase, user.id);
       return NextResponse.json({
         done: true,
         regenerated: true,
+        goalAnalysis,
         snapshot: {
           planningQuality: snapshot.planningQuality,
-          improvementHints: improvementHints(snapshot.dimensions),
+          improvementHints: improvementHints(input),
           dimensions: snapshot.dimensions.map((d) => ({
             id: d.id,
             label: d.label,
@@ -53,32 +47,34 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (!dimension || !VALID_DIMENSIONS.has(dimension)) {
-      return NextResponse.json({ error: "Invalid dimension" }, { status: 400 });
+    if (!variableId || typeof variableId !== "string") {
+      return NextResponse.json({ error: "Invalid variable" }, { status: 400 });
     }
 
     if (action === "skip") {
-      await markInterviewSkipped(supabase, user.id, dimension);
+      await markInterviewSkipped(supabase, user.id, variableId);
     } else if (action === "answer") {
       if (!answer) {
         return NextResponse.json({ error: "Answer required" }, { status: 400 });
       }
-      await applyInterviewAnswer(supabase, user.id, dimension, answer);
+      await applyInterviewAnswer(supabase, user.id, variableId, answer);
       await invalidateTodayPlan(supabase, user.id);
     } else {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
-    const { snapshot, nextQuestion } = await getPlanContextState(supabase, user.id);
+    const input = await buildDimensionInput(supabase, user.id);
+    const { snapshot, goalAnalysis, nextQuestion } = await getPlanContextState(supabase, user.id);
     const done = !snapshot.shouldInterview || !nextQuestion;
 
     return NextResponse.json({
       done,
       regenerated: action === "answer",
+      goalAnalysis,
       snapshot: {
         planningQuality: snapshot.planningQuality,
         shouldInterview: snapshot.shouldInterview,
-        improvementHints: improvementHints(snapshot.dimensions),
+        improvementHints: improvementHints(input),
         dimensions: snapshot.dimensions.map((d) => ({
           id: d.id,
           label: d.label,
