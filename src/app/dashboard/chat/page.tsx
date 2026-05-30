@@ -24,8 +24,19 @@ type ConversationRow = {
   message_count?: number;
 };
 
+class ConversationNotFoundError extends Error {
+  code = "NOT_FOUND" as const;
+  constructor(public conversationId: string) {
+    super("Conversation not found");
+    this.name = "ConversationNotFoundError";
+  }
+}
+
 async function fetchMessages(convId: string): Promise<Message[]> {
   const res = await fetch(`/api/conversations/${convId}`);
+  if (res.status === 404) {
+    throw new ConversationNotFoundError(convId);
+  }
   if (!res.ok) throw new Error("Failed to load messages");
   const data = await res.json();
   return (data.messages || []).map((m: Record<string, string>) => ({
@@ -67,6 +78,17 @@ export default function ChatPage() {
   const scrollRaf = useRef<number | null>(null);
   const lastScrollTs = useRef(0);
 
+  const handleMissingConversation = useCallback(
+    (convId: string) => {
+      clearConversationState(convId);
+      queryClient.removeQueries({ queryKey: ["messages", convId] });
+      if (getChatStore().currentConversationId === convId) {
+        setCurrentConversationId(null);
+      }
+    },
+    [clearConversationState, queryClient, setCurrentConversationId]
+  );
+
   const { data: conversations = [], isLoading: convsLoading } = useQuery({
     queryKey: ["conversations"],
     queryFn: async () => {
@@ -78,6 +100,14 @@ export default function ChatPage() {
     staleTime: 30_000,
     refetchOnWindowFocus: true,
   });
+
+  useEffect(() => {
+    if (convsLoading || !isRealConversationId(currentConversationId)) return;
+    const exists = conversations.some((c) => c.id === currentConversationId);
+    if (!exists) {
+      handleMissingConversation(currentConversationId);
+    }
+  }, [conversations, convsLoading, currentConversationId, handleMissingConversation]);
 
   const scrollToBottom = useCallback((smooth = false) => {
     if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current);
@@ -109,10 +139,14 @@ export default function ChatPage() {
         staleTime: 0,
       });
       setMessages(convId, loaded);
-    } catch {
+    } catch (error) {
+      if (error instanceof ConversationNotFoundError) {
+        handleMissingConversation(convId);
+        return;
+      }
       /* ignore background sync errors */
     }
-  }, [queryClient, setMessages]);
+  }, [queryClient, setMessages, handleMissingConversation]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -151,10 +185,14 @@ export default function ChatPage() {
         });
         setMessages(convId, loaded);
       } catch (error) {
+        if (error instanceof ConversationNotFoundError) {
+          handleMissingConversation(convId);
+          return;
+        }
         console.error("Failed to load conversation:", error);
       }
     },
-    [queryClient, setCurrentConversationId, setMessages, isSending]
+    [queryClient, setCurrentConversationId, setMessages, isSending, handleMissingConversation]
   );
 
   const startNewChat = useCallback(() => {
@@ -205,8 +243,10 @@ export default function ChatPage() {
       const loaded = await fetchMessages(convId);
       setMessages(convId, loaded);
       queryClient.setQueryData(["messages", convId], loaded);
-    } catch {
-      /* server may not have persisted yet */
+    } catch (error) {
+      if (error instanceof ConversationNotFoundError) {
+        handleMissingConversation(convId);
+      }
     }
   };
 
@@ -217,7 +257,10 @@ export default function ChatPage() {
     setNetworkError(null);
     setRetryText(null);
 
-    const isNewConversation = !isRealConversationId(currentConversationId);
+    const convExists =
+      isRealConversationId(currentConversationId) &&
+      conversations.some((c) => c.id === currentConversationId);
+    const isNewConversation = !convExists;
     const localConvId = isNewConversation ? `pending-${crypto.randomUUID()}` : currentConversationId!;
 
     if (isNewConversation) {
@@ -251,7 +294,7 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: messageText,
-          conversationId: isRealConversationId(currentConversationId) ? currentConversationId : null,
+          conversationId: convExists ? currentConversationId : null,
         }),
         signal: controller.signal,
       });

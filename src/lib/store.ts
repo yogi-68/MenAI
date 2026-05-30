@@ -97,12 +97,28 @@ const defaultConversationState: ConversationState = {
   pendingOptimisticIds: [],
 };
 
+/** Legacy persisted states may only have messages — always normalize before use. */
+export function normalizeConversationState(
+  raw: Partial<ConversationState> | undefined | null
+): ConversationState {
+  if (!raw) return { ...defaultConversationState };
+  return {
+    messages: Array.isArray(raw.messages) ? raw.messages : [],
+    pendingOptimisticIds: Array.isArray(raw.pendingOptimisticIds)
+      ? raw.pendingOptimisticIds
+      : [],
+  };
+}
+
 function trimPersistedStates(
   states: Record<string, ConversationState>,
   currentId: string | null
 ): Record<string, ConversationState> {
-  const entries = Object.entries(states);
-  if (entries.length <= MAX_PERSISTED_CONVERSATIONS) return states;
+  const normalized = Object.fromEntries(
+    Object.entries(states).map(([id, cs]) => [id, normalizeConversationState(cs)])
+  );
+  const entries = Object.entries(normalized);
+  if (entries.length <= MAX_PERSISTED_CONVERSATIONS) return normalized;
 
   const sorted = entries.sort((a, b) => {
     if (a[0] === currentId) return -1;
@@ -143,8 +159,10 @@ export const useAppStore = create<AppState>()(
       migrateConversation: (fromId, toId) =>
         set((state) => {
           if (fromId === toId) return state;
-          const fromState = state.conversationStates[fromId];
-          if (!fromState) return { currentConversationId: toId };
+          const fromState = normalizeConversationState(state.conversationStates[fromId]);
+          if (fromState.messages.length === 0 && fromState.pendingOptimisticIds.length === 0) {
+            return { currentConversationId: toId };
+          }
 
           const newStates = { ...state.conversationStates };
           delete newStates[fromId];
@@ -162,7 +180,7 @@ export const useAppStore = create<AppState>()(
           conversationStates: {
             ...state.conversationStates,
             [conversationId]: {
-              ...(state.conversationStates[conversationId] || defaultConversationState),
+              ...normalizeConversationState(state.conversationStates[conversationId]),
               messages: msgs,
               pendingOptimisticIds: [],
             },
@@ -171,7 +189,7 @@ export const useAppStore = create<AppState>()(
 
       addMessage: (conversationId, msg) =>
         set((state) => {
-          const convState = state.conversationStates[conversationId] || defaultConversationState;
+          const convState = normalizeConversationState(state.conversationStates[conversationId]);
           const exists = convState.messages.some((m) => m.id === msg.id);
           if (exists) return state;
 
@@ -190,7 +208,7 @@ export const useAppStore = create<AppState>()(
 
       addOptimisticMessage: (conversationId, msg) =>
         set((state) => {
-          const convState = state.conversationStates[conversationId] || defaultConversationState;
+          const convState = normalizeConversationState(state.conversationStates[conversationId]);
           return {
             conversationStates: {
               ...state.conversationStates,
@@ -205,8 +223,8 @@ export const useAppStore = create<AppState>()(
 
       reconcileMessages: (conversationId, serverMessages) =>
         set((state) => {
-          const convState = state.conversationStates[conversationId];
-          if (!convState) {
+          const existing = state.conversationStates[conversationId];
+          if (!existing) {
             return {
               conversationStates: {
                 ...state.conversationStates,
@@ -215,6 +233,7 @@ export const useAppStore = create<AppState>()(
             };
           }
 
+          const convState = normalizeConversationState(existing);
           const optimisticIds = new Set(convState.pendingOptimisticIds);
           const optimisticMessages = convState.messages.filter((m) => optimisticIds.has(m.id));
           const serverIds = new Set(serverMessages.map((m) => m.id));
@@ -241,8 +260,9 @@ export const useAppStore = create<AppState>()(
 
       clearPendingOptimistic: (conversationId, messageId) =>
         set((state) => {
-          const convState = state.conversationStates[conversationId];
-          if (!convState) return state;
+          const existing = state.conversationStates[conversationId];
+          if (!existing) return state;
+          const convState = normalizeConversationState(existing);
           return {
             conversationStates: {
               ...state.conversationStates,
@@ -270,14 +290,31 @@ export const useAppStore = create<AppState>()(
         conversations: state.conversations,
         conversationStates: trimPersistedStates(
           Object.fromEntries(
-            Object.entries(state.conversationStates).map(([id, convState]) => [
-              id,
-              { messages: convState.messages.slice(-80), pendingOptimisticIds: [] },
-            ])
+            Object.entries(state.conversationStates).map(([id, convState]) => {
+              const normalized = normalizeConversationState(convState);
+              return [
+                id,
+                { messages: normalized.messages.slice(-80), pendingOptimisticIds: [] },
+              ];
+            })
           ),
           state.currentConversationId
         ),
       }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.conversationStates = Object.fromEntries(
+          Object.entries(state.conversationStates || {}).map(([id, convState]) => [
+            id,
+            normalizeConversationState(convState),
+          ])
+        );
+        if (
+          state.currentConversationId?.startsWith("pending-")
+        ) {
+          state.currentConversationId = null;
+        }
+      },
     }
   )
 );
