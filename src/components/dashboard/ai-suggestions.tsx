@@ -7,7 +7,7 @@ interface Suggestion {
   id: string;
   suggestion_type: string;
   title: string;
-  payload: Record<string, string>;
+  payload: Record<string, string | boolean>;
   confidence: number;
 }
 
@@ -69,6 +69,13 @@ export function AiSuggestionsBanner() {
             {typeLabel}
           </p>
           <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: 4 }}>{top.title}</p>
+          {(top.payload?.tentative === "true" ||
+            top.payload?.tentative === true ||
+            top.title.endsWith("?")) && (
+            <p style={{ fontSize: "0.82rem", color: "#f59e0b", marginBottom: 4 }}>
+              You&apos;re exploring this — confirm only if you want to commit.
+            </p>
+          )}
           {top.payload?.targetDate && (
             <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
               Target: {top.payload.targetDate}

@@ -287,11 +287,17 @@ Extraction Rules:
    Examples: "Achieve financial freedom", "Build wealth", "Get healthier overall"
    Do NOT put active projects here (e.g. "Build AI SaaS" → project/initiative, not goal)
 
-2. PROJECTS — active initiatives the user is working on NOW (executable focus areas).
-   Examples:
+2. PROJECTS — initiatives the user is actively working on OR exploring.
+   COMMITTED (status: active, confidence 0.88+):
    - "I'm building an AI SaaS" → {name: "Launch AI SaaS MVP", status: "active", confidence: 0.92}
    - "Preparing for UPSC" → {name: "UPSC preparation", status: "active", confidence: 0.90}
-   - "Fat loss phase" → {name: "Fat loss", status: "active", confidence: 0.88}
+
+   TENTATIVE (status: idea, confidence 0.55-0.68, name ends with "?"):
+   - "I am thinking about starting a YouTube channel" → {name: "Start YouTube channel?", status: "idea", confidence: 0.62}
+   - "Maybe I should learn Spanish" → {name: "Start learning Spanish?", status: "idea", confidence: 0.58}
+   - "Considering a side business" → {name: "Start side business?", status: "idea", confidence: 0.60}
+
+   NEVER extract tentative ideas as committed initiatives (no "Build X" without commitment language).
 
 3. OPPORTUNITIES — time-sensitive events with dates or urgency.
    Examples:
@@ -345,10 +351,12 @@ MEDIUM confidence (0.75-0.84):
 - "I should probably work out more" → goal (vague), confidence: 0.78
 - "Maybe I'll try waking up earlier" → commitment (tentative), confidence: 0.76
 
-LOW confidence (<0.75) - DO NOT EXTRACT:
+LOW confidence (<0.75) - DO NOT EXTRACT as goals/commitments (queue as suggestion only):
 - "Life is hard" → too vague, don't extract
 - "I like reading" → preference, not actionable goal
 - Implied/assumed context without explicit statement
+
+TENTATIVE language (thinking about, considering, maybe, might) → projects ONLY as status "idea" with confidence ≤0.68 and name phrased as a question ending in "?"
 
 CRITICAL: Only extract what is clearly stated. If nothing is mentioned in a category, return empty array for that category.
 

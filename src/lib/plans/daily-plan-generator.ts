@@ -21,6 +21,7 @@ import {
 } from "@/lib/plans/language-guard";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildPatternGuidanceLines } from "@/lib/plans/pattern-task-guidance";
+import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -627,6 +628,8 @@ Urgent opportunities ALWAYS beat routine initiative tasks.
 Tasks must advance the current in_progress milestone — never repeat generic work.
 Each task whyItMatters MUST answer "Why this task?" with user-specific evidence (e.g. "You've delayed outreach for 5 days. This unblocks that.").
 
+${TASK_QUALITY_PROMPT}
+
 Return JSON only:
 {
   "whatMattersNow": "One sentence",
@@ -680,7 +683,7 @@ export async function generateDailyPlanWithAI(
       {
         role: "system",
         content:
-          "You are an execution planner. Never invent vague tasks from broad goals. When context is thin, use hedged language and cite evidence. JSON only.",
+          "You are an execution planner. Never invent vague or generic tasks. Every task must be one concrete action finishable today tied to a milestone. Reject research/planning tasks when overthinking is detected. JSON only.",
       },
       { role: "user", content: buildPrompt(ctx) },
     ],
@@ -719,7 +722,7 @@ export async function generateDailyPlanWithAI(
         : "normal";
 
   let tasks: DailyPlanTask[] = (parsed.tasks || [])
-    .filter((t) => t.title && (t.isContextBuilding || isFinishableTodayTask(t.title)))
+    .filter((t) => t.title && (t.isContextBuilding || passesTaskQualityGate(t.title)))
     .map((t) => ({
       title: t.title.trim(),
       whyItMatters:

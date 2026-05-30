@@ -18,6 +18,10 @@ import {
   queueSuggestion,
   shouldSaveExplicit,
 } from "@/lib/ai/memory-confidence";
+import {
+  adjustGoalConfidence,
+  adjustProjectConfidence,
+} from "@/lib/ai/extraction-confidence";
 import { MEMORY_CONFIDENCE } from "@/lib/product/constants";
 
 const EMPTY_EXTRACTION: ExtractedLifeData = {
@@ -59,11 +63,11 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
 
     // Apply confidence filtering with lowered thresholds for better extraction
     // Thresholds lowered to capture more valid extractions
-    const GOAL_THRESHOLD = 0.60;
+    const GOAL_THRESHOLD = 0.55;
     const COMMITMENT_THRESHOLD = 0.55;
-    const IDENTITY_THRESHOLD = 0.50;
-    const PROJECT_THRESHOLD = 0.60;
-    const PATTERN_THRESHOLD = 0.70; // Keep high for patterns
+    const IDENTITY_THRESHOLD = 0.55;
+    const PROJECT_THRESHOLD = 0.50;
+    const PATTERN_THRESHOLD = MEMORY_CONFIDENCE.patternMin;
 
     // Log pre-filtering counts
     console.log("[Extraction] Pre-filter counts:", {
@@ -76,13 +80,18 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
 
     const result = {
       goals: Array.isArray(parsed.goals)
-        ? parsed.goals.map(sanitizeGoal).filter((g: { confidence?: number, title?: string }) => {
-            const conf = g.confidence ?? 1;
-            if (conf < GOAL_THRESHOLD) {
-              console.log(`[Extraction] Filtered goal (conf=${conf.toFixed(2)}):`, g.title?.slice(0, 50));
-            }
-            return conf >= GOAL_THRESHOLD;
-          })
+        ? parsed.goals
+            .map(sanitizeGoal)
+            .map((g: ReturnType<typeof sanitizeGoal> & { tentative?: boolean }) =>
+              adjustGoalConfidence(message, g)
+            )
+            .filter((g: { confidence?: number; title?: string }) => {
+              const conf = g.confidence ?? 1;
+              if (conf < GOAL_THRESHOLD) {
+                console.log(`[Extraction] Filtered goal (conf=${conf.toFixed(2)}):`, g.title?.slice(0, 50));
+              }
+              return conf >= GOAL_THRESHOLD;
+            })
         : [],
       commitments: Array.isArray(parsed.commitments)
         ? parsed.commitments.map(sanitizeCommitment).filter((c: { confidence?: number, description?: string }) => {
@@ -115,13 +124,18 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
       habits: Array.isArray(parsed.habits) ? parsed.habits.map(sanitizeHabit) : [],
       emotions: Array.isArray(parsed.emotions) ? parsed.emotions.map(sanitizeEmotion) : [],
       projects: Array.isArray(parsed.projects)
-        ? parsed.projects.map(sanitizeProject).filter((p: { confidence?: number, name?: string }) => {
-            const conf = p.confidence ?? 1;
-            if (conf < PROJECT_THRESHOLD) {
-              console.log(`[Extraction] Filtered project (conf=${conf.toFixed(2)}):`, p.name?.slice(0, 50));
-            }
-            return conf >= PROJECT_THRESHOLD;
-          })
+        ? parsed.projects
+            .map(sanitizeProject)
+            .map((p: ReturnType<typeof sanitizeProject> & { tentative?: boolean }) =>
+              adjustProjectConfidence(message, p)
+            )
+            .filter((p: { confidence?: number; name?: string }) => {
+              const conf = p.confidence ?? 1;
+              if (conf < PROJECT_THRESHOLD) {
+                console.log(`[Extraction] Filtered project (conf=${conf.toFixed(2)}):`, p.name?.slice(0, 50));
+              }
+              return conf >= PROJECT_THRESHOLD;
+            })
         : [],
       opportunities: Array.isArray(parsed.opportunities)
         ? parsed.opportunities.map(sanitizeOpportunity).filter((o: { confidence?: number; title?: string }) => {
@@ -227,15 +241,17 @@ export async function persistExtractedData(
           })()
         );
       } else {
+        const g = goal as typeof goal & { tentative?: boolean };
         tasks.push(
           queueSuggestion(supabase, {
             userId,
             type: "direction",
-            title: goal.title,
+            title: g.title,
             payload: {
               description: goal.description,
               category: goal.category,
               priority: goal.priority,
+              tentative: g.tentative ?? g.title.endsWith("?"),
             },
             confidence: conf,
             conversationId,
@@ -253,6 +269,8 @@ export async function persistExtractedData(
       const defaultDeadline = new Date();
       defaultDeadline.setDate(defaultDeadline.getDate() + 30);
 
+      const adjusted = project as typeof project & { tentative?: boolean };
+
       tasks.push(
         queueSuggestion(supabase, {
           userId,
@@ -262,6 +280,8 @@ export async function persistExtractedData(
             description: project.context,
             targetDate: defaultDeadline.toISOString().split("T")[0],
             lifeArea: inferLifeAreaFromProject(project),
+            tentative: adjusted.tentative ?? title.endsWith("?"),
+            status: project.status,
           },
           confidence: project.confidence ?? 0.85,
           conversationId,
@@ -527,6 +547,7 @@ function inferLifeAreaFromProject(project: ExtractedLifeData["projects"][number]
   if (/job|career|interview|resume/.test(text)) return "career";
   if (/fitness|weight|workout|calisthenics|fat|lose \d|kg|10kg/.test(text)) return "health";
   if (/learn|study|course|upsc|exam|prelims/.test(text)) return "learning";
+  if (/youtube|channel|creator|content/.test(text)) return "personal";
   return "personal";
 }
 
