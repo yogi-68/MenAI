@@ -80,6 +80,7 @@ interface AppState {
   migrateConversation: (fromId: string, toId: string) => void;
 
   setMessages: (conversationId: string, msgs: Message[]) => void;
+  prependMessages: (conversationId: string, msgs: Message[]) => void;
   addMessage: (conversationId: string, msg: Message) => void;
   addOptimisticMessage: (conversationId: string, msg: Message) => void;
   reconcileMessages: (conversationId: string, serverMessages: Message[]) => void;
@@ -186,6 +187,23 @@ export const useAppStore = create<AppState>()(
             },
           },
         })),
+
+      prependMessages: (conversationId, older) =>
+        set((state) => {
+          const convState = normalizeConversationState(state.conversationStates[conversationId]);
+          const existingIds = new Set(convState.messages.map((m) => m.id));
+          const toAdd = older.filter((m) => !existingIds.has(m.id));
+          if (toAdd.length === 0) return state;
+          return {
+            conversationStates: {
+              ...state.conversationStates,
+              [conversationId]: {
+                ...convState,
+                messages: [...toAdd, ...convState.messages],
+              },
+            },
+          };
+        }),
 
       addMessage: (conversationId, msg) =>
         set((state) => {

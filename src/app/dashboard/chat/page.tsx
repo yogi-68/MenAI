@@ -1,9 +1,19 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore, getChatStore, isRealConversationId, type Message } from "@/lib/store";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChatMessage } from "@/components/chat/chat-message";
+import {
+  VirtualMessageList,
+  scrollContainerToBottom,
+} from "@/components/chat/virtual-message-list";
+import {
+  ConversationNotFoundError,
+  fetchLatestMessages,
+  fetchOlderMessages,
+  type MessagePage,
+} from "@/lib/chat/fetch-messages";
+import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
 import {
   Send,
   Loader2,
@@ -24,27 +34,10 @@ type ConversationRow = {
   message_count?: number;
 };
 
-class ConversationNotFoundError extends Error {
-  code = "NOT_FOUND" as const;
-  constructor(public conversationId: string) {
-    super("Conversation not found");
-    this.name = "ConversationNotFoundError";
-  }
-}
+type PaginationMeta = { hasMore: boolean; nextBefore: string | null };
 
-async function fetchMessages(convId: string): Promise<Message[]> {
-  const res = await fetch(`/api/conversations/${convId}`);
-  if (res.status === 404) {
-    throw new ConversationNotFoundError(convId);
-  }
-  if (!res.ok) throw new Error("Failed to load messages");
-  const data = await res.json();
-  return (data.messages || []).map((m: Record<string, string>) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant",
-    content: m.content,
-    created_at: m.created_at,
-  }));
+function applyPagination(meta: Record<string, PaginationMeta>, convId: string, page: MessagePage) {
+  meta[convId] = { hasMore: page.hasMore, nextBefore: page.nextBefore };
 }
 
 export default function ChatPage() {
@@ -57,10 +50,14 @@ export default function ChatPage() {
   const addOptimisticMessage = useAppStore((s) => s.addOptimisticMessage);
   const addMessage = useAppStore((s) => s.addMessage);
   const setMessages = useAppStore((s) => s.setMessages);
+  const prependMessages = useAppStore((s) => s.prependMessages);
 
   const messages = useAppStore(
     useCallback(
-      (s) => (currentConversationId ? s.conversationStates[currentConversationId]?.messages ?? [] : []),
+      (s) =>
+        currentConversationId
+          ? s.conversationStates[currentConversationId]?.messages ?? []
+          : [],
       [currentConversationId]
     )
   );
@@ -70,17 +67,22 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const paginationRef = useRef<Record<string, PaginationMeta>>({});
+  const clearedStaleIdsRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const scrollRaf = useRef<number | null>(null);
   const lastScrollTs = useRef(0);
+  const skipScrollToBottomRef = useRef(false);
 
   const handleMissingConversation = useCallback(
     (convId: string) => {
       clearConversationState(convId);
+      delete paginationRef.current[convId];
       queryClient.removeQueries({ queryKey: ["messages", convId] });
       if (getChatStore().currentConversationId === convId) {
         setCurrentConversationId(null);
@@ -97,56 +99,62 @@ export default function ChatPage() {
       const data = await res.json();
       return (data.conversations || []) as ConversationRow[];
     },
-    staleTime: 30_000,
-    refetchOnWindowFocus: true,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
     if (convsLoading || !isRealConversationId(currentConversationId)) return;
+    if (clearedStaleIdsRef.current.has(currentConversationId)) return;
     const exists = conversations.some((c) => c.id === currentConversationId);
     if (!exists) {
+      clearedStaleIdsRef.current.add(currentConversationId);
       handleMissingConversation(currentConversationId);
     }
   }, [conversations, convsLoading, currentConversationId, handleMissingConversation]);
-
-  const scrollToBottom = useCallback((smooth = false) => {
-    if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current);
-    scrollRaf.current = requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
-    });
-  }, []);
 
   const throttledScroll = useCallback(() => {
     const now = Date.now();
     if (now - lastScrollTs.current > 150) {
       lastScrollTs.current = now;
-      scrollToBottom(false);
+      scrollContainerToBottom(messagesScrollRef.current, false);
     }
-  }, [scrollToBottom]);
+  }, []);
 
   useEffect(() => {
-    scrollToBottom(true);
-  }, [messages.length, scrollToBottom]);
+    if (loadingOlder) return;
+    if (skipScrollToBottomRef.current) {
+      skipScrollToBottomRef.current = false;
+      return;
+    }
+    scrollContainerToBottom(messagesScrollRef.current, true);
+  }, [messages.length, streamingContent, isSending, loadingOlder]);
+
+  const loadPageIntoStore = useCallback(
+    (convId: string, page: MessagePage, mode: "replace" | "prepend") => {
+      applyPagination(paginationRef.current, convId, page);
+      if (mode === "replace") {
+        setMessages(convId, page.messages);
+      } else {
+        prependMessages(convId, page.messages);
+      }
+      queryClient.setQueryData(["messages", convId], page.messages);
+    },
+    [prependMessages, queryClient, setMessages]
+  );
 
   const syncFromServer = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ["conversations"] });
     const convId = getChatStore().currentConversationId;
     if (!isRealConversationId(convId)) return;
     try {
-      const loaded = await queryClient.fetchQuery({
-        queryKey: ["messages", convId],
-        queryFn: () => fetchMessages(convId),
-        staleTime: 0,
-      });
-      setMessages(convId, loaded);
+      const page = await fetchLatestMessages(convId);
+      loadPageIntoStore(convId, page, "replace");
     } catch (error) {
       if (error instanceof ConversationNotFoundError) {
         handleMissingConversation(convId);
-        return;
       }
-      /* ignore background sync errors */
     }
-  }, [queryClient, setMessages, handleMissingConversation]);
+  }, [handleMissingConversation, loadPageIntoStore]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -159,6 +167,35 @@ export default function ChatPage() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [syncFromServer]);
+
+  const loadOlder = useCallback(async () => {
+    const convId = getChatStore().currentConversationId;
+    if (!isRealConversationId(convId) || loadingOlder) return;
+
+    const meta = paginationRef.current[convId];
+    if (!meta?.hasMore || !meta.nextBefore) return;
+
+    const el = messagesScrollRef.current;
+    const prevHeight = el?.scrollHeight ?? 0;
+
+    setLoadingOlder(true);
+    skipScrollToBottomRef.current = true;
+    try {
+      const page = await fetchOlderMessages(convId, meta.nextBefore);
+      prependMessages(convId, page.messages);
+      applyPagination(paginationRef.current, convId, page);
+
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop += el.scrollHeight - prevHeight;
+      });
+    } catch (error) {
+      if (error instanceof ConversationNotFoundError) {
+        handleMissingConversation(convId);
+      }
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [handleMissingConversation, loadingOlder, prependMessages]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -175,15 +212,23 @@ export default function ChatPage() {
       setNetworkError(null);
 
       const cached = getChatStore().conversationStates[convId]?.messages;
-      if (cached && cached.length > 0) return;
+      if (cached && cached.length > 0) {
+        if (!paginationRef.current[convId]) {
+          paginationRef.current[convId] = {
+            hasMore: cached.length >= CHAT_INITIAL_LIMIT,
+            nextBefore: cached[0]?.created_at ?? null,
+          };
+        }
+        return;
+      }
 
       try {
-        const loaded = await queryClient.fetchQuery({
+        const page = await queryClient.fetchQuery({
           queryKey: ["messages", convId],
-          queryFn: () => fetchMessages(convId),
+          queryFn: () => fetchLatestMessages(convId),
           staleTime: 5 * 60_000,
         });
-        setMessages(convId, loaded);
+        loadPageIntoStore(convId, page, "replace");
       } catch (error) {
         if (error instanceof ConversationNotFoundError) {
           handleMissingConversation(convId);
@@ -192,7 +237,13 @@ export default function ChatPage() {
         console.error("Failed to load conversation:", error);
       }
     },
-    [queryClient, setCurrentConversationId, setMessages, isSending, handleMissingConversation]
+    [
+      queryClient,
+      setCurrentConversationId,
+      loadPageIntoStore,
+      isSending,
+      handleMissingConversation,
+    ]
   );
 
   const startNewChat = useCallback(() => {
@@ -214,6 +265,7 @@ export default function ChatPage() {
       (old || []).filter((c) => c.id !== convId)
     );
     clearConversationState(convId);
+    delete paginationRef.current[convId];
     queryClient.removeQueries({ queryKey: ["messages", convId] });
 
     if (currentConversationId === convId) startNewChat();
@@ -232,7 +284,11 @@ export default function ChatPage() {
     queryClient.setQueryData<ConversationRow[]>(["conversations"], (old) => {
       const rest = (old || []).filter((c) => c.id !== convId);
       return [
-        { id: convId, title: title.slice(0, 50) || "New thread", updated_at: new Date().toISOString() },
+        {
+          id: convId,
+          title: title.slice(0, 50) || "New thread",
+          updated_at: new Date().toISOString(),
+        },
         ...rest,
       ];
     });
@@ -240,9 +296,8 @@ export default function ChatPage() {
 
   const recoverFromServer = async (convId: string) => {
     try {
-      const loaded = await fetchMessages(convId);
-      setMessages(convId, loaded);
-      queryClient.setQueryData(["messages", convId], loaded);
+      const page = await fetchLatestMessages(convId);
+      loadPageIntoStore(convId, page, "replace");
     } catch (error) {
       if (error instanceof ConversationNotFoundError) {
         handleMissingConversation(convId);
@@ -278,6 +333,7 @@ export default function ChatPage() {
     setInput("");
     setStreamingContent("");
     setIsSending(true);
+    scrollContainerToBottom(messagesScrollRef.current, true);
 
     if (inputRef.current) inputRef.current.style.height = "auto";
 
@@ -309,6 +365,10 @@ export default function ChatPage() {
         migrateConversation(localConvId, serverConvId);
         activeConvId = serverConvId;
         upsertConversationInList(serverConvId, messageText);
+        paginationRef.current[serverConvId] = paginationRef.current[localConvId] ?? {
+          hasMore: false,
+          nextBefore: null,
+        };
       } else if (serverConvId) {
         upsertConversationInList(serverConvId, messageText);
         activeConvId = serverConvId;
@@ -338,18 +398,14 @@ export default function ChatPage() {
 
       addMessage(activeConvId, aiMessage);
       setStreamingContent("");
-
-      queryClient.setQueryData<Message[]>(["messages", activeConvId], (old) => [
-        ...(old || []),
-        userMessage,
-        aiMessage,
-      ]);
     } catch (error) {
       if ((error as Error).name === "AbortError") return;
       console.error("Chat error:", error);
 
       setStreamingContent("");
-      setNetworkError("Connection interrupted. Your message may have been saved — tap retry or refresh.");
+      setNetworkError(
+        "Connection interrupted. Your message may have been saved — tap retry or refresh."
+      );
       setRetryText(messageText);
 
       if (serverConvId && isRealConversationId(serverConvId)) {
@@ -369,20 +425,29 @@ export default function ChatPage() {
   };
 
   const showEmpty = messages.length === 0 && !streamingContent && !isSending;
-
-  const messageList = useMemo(
-    () => messages.map((msg) => <ChatMessage key={msg.id} role={msg.role as "user" | "assistant"} content={msg.content} />),
-    [messages]
-  );
+  const pagination =
+    currentConversationId && isRealConversationId(currentConversationId)
+      ? paginationRef.current[currentConversationId]
+      : undefined;
 
   return (
     <div className="chat-layout">
-      <button type="button" onClick={() => setSidebarOpen(true)} className="chat-sidebar-toggle" aria-label="Open threads">
+      <button
+        type="button"
+        onClick={() => setSidebarOpen(true)}
+        className="chat-sidebar-toggle"
+        aria-label="Open threads"
+      >
         <Menu size={20} />
       </button>
 
       {sidebarOpen && (
-        <button type="button" className="chat-sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-label="Close threads" />
+        <button
+          type="button"
+          className="chat-sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close threads"
+        />
       )}
 
       <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
@@ -391,7 +456,12 @@ export default function ChatPage() {
             <Plus size={18} />
             New Thread
           </button>
-          <button type="button" onClick={() => setSidebarOpen(false)} className="chat-sidebar-close" aria-label="Close">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="chat-sidebar-close"
+            aria-label="Close"
+          >
             <X size={18} />
           </button>
         </div>
@@ -436,8 +506,8 @@ export default function ChatPage() {
           <div className="chat-crisis-banner">
             <AlertTriangle size={18} />
             <span>
-              If you&apos;re in crisis, please call <strong>988</strong> or text <strong>HELLO</strong> to{" "}
-              <strong>741741</strong>
+              If you&apos;re in crisis, please call <strong>988</strong> or text{" "}
+              <strong>HELLO</strong> to <strong>741741</strong>
             </span>
             <a href="tel:988" className="chat-crisis-call">
               <Phone size={14} />
@@ -463,57 +533,46 @@ export default function ChatPage() {
           </div>
         )}
 
-        <div className="chat-messages">
+        <div className="chat-messages" ref={messagesScrollRef}>
           {showEmpty && (
             <div className="chat-empty">
               <h2>
                 What is your <span className="gradient-text">focus</span> today?
               </h2>
               <p>
-                Share what you&apos;re working on or what&apos;s blocking you. MenAI learns your patterns over time.
+                Share what you&apos;re working on or what&apos;s blocking you. MenAI learns your
+                patterns over time.
               </p>
               <div className="chat-suggestions">
-                {["I want to build an AI SaaS", "Help me plan my first initiative", "I am stuck"].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => {
-                      setInput(suggestion);
-                      inputRef.current?.focus();
-                    }}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+                {["I want to build an AI SaaS", "Help me plan my first initiative", "I am stuck"].map(
+                  (suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => {
+                        setInput(suggestion);
+                        inputRef.current?.focus();
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  )
+                )}
               </div>
             </div>
           )}
 
-          {messageList}
-
-          {streamingContent && (
-            <div className="chat-streaming">
-              <div className="chat-bubble-ai">
-                <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.7, fontWeight: 300 }}>
-                  {streamingContent}
-                </p>
-              </div>
-            </div>
+          {!showEmpty && (
+            <VirtualMessageList
+              scrollRef={messagesScrollRef}
+              messages={messages}
+              streamingContent={streamingContent}
+              isSending={isSending}
+              hasMoreOlder={pagination?.hasMore}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+            />
           )}
-
-          {isSending && !streamingContent && (
-            <div className="chat-streaming">
-              <div className="chat-bubble-ai">
-                <div className="typing-indicator">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
         </div>
 
         <div className="chat-input-area">
@@ -527,12 +586,13 @@ export default function ChatPage() {
               rows={1}
               disabled={isSending}
             />
-            <button type="button" onClick={() => sendMessage()} disabled={!input.trim() || isSending} className="chat-send-btn">
-              {isSending ? (
-                <Loader2 size={22} className="animate-spin" />
-              ) : (
-                <Send size={22} />
-              )}
+            <button
+              type="button"
+              onClick={() => sendMessage()}
+              disabled={!input.trim() || isSending}
+              className="chat-send-btn"
+            >
+              {isSending ? <Loader2 size={22} className="animate-spin" /> : <Send size={22} />}
             </button>
           </div>
         </div>

@@ -61,7 +61,7 @@ export default function DashboardLayout({
         .eq("id", authUser.id)
         .maybeSingle();
 
-      setUser({
+      const nextUser = {
         id: authUser.id,
         full_name:
           profile?.full_name ||
@@ -72,11 +72,25 @@ export default function DashboardLayout({
           profile?.avatar_url || authUser.user_metadata?.avatar_url || "",
         role: profile?.role || "user",
         onboarding_completed: profile?.onboarding_completed || false,
-      });
+      };
+
+      const current = useAppStore.getState().user;
+      if (
+        current &&
+        current.id === nextUser.id &&
+        current.full_name === nextUser.full_name &&
+        current.avatar_url === nextUser.avatar_url &&
+        current.role === nextUser.role &&
+        current.onboarding_completed === nextUser.onboarding_completed
+      ) {
+        return;
+      }
+
+      setUser(nextUser);
     };
 
     fetchUser();
-  }, [setUser, router, supabase]);
+  }, [setUser, router]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();

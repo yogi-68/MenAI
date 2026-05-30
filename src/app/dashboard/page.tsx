@@ -63,7 +63,7 @@ export default function DashboardOverview() {
       setCheckingOnboarding(false);
     };
     checkOnboarding();
-  }, [supabase, router]);
+  }, [router]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-today"],
