@@ -5,6 +5,8 @@ import { buildDashboardCoachBriefing } from "@/lib/dashboard/setup-facts";
 import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
+import { getUserModel } from "@/lib/user-model/loader";
+import { formatUserModelSummary } from "@/lib/user-model/format-for-prompt";
 
 export const runtime = "nodejs";
 
@@ -21,7 +23,7 @@ export async function GET() {
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
 
-  const [profileRes, tasksRes, initiativesRes, planRes, milestonesRes, cogState] =
+  const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel] =
     await Promise.all([
       supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
       supabase
@@ -43,13 +45,8 @@ export async function GET() {
         .eq("user_id", user.id)
         .eq("plan_date", today)
         .maybeSingle(),
-      supabase
-        .from("initiative_milestones")
-        .select("title, status")
-        .eq("user_id", user.id)
-        .eq("status", "in_progress")
-        .limit(1),
       buildCognitiveState(user.id),
+      getUserModel(supabase, user.id),
     ]);
 
   const firstName = profileRes.data?.full_name?.split(" ")[0] || "there";
@@ -63,13 +60,14 @@ export async function GET() {
     tasks?: Array<{ title: string }>;
   } | null;
 
-  const currentMilestone = milestonesRes.data?.[0]?.title ?? null;
+  const currentMilestone = userModel.currentMilestone;
   const coachBriefing = await buildDashboardCoachBriefing(supabase, user.id, {
     whatMattersNow: planContent?.planningContext?.coachInsight || planContent?.whatMattersNow,
     currentMilestone,
   });
 
-  const focusId = profileRes.data?.current_focus_initiative_id;
+  const modelSummary = formatUserModelSummary(userModel);
+  const focusId = userModel.currentFocus.initiativeId || profileRes.data?.current_focus_initiative_id;
   const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : initiatives[0];
   const currentFocus = focusInit
     ? {
@@ -81,14 +79,27 @@ export async function GET() {
           lastActionAt: focusInit.last_action_at,
           progress: focusInit.progress,
         }),
-        coachInsight: coachBriefing.insight,
+        coachInsight: modelSummary.insight || coachBriefing.insight,
+        primaryOutcome: userModel.primaryOutcome.headline,
+        longTermThemes: modelSummary.longTerm,
       }
     : null;
 
   return NextResponse.json({
     greeting: `${timeOfDay}, ${firstName}.`,
-    whatMattersNow: coachBriefing.mattersToday || planContent?.planningContext?.coachInsight || planContent?.whatMattersNow || null,
+    whatMattersNow:
+      coachBriefing.mattersToday ||
+      userModel.primaryOutcome.headline ||
+      planContent?.planningContext?.coachInsight ||
+      planContent?.whatMattersNow ||
+      null,
     coachBriefing,
+    userModel: {
+      primaryOutcome: userModel.primaryOutcome.headline,
+      longTermThemes: modelSummary.longTerm,
+      whoAmI: userModel.whoAmIAnswer,
+      confidence: userModel.confidence,
+    },
     currentFocus,
     focusTasks: focusTasks.map((t) => ({
       id: t.id,
@@ -101,6 +112,7 @@ export async function GET() {
       title: i.title,
       lifeArea: i.life_area,
       progress: i.progress,
+      isPrimaryFocus: i.id === focusId,
     })),
     hasInitiatives: initiatives.length > 0,
     maturityLevel: cogState.maturity_level,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
@@ -84,6 +85,7 @@ export async function POST(req: NextRequest) {
   );
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   trackProductEventOnce(user.id, "first_initiative_created").catch(() => {});
   return NextResponse.json({ initiative: data }, { status: 201 });
 }
@@ -137,6 +139,7 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   return NextResponse.json({ initiative: data });
 }
 
@@ -159,5 +162,6 @@ export async function DELETE(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await invalidatePlanForUser(user.id);
+  scheduleUserModelRefresh(supabase, user.id);
   return NextResponse.json({ success: true });
 }

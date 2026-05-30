@@ -17,6 +17,7 @@ import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
 import { formatCognitiveStateForPrompt } from "./cognition-engine";
+import { formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
 
 /**
  * Detect if observation mode should be triggered
@@ -275,6 +276,16 @@ Instructed behavior: ${styleText}`);
   const emotionalState = detectEmotionalState(ctx.emotion, ctx.input.message);
   parts.push(`## Emotional State: ${emotionalState}
 Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT — clearer, more grounded, more accountable, or more at peace — after reading your response.`);
+
+  // ===== USER MODEL (single source of truth — overrides fragmented table reads) =====
+  if (ctx.userModel) {
+    parts.push(formatUserModelForPrompt(ctx.userModel));
+    if (/who am i|what am i building|what do you know about me/i.test(ctx.input.message)) {
+      parts.push(`## Direct answer for identity questions
+Use this synthesized answer (adapt tone, don't copy verbatim):
+${ctx.userModel.whoAmIAnswer}`);
+    }
+  }
 
   // ===== COGNITIVE STATE (Full Context Injection) =====
   const statePrompt = formatCognitiveStateForPrompt(ctx.cognitiveState);

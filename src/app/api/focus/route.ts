@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -57,6 +58,7 @@ export async function PATCH(req: NextRequest) {
       .update({ current_focus_initiative_id: null, current_focus_until: null })
       .eq("id", user.id);
     await invalidateTodayPlan(supabase, user.id);
+    scheduleUserModelRefresh(supabase, user.id);
     return NextResponse.json({ success: true, focus: null });
   }
 
@@ -84,6 +86,7 @@ export async function PATCH(req: NextRequest) {
 
   await invalidateTodayPlan(supabase, user.id);
   invalidateUserCache(user.id, "current focus changed");
+  scheduleUserModelRefresh(supabase, user.id);
 
   return NextResponse.json({
     success: true,

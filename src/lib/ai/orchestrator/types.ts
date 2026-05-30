@@ -4,6 +4,7 @@
  */
 
 import type { CognitiveState } from "./cognition-engine";
+import type { UserModel } from "@/lib/user-model/types";
 
 // ===== Conversation States =====
 export type ConversationState =
@@ -437,6 +438,7 @@ export interface OrchestratorOutput {
 }
 
 // ===== Pipeline Context (passed between engines) =====
+
 export interface PipelineContext {
   input: OrchestratorInput;
   user: UserProfile;
@@ -444,6 +446,7 @@ export interface PipelineContext {
   emotion: EmotionAnalysis;
   memory: MemoryContext;
   cognitiveState: CognitiveState;
+  userModel?: UserModel | null;
   state: ConversationState;
   intent: UserIntent;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;

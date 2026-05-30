@@ -5,6 +5,8 @@ import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
 import { lifeAreaLabel } from "@/lib/plans/life-areas";
 import { buildMemoryTimeline } from "@/lib/plans/memory-timeline";
+import { getUserModel } from "@/lib/user-model/loader";
+import { formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
 import { logAiUsage, checkAiQuota, AI_UNAVAILABLE_MESSAGE } from "@/lib/ai/usage-guard";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -335,6 +337,9 @@ export async function generateWeeklyReview(
   }
 
   const prompt = `Generate this user's weekly review for ${weekStart} to ${weekEnd}.
+
+=== USER MODEL (authoritative — primary vs secondary themes) ===
+${formatUserModelForPrompt(await getUserModel(supabase, userId))}
 
 === LONG-TERM DIRECTION ===
 ${directionBlock || "Not defined yet."}

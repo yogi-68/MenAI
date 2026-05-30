@@ -30,6 +30,7 @@ import { validateResponseStyle } from "./style-validator";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
+import { getUserModel } from "@/lib/user-model/loader";
 import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis } from "./types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -189,7 +190,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [] as string[], longTerm: [] as string[], episodic: [] as string[], emotional: [] as string[], formatted: "" };
 
-  const [historyResult, memory, profileResult, cognitiveState] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState, userModel] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -203,6 +204,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
       .eq("id", input.userId)
       .single(),
     buildCognitiveState(input.userId),
+    getUserModel(serviceClient, input.userId),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -261,6 +263,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     emotion,
     memory,
     cognitiveState,
+    userModel,
     state,
     intent,
     conversationHistory: conversationHistory.slice(0, -1),
@@ -601,7 +604,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [], longTerm: [], episodic: [], emotional: [], formatted: "" };
 
-  const [historyResult, memory, profileResult, cognitiveState] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState, userModel] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -615,6 +618,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
       .eq("id", input.userId)
       .single(),
     buildCognitiveState(input.userId),
+    getUserModel(serviceClient, input.userId),
   ]);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
@@ -665,6 +669,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     emotion,
     memory,
     cognitiveState,
+    userModel,
     state,
     intent,
     conversationHistory: conversationHistory.slice(0, -1),

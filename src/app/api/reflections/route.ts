@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   invalidateUserCache(user.id, "daily reflection saved");
+  scheduleUserModelRefresh(supabase, user.id);
   trackProductEventOnce(user.id, "reflection_submitted").catch(() => {});
   trackProductEvent(user.id, "reflection_submitted", { date }).catch(() => {});
   return NextResponse.json({ reflection: data }, { status: 201 });

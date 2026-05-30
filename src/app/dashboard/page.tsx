@@ -33,6 +33,12 @@ interface TodayPayload {
   hasInitiatives: boolean;
   maturityLevel: string;
   isEmptyState?: boolean;
+  userModel?: {
+    primaryOutcome: string | null;
+    longTermThemes: string | null;
+    whoAmI: string;
+    confidence: string;
+  };
 }
 
 export default function DashboardOverview() {
@@ -138,9 +144,16 @@ export default function DashboardOverview() {
             }}
           >
             <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
-              What you&apos;re trying to achieve
+              Current execution focus
             </p>
-            <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>{data.currentFocus.title}</p>
+            <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>
+              {data.userModel?.primaryOutcome || data.currentFocus.title}
+            </p>
+            {data.userModel?.longTermThemes && (
+              <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "10px" }}>
+                Longer-term direction: {data.userModel.longTermThemes}
+              </p>
+            )}
             {data.currentFocus.coachInsight && (
               <p style={{ fontSize: "0.92rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "10px" }}>
                 {data.currentFocus.coachInsight}

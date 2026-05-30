@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ export async function POST() {
     }
 
     const result = await ensureUserSetup(user);
+    scheduleUserModelRefresh(supabase, user.id);
 
     return NextResponse.json({
       success: true,

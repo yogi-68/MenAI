@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import { finishableTaskError } from "@/lib/tasks/finishable-today";
 import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
@@ -243,6 +244,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   invalidateUserCache(user.id, "task updated");
+  if (updates.status === "completed") {
+    scheduleUserModelRefresh(supabase, user.id);
+  }
 
   return NextResponse.json({ task: data });
 }

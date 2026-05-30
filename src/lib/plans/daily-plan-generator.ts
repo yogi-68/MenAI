@@ -27,6 +27,10 @@ import {
 } from "@/lib/plans/plan-context-dimensions";
 import { loadPlanContextData } from "@/lib/plans/plan-interview";
 import {
+  loadExecutionContext,
+} from "@/lib/user-model/resolve-context";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import {
   buildGoalAnalysis,
   COACH_WRITING_RULES,
   detectDomain,
@@ -171,14 +175,14 @@ export async function fetchPlanUserContext(
   ] = await Promise.all([
     supabase
       .from("initiatives")
-      .select("id, title, description, target_date, progress, life_area, last_action_at, status, goals(title)")
+      .select("id, title, description, target_date, progress, life_area, last_action_at, status, goal_id, goals(title)")
       .eq("user_id", userId)
       .eq("status", "active")
       .order("target_date", { ascending: true, nullsFirst: false })
       .limit(12),
     supabase
       .from("goals")
-      .select("title, description, category, priority, progress, status, target_date")
+      .select("id, title, description, category, priority, progress, status, target_date")
       .eq("user_id", userId)
       .eq("status", "active")
       .order("created_at", { ascending: false })
@@ -263,7 +267,18 @@ export async function fetchPlanUserContext(
           .order("sort_order", { ascending: true })
       : { data: [] as Array<{ initiative_id: string; title: string; status: string; sort_order: number; initiatives: { title?: string } | null }> };
 
-  const initiatives = initiativesRes.data || [];
+  const initiativesRaw = initiativesRes.data || [];
+  const execCtx = await loadExecutionContext(supabase, userId);
+  const primaryId = execCtx.primaryInitiative?.id ?? null;
+  const initiatives = primaryId
+    ? [
+        ...initiativesRaw.filter((i) => i.id === primaryId),
+        ...initiativesRaw.filter((i) => i.id !== primaryId),
+      ]
+    : initiativesRaw;
+  const primaryInit = primaryId
+    ? initiativesRaw.find((i) => i.id === primaryId)
+    : initiativesRaw[0];
   const goals = goalsRes.data || [];
   const pendingTasks = pendingTasksRes.data || [];
   const completedTasks = completedTasksRes.data || [];
@@ -346,13 +361,9 @@ export async function fetchPlanUserContext(
     return `${initTitle}: [${status}] ${m.title}`;
   });
 
-  let currentFocusTitle: string | null = null;
-  let currentFocusUntil: string | null = profileRes.data?.current_focus_until ?? null;
-  const focusId = profileRes.data?.current_focus_initiative_id;
-  if (focusId) {
-    const focusInit = initiatives.find((i) => i.id === focusId);
-    if (focusInit) currentFocusTitle = focusInit.title;
-  }
+  let currentFocusTitle: string | null = primaryInit?.title ?? null;
+  let currentFocusUntil: string | null =
+    profileRes.data?.current_focus_until ?? primaryInit?.target_date ?? null;
 
   const patternGuidance = buildPatternGuidanceLines(patterns);
 
@@ -473,7 +484,12 @@ export async function fetchPlanUserContext(
     opportunities: opportunityLines.length,
   });
 
-  const planContext = await loadPlanContextData(supabase, userId);
+  const planContext = primaryInit
+    ? await loadPlanContextData(supabase, userId, primaryInit.id)
+    : await loadPlanContextData(supabase, userId, "_none");
+  const linkedGoal = primaryInit?.goal_id
+    ? goals.find((g) => g.id === primaryInit.goal_id)
+    : null;
   const dimensionInput = {
     goals: goals.map((g) => ({ title: g.title, description: g.description })),
     initiatives: initiatives.map((i) => ({
@@ -492,7 +508,6 @@ export async function fetchPlanUserContext(
     questionsAskedToday: planContext.interviewAskedToday || [],
   };
   const contextSnapshot = buildPlanContextSnapshot(dimensionInput);
-  const primaryInit = initiatives[0];
   const goalAnalysis =
     primaryInit
       ? buildGoalAnalysis({
@@ -501,7 +516,7 @@ export async function fetchPlanUserContext(
           initiativeDescription: primaryInit.description,
           targetDate: primaryInit.target_date,
           lifeArea: primaryInit.life_area,
-          goalTexts: goals.map((g) => g.title),
+          goalTexts: linkedGoal ? [linkedGoal.title] : [],
           planContext: planContext as Record<string, unknown>,
         })
       : null;
@@ -1035,6 +1050,7 @@ export async function ensureTodayPlan(
 
   await recordPlanGeneration(supabase, userId, today);
   trackProductEventOnce(userId, "first_plan_generated").catch(() => {});
+  scheduleUserModelRefresh(supabase, userId);
 
   const { data: existingTodayTasks } = await supabase
     .from("tasks")

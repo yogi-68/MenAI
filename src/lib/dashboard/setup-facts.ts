@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildCoachBriefing, type CoachBriefing } from "@/lib/plans/coach-insights";
-import { loadPlanContextData } from "@/lib/plans/plan-interview";
+import type { CoachBriefing } from "@/lib/plans/coach-insights";
+import { getUserModel } from "@/lib/user-model/loader";
+import { userModelToCoachBriefing } from "@/lib/user-model/format-for-prompt";
 
 export type { CoachBriefing };
 
@@ -12,46 +13,20 @@ export async function buildDashboardCoachBriefing(
     currentMilestone?: string | null;
   }
 ): Promise<CoachBriefing> {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const model = await getUserModel(supabase, userId);
+  const briefing = userModelToCoachBriefing(model);
 
-  const [initiativesRes, goalsRes, tasksRes, reflectionsRes, planContext] = await Promise.all([
-    supabase
-      .from("initiatives")
-      .select("title, description, target_date, life_area, last_action_at")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .order("target_date", { ascending: true, nullsFirst: false })
-      .limit(3),
-    supabase
-      .from("goals")
-      .select("title")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .limit(5),
-    supabase
-      .from("tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("status", "completed")
-      .gte("completed_at", sevenDaysAgo.toISOString()),
-    supabase
-      .from("daily_reflections")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .gte("reflection_date", sevenDaysAgo.toISOString().split("T")[0]),
-    loadPlanContextData(supabase, userId),
-  ]);
+  if (extras?.currentMilestone) {
+    briefing.mattersToday = `Advance: ${extras.currentMilestone}`;
+  } else if (
+    extras?.whatMattersNow &&
+    model.currentFocus.title &&
+    !extras.whatMattersNow.toLowerCase().includes(model.currentFocus.title.toLowerCase())
+  ) {
+    briefing.mattersToday = extras.whatMattersNow;
+  }
 
-  return buildCoachBriefing({
-    initiatives: initiativesRes.data || [],
-    goals: goalsRes.data || [],
-    planContext: planContext as Record<string, unknown>,
-    completedTasks7d: tasksRes.count ?? 0,
-    reflections7d: reflectionsRes.count ?? 0,
-    whatMattersNow: extras?.whatMattersNow,
-    currentMilestone: extras?.currentMilestone,
-  });
+  return briefing;
 }
 
 /** @deprecated Use coachBriefing from buildDashboardCoachBriefing */
