@@ -385,7 +385,7 @@ function _computeDirection(
   }
 
   if (parts.length === 0) {
-    return "Still gathering signal. Direction will emerge through conversation.";
+    return "";
   }
 
   const result = parts.join(", ");

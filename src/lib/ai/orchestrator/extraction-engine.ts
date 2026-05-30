@@ -523,10 +523,10 @@ function sanitizeOpportunity(opp: Record<string, unknown>) {
 
 function inferLifeAreaFromProject(project: ExtractedLifeData["projects"][number]): string {
   const text = `${project.name} ${project.context || ""}`.toLowerCase();
-  if (/saas|startup|business|revenue|client/.test(text)) return "business";
+  if (/saas|startup|business|revenue|client|mvp/.test(text)) return "business";
   if (/job|career|interview|resume/.test(text)) return "career";
-  if (/fitness|weight|workout|calisthenics|fat/.test(text)) return "health";
-  if (/learn|study|course|upsc/.test(text)) return "learning";
+  if (/fitness|weight|workout|calisthenics|fat|lose \d|kg|10kg/.test(text)) return "health";
+  if (/learn|study|course|upsc|exam|prelims/.test(text)) return "learning";
   return "personal";
 }
 

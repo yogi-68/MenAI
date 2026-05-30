@@ -100,7 +100,7 @@ export function SetupChecklist({
         className="btn-primary"
         style={{ display: "inline-block", marginTop: "20px", padding: "10px 20px", fontSize: "0.9rem", textDecoration: "none" }}
       >
-        Set up Direction & Initiatives →
+        Set up Initiatives →
       </Link>
     </section>
   );

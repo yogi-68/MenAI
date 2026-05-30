@@ -6,12 +6,17 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Zap, MessageSquare, Calendar, Target, Sparkles } from "lucide-react";
+import { ArrowRight, Zap, MessageSquare, Calendar, Target, Sparkles, History } from "lucide-react";
 import { AiSuggestionsBanner } from "@/components/dashboard/ai-suggestions";
 
 interface TodayPayload {
   greeting: string;
   whatMattersNow: string | null;
+  currentFocus: {
+    title: string;
+    until: string | null;
+    health: { label: string; reason: string; health: string };
+  } | null;
   focusTasks: Array<{ id: string; title: string; status: string }>;
   hasPlan: boolean;
   initiatives: Array<{ id: string; title: string; lifeArea: string; progress: number }>;
@@ -19,6 +24,7 @@ interface TodayPayload {
   insight: string | null;
   hasInitiatives: boolean;
   maturityLevel: string;
+  isEmptyState?: boolean;
 }
 
 export default function DashboardOverview() {
@@ -85,6 +91,7 @@ export default function DashboardOverview() {
   }
 
   const isNew = data?.maturityLevel === "new";
+  const showEmptySetup = !isLoading && !data?.hasInitiatives;
 
   return (
     <div className="page-shell">
@@ -95,15 +102,42 @@ export default function DashboardOverview() {
         <h1 suppressHydrationWarning style={{ fontSize: "clamp(1.75rem, 4vw, 2.25rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
           {isLoading ? `${user?.full_name?.split(" ")[0] || "there"}.` : data?.greeting}
         </h1>
-        {data?.whatMattersNow && (
+        {showEmptySetup ? (
+          <p style={{ color: "var(--text-primary)", fontSize: "1.1rem", marginTop: "12px", fontWeight: 400, lineHeight: 1.6, maxWidth: 640 }}>
+            Let&apos;s define your first initiative.
+          </p>
+        ) : data?.whatMattersNow && data.hasInitiatives ? (
           <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
             {data.whatMattersNow}
           </p>
-        )}
+        ) : null}
       </header>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
         <AiSuggestionsBanner />
+
+        {data?.currentFocus && (
+          <section
+            className="glass-card"
+            style={{
+              padding: "20px 24px",
+              borderLeft: "3px solid var(--accent-primary)",
+            }}
+          >
+            <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
+              Current focus
+            </p>
+            <p style={{ fontSize: "1.15rem", fontWeight: 500, marginBottom: "6px" }}>{data.currentFocus.title}</p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "4px" }}>
+              {data.currentFocus.until ? `Until ${data.currentFocus.until}` : "No end date set"}
+              {" · "}
+              <span style={{ color: data.currentFocus.health.health === "at_risk" ? "#f59e0b" : "var(--accent-primary)" }}>
+                {data.currentFocus.health.label}
+              </span>
+            </p>
+            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>{data.currentFocus.health.reason}</p>
+          </section>
+        )}
 
         <section className="glass-card" style={{ padding: "clamp(24px, 4vw, 36px)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "8px" }}>
@@ -145,20 +179,29 @@ export default function DashboardOverview() {
             </ol>
           ) : (
             <div style={{ color: "var(--text-muted)", lineHeight: 1.7, fontWeight: 300 }}>
-              {isNew ? (
+              {showEmptySetup ? (
+                <>
+                  <p>Add one specific initiative with a deadline — e.g. lose 5 kg by August, pass UPSC prelims, or launch your MVP.</p>
+                  <Link href="/dashboard/goals" className="btn-primary" style={{ display: "inline-flex", marginTop: 16, textDecoration: "none", padding: "10px 20px", fontSize: "0.9rem" }}>
+                    Add your first initiative
+                  </Link>
+                </>
+              ) : isNew ? (
                 <p>Start by telling MenAI what you&apos;re actively working on — then open Today&apos;s Plan.</p>
               ) : data?.hasInitiatives ? (
                 <p>No tasks for today yet. Generate your daily plan from your active initiatives.</p>
               ) : (
                 <p>Add an active initiative (with a deadline) — daily tasks come from initiatives, not abstract goals.</p>
               )}
+              {!showEmptySetup && (
               <Link href="/dashboard/plans" className="btn-primary" style={{ display: "inline-flex", marginTop: 16, textDecoration: "none", padding: "10px 20px", fontSize: "0.9rem" }}>
                 Go to Today&apos;s Plan
               </Link>
+              )}
             </div>
           )}
 
-          {data?.topMomentumInitiative && data.focusTasks.length > 0 && (
+          {data?.topMomentumInitiative && data.focusTasks.length > 0 && data.hasInitiatives && (
             <p style={{ marginTop: 20, fontSize: "0.88rem", color: "var(--text-muted)" }}>
               Most momentum right now: <strong style={{ color: "var(--accent-primary)", fontWeight: 500 }}>{data.topMomentumInitiative}</strong>
             </p>
@@ -232,6 +275,12 @@ export default function DashboardOverview() {
         )}
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, paddingTop: 8 }}>
+          <Link
+            href="/dashboard/timeline"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", textDecoration: "none", fontSize: "0.9rem" }}
+          >
+            <History size={14} /> Memory timeline
+          </Link>
           <Link
             href="/dashboard/chat"
             style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", textDecoration: "none", fontSize: "0.9rem" }}

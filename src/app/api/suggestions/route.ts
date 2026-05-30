@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -73,16 +74,27 @@ export async function POST(req: NextRequest) {
       payload.targetDate ||
       defaultDeadline(30);
 
-    const { error: insErr } = await supabase.from("initiatives").insert({
+    const { data: created, error: insErr } = await supabase.from("initiatives").insert({
       user_id: user.id,
       title,
       description: payload.description || null,
       target_date: targetDate,
       life_area: edits?.lifeArea || payload.lifeArea || "personal",
       status: "active",
-    });
+    }).select("id, title, description").single();
 
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+    if (created) {
+      await generateMilestonesForInitiative(
+        supabase,
+        user.id,
+        created.id,
+        created.title,
+        created.description,
+        edits?.lifeArea || payload.lifeArea || "personal"
+      );
+    }
     await invalidateTodayPlan(supabase, user.id);
     invalidateUserCache(user.id, "initiative accepted from suggestion");
   }

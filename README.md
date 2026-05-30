@@ -151,19 +151,67 @@ Admin dashboard may still show TTFT/cost — users never see these.
 
 ---
 
-### 10. Real retention feature (roadmap priority)
+### 10. Memory Timeline (shipped)
 
-**Memory Timeline** — not chat alone.
+**Memory Timeline** — `/dashboard/timeline`
+
+Built from goals, initiatives, task execution, daily reflections, and weekly reviews. Grouped by month:
 
 ```
-April  — Wanted to start SaaS
-May    — Defined MVP
-June   — Got first user
-July   — Lost momentum
-August — Recovered
+April  — Started fitness initiative
+May    — Lost 3kg (reflection)
+June   — Recovered consistency (weekly review)
 ```
 
-Built from goals, initiatives, reflections, weekly reviews. **Next major feature** after initiative wizard.
+**Code:** `src/lib/plans/memory-timeline.ts`, `/api/memory/timeline`
+
+---
+
+### 11. Initiative milestones + current focus
+
+Each initiative gets AI-generated milestones on create (Define problem → Build MVP → First user → Launch).
+
+**Priority stack for daily plans:**
+
+```
+Opportunity (urgent)
+  ↓
+Current focus initiative → active milestone
+  ↓
+Other initiative milestones
+  ↓
+Routine tasks
+```
+
+**Current focus:** one active initiative on `profiles.current_focus_initiative_id`. Set from Direction & Initiatives page. Home shows focus + narrative health (At Risk — No meaningful progress in 7 days).
+
+**Code:** migration `028`, `/api/milestones`, `/api/focus`, `milestone-generator.ts`
+
+---
+
+### 12. Daily planner loop
+
+| Phase | Behavior |
+|-------|----------|
+| Morning | Generate plan — "What's the most important thing today?" |
+| Midday | `/api/plans/adjust` — replan afternoon from completed tasks |
+| Night | Reflection on Daily Plans page — feeds tomorrow's plan |
+
+**Code:** `/api/rhythm`, `adjustMiddayPlan()`, plans page rhythm banner
+
+---
+
+### 13. Task generation uses weaknesses
+
+Execution patterns map to anti-tasks and preferred tasks (e.g. overthinking → "Talk to 1 user", not "Research competitors"). Every generated task includes **Why?** with user-specific evidence.
+
+**Code:** `pattern-task-guidance.ts`, updated `daily-plan-generator.ts` prompt
+
+---
+
+### 14. Positioning
+
+**A — Personal growth system** (fitness, career, business, study, relationships, finance) with **execution + consistency** as the core engine underneath. Same architecture for a founder, student, or someone losing weight.
 
 ---
 

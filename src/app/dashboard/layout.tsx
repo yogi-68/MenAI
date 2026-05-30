@@ -17,13 +17,15 @@ import {
   FileText,
   Target,
   Activity,
+  History,
 } from "lucide-react";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
   { href: "/dashboard/plans", icon: Calendar, label: "Daily Plans" },
-  { href: "/dashboard/goals", icon: Target, label: "Direction & Initiatives" },
+  { href: "/dashboard/goals", icon: Target, label: "Initiatives" },
+  { href: "/dashboard/timeline", icon: History, label: "Timeline" },
   { href: "/dashboard/reports", icon: FileText, label: "Reports" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];

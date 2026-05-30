@@ -64,15 +64,25 @@ export function computeInitiativeHealth(
     daysSinceLastAction !== null && daysSinceLastAction >= 7;
 
   if (atRiskByDeadline || atRiskByInactivity) {
+    if (atRiskByInactivity && !atRiskByDeadline) {
+      return {
+        health: "at_risk",
+        label: "At Risk",
+        daysUntilDeadline,
+        daysSinceLastAction,
+        reason: `No meaningful progress in ${daysSinceLastAction} days.`,
+      };
+    }
     const parts: string[] = [];
-    if (daysUntilDeadline !== null) parts.push(`${daysUntilDeadline} days to deadline`);
-    if (daysSinceLastAction !== null) parts.push(`last action ${daysSinceLastAction} days ago`);
+    if (atRiskByInactivity) parts.push(`No meaningful progress in ${daysSinceLastAction} days`);
+    if (daysUntilDeadline !== null && daysUntilDeadline <= 14)
+      parts.push(`${daysUntilDeadline} days to deadline`);
     return {
       health: "at_risk",
       label: "At Risk",
       daysUntilDeadline,
       daysSinceLastAction,
-      reason: parts.join("; "),
+      reason: parts.join(". ") + (parts.length ? "." : ""),
     };
   }
 

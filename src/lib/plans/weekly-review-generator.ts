@@ -58,7 +58,7 @@ export async function generateWeeklyReview(
     throw new Error(AI_UNAVAILABLE_MESSAGE);
   }
 
-  const [execution, momentum, tasksRes, initiativesRes, opportunitiesRes, reflectionsRes] =
+  const [execution, momentum, tasksRes, initiativesRes, opportunitiesRes, reflectionsRes, prevTasksRes, prevReviewRes] =
     await Promise.all([
       fetchExecutionMetrics(supabase, userId),
       computeMomentumScore(supabase, userId),
@@ -82,6 +82,31 @@ export async function generateWeeklyReview(
         .eq("user_id", userId)
         .gte("reflection_date", weekStart)
         .lte("reflection_date", weekEnd),
+      (() => {
+        const prevStart = new Date(weekStart);
+        prevStart.setDate(prevStart.getDate() - 7);
+        const prevEnd = new Date(weekEnd);
+        prevEnd.setDate(prevEnd.getDate() - 7);
+        const ps = prevStart.toISOString().split("T")[0];
+        const pe = prevEnd.toISOString().split("T")[0];
+        return supabase
+          .from("tasks")
+          .select("status, due_date")
+          .eq("user_id", userId)
+          .gte("due_date", ps)
+          .lte("due_date", pe);
+      })(),
+      (() => {
+        const prevStart = new Date(weekStart);
+        prevStart.setDate(prevStart.getDate() - 7);
+        const ps = prevStart.toISOString().split("T")[0];
+        return supabase
+          .from("weekly_reviews")
+          .select("content")
+          .eq("user_id", userId)
+          .eq("week_start", ps)
+          .maybeSingle();
+      })(),
     ]);
 
   const tasks = tasksRes.data || [];
@@ -113,11 +138,25 @@ export async function generateWeeklyReview(
     (r) => `[${r.reflection_date}] Forward: ${r.moved_forward} | Blocked: ${r.blocked_by}`
   );
 
+  const prevTasks = prevTasksRes.data || [];
+  const prevCompleted = prevTasks.filter((t) => t.status === "completed").length;
+  const prevTotal = prevTasks.length;
+  const prevRate = prevTotal > 0 ? Math.round((prevCompleted / prevTotal) * 100) : null;
+  const thisCompleted = tasks.filter((t) => t.status === "completed").length;
+  const thisTotal = tasks.length;
+  const prevNarrative = (prevReviewRes.data?.content as { narrative?: string } | undefined)?.narrative;
+
   const prompt = `Generate a weekly execution review for this user. Write like a direct coach — narrative first, no gamification, no numeric scores in the narrative.
 
 Week: ${weekStart} to ${weekEnd}
 
-Execution rate (planned tasks): ${execution.last7Days.rate}% (${execution.last7Days.completed}/${execution.last7Days.total})
+This week execution: ${thisCompleted}/${thisTotal} planned tasks completed
+Last week execution: ${prevCompleted}/${prevTotal} planned tasks (${prevRate !== null ? `${prevRate}%` : "no data"})
+${prevNarrative ? `Last week's summary: ${prevNarrative}` : ""}
+
+COMPARE to last week in the narrative — e.g. "You executed more consistently than last week" or "Planning time increased vs last week."
+
+Execution rate (7-day rolling): ${execution.last7Days.rate}% (${execution.last7Days.completed}/${execution.last7Days.total})
 
 Initiative health:
 ${initiativeHealth.join("\n") || "No initiatives"}

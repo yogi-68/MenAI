@@ -59,6 +59,37 @@ export default function DailyPlansPage() {
   const [timePromptTask, setTimePromptTask] = useState<{ id: string; estimated: number } | null>(null);
   const [actualMinutesInput, setActualMinutesInput] = useState("");
   const [showContext, setShowContext] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+
+  const hour = new Date().getHours();
+  const planPhase = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "night";
+
+  const { data: rhythm } = useQuery({
+    queryKey: ["rhythm"],
+    queryFn: async () => {
+      const res = await fetch("/api/rhythm");
+      if (!res.ok) return null;
+      return res.json() as Promise<{ phase: string; focus_prompt: string; suggested_action: string; greeting: string }>;
+    },
+    staleTime: 60_000,
+  });
+
+  const adjustPlan = useMutation({
+    mutationFn: async (completedTitles: string[]) => {
+      const res = await fetch("/api/plans/adjust", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completedTitles }),
+      });
+      if (!res.ok) throw new Error("Adjust failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
+      setAdjusting(false);
+    },
+  });
 
   const { data: planData, isLoading: planLoading } = useQuery({
     queryKey: ["daily-plan", todayKey],
@@ -170,6 +201,35 @@ export default function DailyPlansPage() {
         <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.5rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
           Today&apos;s Plan
         </h1>
+        {rhythm && (
+          <div style={{ marginTop: "16px", padding: "14px 18px", borderRadius: "var(--radius-md)", background: "var(--bg-glass)", border: "1px solid var(--border-color)" }}>
+            <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: "6px" }}>
+              {planPhase === "morning" ? "Morning — plan" : planPhase === "afternoon" ? "Midday — adjust" : "Night — reflect"}
+            </p>
+            <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", marginBottom: "4px" }}>{rhythm.focus_prompt}</p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0 }}>{rhythm.suggested_action}</p>
+            {planPhase === "afternoon" && completedTasks > 0 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ marginTop: "12px", fontSize: "0.85rem" }}
+                disabled={adjustPlan.isPending || adjusting}
+                onClick={() => {
+                  setAdjusting(true);
+                  const done = (tasks || []).filter((t) => t.status === "completed").map((t) => t.title);
+                  adjustPlan.mutate(done);
+                }}
+              >
+                {adjustPlan.isPending ? "Adjusting…" : "What got done? Adjust afternoon plan"}
+              </button>
+            )}
+            {planPhase === "night" && (
+              <Link href="/dashboard/plans#reflection" style={{ display: "inline-block", marginTop: "12px", fontSize: "0.85rem", color: "var(--accent-primary)" }}>
+                What happened today? → Reflect
+              </Link>
+            )}
+          </div>
+        )}
       </header>
 
       {!isLoading && showSetup && (
@@ -459,6 +519,7 @@ export default function DailyPlansPage() {
                       paddingLeft: dbTask ? "36px" : "34px",
                     }}
                   >
+                    <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>Why? </span>
                     {planTask.whyItMatters}
                   </p>
 
@@ -500,11 +561,23 @@ export default function DailyPlansPage() {
               padding: "40px 0",
             }}
           >
-            Add active initiatives with deadlines on{" "}
-            <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-              Direction &amp; Initiatives
-            </Link>
-            {" "}— they drive your daily plan.
+            {plan?.tasks?.length === 0 ? (
+              <>
+                Add an active initiative with a deadline on{" "}
+                <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
+                  Initiatives
+                </Link>
+                {" "}— daily tasks are generated from initiatives, not generic placeholders.
+              </>
+            ) : (
+              <>
+                Add active initiatives with deadlines on{" "}
+                <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
+                  Initiatives
+                </Link>
+                {" "}— they drive your daily plan.
+              </>
+            )}
           </p>
         )}
       </section>

@@ -49,10 +49,10 @@ export function AiSuggestionsBanner() {
   const top = pending[0];
   const typeLabel =
     top.suggestion_type === "initiative"
-      ? "Detected initiative"
+      ? "Suggestion"
       : top.suggestion_type === "opportunity"
-        ? "Detected opportunity"
-        : "Detected direction";
+        ? "Opportunity"
+        : "Long-term direction";
 
   return (
     <section

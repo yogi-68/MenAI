@@ -427,11 +427,10 @@ export default function ChatPage() {
                 What is your <span className="gradient-text">focus</span> today?
               </h2>
               <p>
-                MenAI learns your patterns and helps you maintain trajectory. Share what you want to achieve or
-                what&apos;s blocking you.
+                Share what you&apos;re working on or what&apos;s blocking you. MenAI learns your patterns over time.
               </p>
               <div className="chat-suggestions">
-                {["Define my trajectory", "Review my active focus", "I am stuck"].map((suggestion) => (
+                {["I want to build an AI SaaS", "Help me plan my first initiative", "I am stuck"].map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"

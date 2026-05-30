@@ -19,7 +19,7 @@ export async function GET() {
 
   const [profileRes, tasksRes, initiativesRes, planRes, patternsRes, cogState] =
     await Promise.all([
-      supabase.from("profiles").select("full_name").eq("id", user.id).single(),
+      supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
       supabase
         .from("tasks")
         .select("id, title, status, due_date, auto_generated, created_at, initiative_id")
@@ -77,15 +77,39 @@ export async function GET() {
   }
 
   const patternInsight = patternsRes.data?.[0]?.behavioral_impact;
-  const insight =
-    dashboardCog.observation ||
-    (patternInsight
-      ? `You tend to ${patternInsight.charAt(0).toLowerCase()}${patternInsight.slice(1)}`
-      : null);
+  const hasRealData =
+    initiatives.length > 0 ||
+    (cogState.maturity_level !== "new" && (patternsRes.data?.length ?? 0) > 0);
+
+  const insight = hasRealData
+    ? dashboardCog.observation ||
+      (patternInsight
+        ? `You tend to ${patternInsight.charAt(0).toLowerCase()}${patternInsight.slice(1)}`
+        : null)
+    : null;
+
+  const topMomentum =
+    initiatives.length > 0 && cogState.maturity_level !== "new" ? topMomentumInitiative : null;
+
+  const focusId = profileRes.data?.current_focus_initiative_id;
+  const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : null;
+  const currentFocus = focusInit
+    ? {
+        title: focusInit.title,
+        until: profileRes.data?.current_focus_until || focusInit.target_date,
+        health: computeInitiativeHealth({
+          status: focusInit.status,
+          targetDate: focusInit.target_date,
+          lastActionAt: focusInit.last_action_at,
+          progress: focusInit.progress,
+        }),
+      }
+    : null;
 
   return NextResponse.json({
     greeting: `${timeOfDay}, ${firstName}.`,
     whatMattersNow: planContent?.whatMattersNow || null,
+    currentFocus,
     focusTasks: focusTasks.map((t) => ({
       id: t.id,
       title: t.title,
@@ -98,9 +122,10 @@ export async function GET() {
       lifeArea: i.life_area,
       progress: i.progress,
     })),
-    topMomentumInitiative,
+    topMomentumInitiative: topMomentum,
     insight,
     hasInitiatives: initiatives.length > 0,
     maturityLevel: cogState.maturity_level,
+    isEmptyState: initiatives.length === 0 && !planRes.data?.plan_content,
   });
 }

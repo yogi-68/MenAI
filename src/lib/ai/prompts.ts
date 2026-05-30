@@ -304,14 +304,11 @@ Extraction Rules:
    - "I'm going to finish the landing page" → {description: "Finish landing page", category: "work", timeframe: "this_week", confidence: 0.90}
 
 3. IDENTITY SIGNALS - who they want to become (NEW)
-   Extract when user expresses:
-   - Founder ambition: "I want to build my own company", "I'm becoming an entrepreneur"
-   - Creator mindset: "I want to create content", "I'm building in public"
-   - Self-discipline goals: "I want to be more disciplined", "I need stronger willpower"
-   - Leadership aspirations: "I want to lead a team", "I'm working on my leadership"
-   Examples:
-   - "I want to become a founder" → {type: "founder", description: "Aspires to start own company", longTermDirection: "entrepreneurship", confidence: 0.95}
-   - "I'm building my creative practice" → {type: "creator", description: "Developing creative skills", longTermDirection: "creative work", confidence: 0.88}
+   Extract ONLY when user expresses identity ambition — NOT from having a project.
+   - Do NOT set type "founder" for exam prep, fitness, weight loss, or career goals
+   - "Building AI SaaS" → project/initiative only; founder identity ONLY if they say entrepreneur/founder/startup
+   - "Preparing for UPSC" → learning identity or omit; NEVER founder
+   - "Lose 10kg" → health project; NEVER founder
 
 4. EXECUTION PATTERNS - behavioral patterns affecting execution (NEW)
    Extract when user describes:

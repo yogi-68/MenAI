@@ -5,6 +5,7 @@ import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
 import { MAX_ACTIVE_INITIATIVES } from "@/lib/product/constants";
+import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 
 async function invalidatePlanForUser(userId: string) {
   const supabase = await createServerSupabaseClient();
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("initiatives")
-    .select("*, goals(title, category)")
+    .select("*, goals(title, category), initiative_milestones(id, title, sort_order, status)")
     .eq("user_id", user.id)
     .order("target_date", { ascending: true, nullsFirst: false });
 
@@ -72,6 +73,15 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await generateMilestonesForInitiative(
+    supabase,
+    user.id,
+    data.id,
+    data.title,
+    data.description,
+    data.life_area || "personal"
+  );
 
   await invalidatePlanForUser(user.id);
   trackProductEventOnce(user.id, "first_initiative_created").catch(() => {});

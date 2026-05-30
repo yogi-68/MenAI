@@ -20,6 +20,7 @@ import {
   isLowPlanConfidence,
 } from "@/lib/plans/language-guard";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
+import { buildPatternGuidanceLines } from "@/lib/plans/pattern-task-guidance";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -50,20 +51,32 @@ export interface DailyPlanContent {
   tasks: DailyPlanTask[];
 }
 
+export type PlanPhase = "morning" | "afternoon" | "night";
+
+export interface FetchPlanOptions {
+  middayCompleted?: string[];
+  planPhase?: PlanPhase;
+}
+
 export interface PlanUserContext {
   initiatives: string[];
   initiativeHealth: string[];
+  initiativeMilestones: string[];
   upcomingDeadlines: string[];
   opportunities: string[];
+  urgentOpportunities: string[];
   recentReflections: string[];
   lifeAreaBalance: string[];
   goals: string[];
   commitments: string[];
   vision: string;
   currentPriorities: string[];
+  currentFocus: string | null;
+  currentFocusUntil: string | null;
   unfinishedTasks: string[];
   recentProgress: string[];
   obstacles: string[];
+  patternGuidance: string[];
   availableMinutes: number;
   energyLevel: string;
   identityContext: string;
@@ -76,6 +89,8 @@ export interface PlanUserContext {
   initiativeMap: Map<string, string>;
   lifeAreaInsight?: string;
   timeEstimationInsight?: string;
+  planPhase: PlanPhase;
+  middayCompleted: string[];
 }
 
 import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
@@ -94,9 +109,17 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function currentPlanPhase(): PlanPhase {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 18) return "afternoon";
+  return "night";
+}
+
 export async function fetchPlanUserContext(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  options: FetchPlanOptions = {}
 ): Promise<PlanUserContext> {
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -163,7 +186,7 @@ export async function fetchPlanUserContext(
     supabase
       .from("profiles")
       .select(
-        "vision, daily_priorities, cognitive_state, founder_mode, work_style, lifestyle_issues, full_name"
+        "vision, daily_priorities, cognitive_state, founder_mode, work_style, lifestyle_issues, full_name, current_focus_initiative_id, current_focus_until"
       )
       .eq("id", userId)
       .maybeSingle(),
@@ -201,6 +224,17 @@ export async function fetchPlanUserContext(
     fetchTimeEstimationProfile(supabase, userId),
     fetchExecutionMetrics(supabase, userId),
   ]);
+
+  const initiativeIds = (initiativesRes.data || []).map((i) => i.id);
+  const { data: milestonesData } =
+    initiativeIds.length > 0
+      ? await supabase
+          .from("initiative_milestones")
+          .select("initiative_id, title, status, sort_order, initiatives(title)")
+          .eq("user_id", userId)
+          .in("initiative_id", initiativeIds)
+          .order("sort_order", { ascending: true })
+      : { data: [] as Array<{ initiative_id: string; title: string; status: string; sort_order: number; initiatives: { title?: string } | null }> };
 
   const initiatives = initiativesRes.data || [];
   const goals = goalsRes.data || [];
@@ -263,6 +297,37 @@ export async function fetchPlanUserContext(
     if (o.life_area) parts.push(`(${lifeAreaLabel(o.life_area)})`);
     return parts.join(" — ");
   });
+
+  const urgentOpportunityLines = opportunities
+    .filter((o) => {
+      if (o.urgency === "critical" || o.urgency === "high") return true;
+      if (o.due_date) {
+        const days = daysUntil(o.due_date);
+        return days >= 0 && days <= 2;
+      }
+      return false;
+    })
+    .map((o) => {
+      const due = o.due_date ? ` (due ${o.due_date})` : "";
+      return `[URGENT — beats routine plans] ${o.title} — ${o.urgency} urgency${due}`;
+    });
+
+  const milestoneLines = (milestonesData || []).map((m) => {
+    const initTitle = (m.initiatives as { title?: string } | null)?.title || "Initiative";
+    const status =
+      m.status === "completed" ? "done" : m.status === "in_progress" ? "CURRENT" : "upcoming";
+    return `${initTitle}: [${status}] ${m.title}`;
+  });
+
+  let currentFocusTitle: string | null = null;
+  let currentFocusUntil: string | null = profileRes.data?.current_focus_until ?? null;
+  const focusId = profileRes.data?.current_focus_initiative_id;
+  if (focusId) {
+    const focusInit = initiatives.find((i) => i.id === focusId);
+    if (focusInit) currentFocusTitle = focusInit.title;
+  }
+
+  const patternGuidance = buildPatternGuidanceLines(patterns);
 
   const balanceRows = balanceTasks.map((t) => ({
     life_area: (t.initiatives as { life_area?: string } | null)?.life_area || "personal",
@@ -339,7 +404,9 @@ export async function fetchPlanUserContext(
       )
     );
   }
-  if (profile?.founder_mode) identityParts.push("Operating in founder/builder mode");
+  if (profile?.founder_mode && initiatives.some((i) => i.life_area === "business")) {
+    identityParts.push("Operating in founder/builder mode");
+  }
   if (profile?.work_style) identityParts.push(`Work style: ${profile.work_style}`);
 
   const lifeParts: string[] = [];
@@ -392,11 +459,20 @@ export async function fetchPlanUserContext(
         ? Math.min(180, baseMinutes)
         : baseMinutes;
 
+  const planPhase = options.planPhase ?? currentPlanPhase();
+  const middayCompleted = options.middayCompleted ?? [];
+  let availableMinutesAdjusted = availableMinutes;
+  if (planPhase === "afternoon" && middayCompleted.length > 0) {
+    availableMinutesAdjusted = Math.max(90, Math.round(availableMinutes * 0.55));
+  }
+
   return {
     initiatives: initiativeLines,
     initiativeHealth: initiativeHealthLines,
+    initiativeMilestones: milestoneLines,
     upcomingDeadlines,
     opportunities: opportunityLines,
+    urgentOpportunities: urgentOpportunityLines,
     recentReflections: recentReflectionLines,
     lifeAreaBalance: lifeAreaBalanceLines,
     goals: goalLines,
@@ -408,10 +484,13 @@ export async function fetchPlanUserContext(
         : cognitive?.active_focus
           ? [String(cognitive.active_focus)]
           : [],
+    currentFocus: currentFocusTitle,
+    currentFocusUntil,
     unfinishedTasks: unfinishedLines,
     recentProgress: recentProgressLines,
     obstacles: obstacleLines,
-    availableMinutes,
+    patternGuidance,
+    availableMinutes: availableMinutesAdjusted,
     energyLevel,
     identityContext:
       identityParts.length > 0 ? identityParts.join("; ") : "Limited identity data",
@@ -419,12 +498,14 @@ export async function fetchPlanUserContext(
       lifeParts.length > 0 ? lifeParts.join("; ") : "Limited life context on file",
     confidence,
     planMode,
-    maxTasks,
+    maxTasks: planPhase === "afternoon" && middayCompleted.length > 0 ? Math.min(maxTasks, 3) : maxTasks,
     timeEstimationRatio: timeProfile.estimationRatio,
     executionRate7d: executionMetrics.last7Days.rate,
     initiativeMap,
     lifeAreaInsight: lifeAreaInsight ?? undefined,
     timeEstimationInsight: timeProfile.insight ?? undefined,
+    planPhase,
+    middayCompleted,
   };
 }
 
@@ -452,14 +533,34 @@ function buildPrompt(ctx: PlanUserContext): string {
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
 
-PRIMARY INPUT — Active initiatives (generate tasks mainly from these):
+PRIORITY STACK (strict — higher beats lower):
+1. URGENT OPPORTUNITIES — time-sensitive events (interviews, deadlines, crises) override everything
+2. CURRENT FOCUS initiative milestone — one active focus only; secondary initiatives get zero tasks unless opportunity demands
+3. Other initiative milestones (in_progress milestone only)
+4. Routine / maintenance tasks last
+
+CURRENT FOCUS (only one — everything else is secondary):
+${ctx.currentFocus ? `  - ${ctx.currentFocus}${ctx.currentFocusUntil ? ` until ${ctx.currentFocusUntil}` : ""}` : "  - Not set — spread tasks across initiatives or ask user to pick focus"}
+
+Plan phase: ${ctx.planPhase}${ctx.middayCompleted.length > 0 ? `\nAlready completed this morning:\n${ctx.middayCompleted.map((t) => `  - ${t}`).join("\n")}\nGenerate ONLY remaining afternoon tasks.` : ""}
+
+URGENT OPPORTUNITIES (override routine plans — rearrange day around these):
+${listOrFallback(ctx.urgentOpportunities, "None — proceed with initiative milestones")}
+
+Initiative milestones (generate tasks from CURRENT / in_progress milestone — not vague initiative titles):
+${listOrFallback(ctx.initiativeMilestones, "No milestones yet — suggest 1 context-building task to define milestones")}
+
+PRIMARY INPUT — Active initiatives:
 ${listOrFallback(ctx.initiatives, "NONE — context is thin; prefer context-building tasks")}
 
-Initiative health:
+Initiative health (narrative — use these labels in whyItMatters, not percentages):
 ${listOrFallback(ctx.initiativeHealth, "No initiatives")}
 
-Active opportunities (may outweigh routine tasks):
+All opportunities:
 ${listOrFallback(ctx.opportunities, "None logged — consider asking if anything time-sensitive this week")}
+
+Execution patterns → task design (MUST follow — generate tasks that counter weaknesses):
+${listOrFallback(ctx.patternGuidance, "No patterns detected yet")}
 
 Daily reflections (use for context — explains low execution):
 ${listOrFallback(ctx.recentReflections, "None logged yet")}
@@ -475,8 +576,13 @@ Goals (background DIRECTION only — never generate tasks from these):
 ${listOrFallback(ctx.goals, "None")}
 
 TASK RULE — every task MUST pass: "Can the user finish this today before bed?"
-BAD: "Build scalable businesses", "Increase income", "Improve fitness"
-GOOD: "Send 5 outreach emails", "Implement onboarding form validation", "Walk 30 minutes"
+DOMAIN RULE — match task language to initiative life areas:
+- health → nutrition, training, walks — NEVER SaaS/customer/outreach tasks
+- learning → study blocks, syllabus, mocks — NEVER startup/MVP/customer tasks
+- career → applications, prep, networking for jobs — not product launch tasks
+- business → only area where outreach/MVP/customer tasks are appropriate
+BAD: "Build scalable businesses", "Increase income", "Improve fitness", "Research competitors" (when overthinking pattern detected)
+GOOD: "Send 5 outreach emails" (business only), "Walk 30 minutes" (health), "Complete 2 UPSC chapters" (learning)
 Each task needs a deliverable + successMetric that is yes/no verifiable today.
 
 Commitments:
@@ -517,7 +623,9 @@ ${
 }
 
 CRITICAL: Generate tasks only when evidence shows highest-leverage action today.
-Opportunities with critical/high urgency should beat routine maintenance.
+Urgent opportunities ALWAYS beat routine initiative tasks.
+Tasks must advance the current in_progress milestone — never repeat generic work.
+Each task whyItMatters MUST answer "Why this task?" with user-specific evidence (e.g. "You've delayed outreach for 5 days. This unblocks that.").
 
 Return JSON only:
 {
@@ -529,7 +637,7 @@ Return JSON only:
   "assumptions": ["only in normal mode if needed"],
   "tasks": [{
     "title": "Concrete action",
-    "whyItMatters": "One sentence",
+    "whyItMatters": "Why this task? — cite pattern, delay, milestone, or opportunity",
     "estimatedMinutes": 60,
     "deliverable": "Exact output",
     "successMetric": "Measurable done criteria",
@@ -698,11 +806,50 @@ export async function invalidateTodayPlan(
     .eq("plan_date", today);
 }
 
+export function buildEmptyPlan(): DailyPlanContent {
+  return {
+    daySummary: "Add an active initiative to generate today's tasks.",
+    whatMattersNow: undefined,
+    whyTheseTasks: "",
+    confidence: {
+      score: 15,
+      gaps: ["No active initiatives"],
+      strengths: [],
+    },
+    planMode: "context_building",
+    tasks: [],
+    evidence: ["No active initiatives"],
+  };
+}
+
 export async function ensureTodayPlan(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ plan: DailyPlanContent; planId: string; created: boolean }> {
   const today = new Date().toISOString().split("T")[0];
+
+  const { count: initiativeCount } = await supabase
+    .from("initiatives")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "active");
+
+  if ((initiativeCount ?? 0) === 0) {
+    await invalidateTodayPlan(supabase, userId);
+    const empty = buildEmptyPlan();
+    const { data: inserted, error } = await supabase
+      .from("daily_plans")
+      .insert({
+        user_id: userId,
+        plan_date: today,
+        plan_content: empty,
+        ai_notes: empty.daySummary,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    return { plan: empty, planId: inserted.id, created: false };
+  }
 
   const { data: existing } = await supabase
     .from("daily_plans")
@@ -786,6 +933,105 @@ export async function ensureTodayPlan(
   }
 
   return { plan: planContent, planId: inserted.id, created: true };
+}
+
+/** Midday replan: keep morning wins, regenerate afternoon tasks. */
+export async function adjustMiddayPlan(
+  supabase: SupabaseClient,
+  userId: string,
+  completedTitles: string[]
+): Promise<{ plan: DailyPlanContent; planId: string }> {
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: existing } = await supabase
+    .from("daily_plans")
+    .select("id, plan_content")
+    .eq("user_id", userId)
+    .eq("plan_date", today)
+    .maybeSingle();
+
+  const prior = existing?.plan_content
+    ? normalizePlanContent(existing.plan_content)
+    : null;
+
+  const ctx = await fetchPlanUserContext(supabase, userId, {
+    middayCompleted: completedTitles,
+    planPhase: "afternoon",
+  });
+
+  const quota = await checkAiQuota(userId, "daily_plan");
+  if (!quota.allowed) throw new Error(AI_UNAVAILABLE_MESSAGE);
+
+  const afternoonPlan = await generateDailyPlanWithAI(ctx, userId);
+
+  const completedSet = new Set(completedTitles.map((t) => t.toLowerCase()));
+  const morningTasks = (prior?.tasks || []).filter((t) =>
+    completedSet.has(t.title.toLowerCase())
+  );
+  const mergedTasks = [...morningTasks, ...afternoonPlan.tasks];
+
+  const planContent: DailyPlanContent = {
+    ...afternoonPlan,
+    daySummary: `Morning: ${completedTitles.length} done. Afternoon: ${afternoonPlan.daySummary}`,
+    whyTheseTasks: `You completed ${completedTitles.length} task(s) this morning. ${afternoonPlan.whyTheseTasks}`,
+    tasks: mergedTasks,
+  };
+
+  let planId = existing?.id;
+  if (planId) {
+    await supabase
+      .from("daily_plans")
+      .update({ plan_content: planContent, ai_notes: planContent.daySummary })
+      .eq("id", planId);
+  } else {
+    const { data: inserted, error } = await supabase
+      .from("daily_plans")
+      .insert({
+        user_id: userId,
+        plan_date: today,
+        plan_content: planContent,
+        ai_notes: planContent.daySummary,
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+    planId = inserted.id;
+  }
+
+  const { data: existingTodayTasks } = await supabase
+    .from("tasks")
+    .select("title")
+    .eq("user_id", userId)
+    .eq("due_date", today);
+
+  const existingTitles = new Set(
+    (existingTodayTasks || []).map((t) => t.title.toLowerCase())
+  );
+
+  const newTasks = afternoonPlan.tasks
+    .filter((t) => !existingTitles.has(t.title.toLowerCase()))
+    .map((t) => {
+      const initiativeId = t.linkedInitiative
+        ? ctx.initiativeMap.get(t.linkedInitiative.toLowerCase())
+        : undefined;
+      return {
+        user_id: userId,
+        title: t.title,
+        description: `${t.whyItMatters}\n\nDeliverable: ${t.deliverable}\nSuccess: ${t.successMetric}`,
+        status: "pending",
+        due_date: today,
+        estimated_minutes: t.estimatedMinutes,
+        initiative_id: initiativeId || null,
+        auto_generated: true,
+        generation_reason: "midday_adjust",
+      };
+    });
+
+  if (newTasks.length > 0) {
+    await supabase.from("tasks").insert(newTasks);
+  }
+
+  return { plan: planContent, planId: planId! };
 }
 
 function normalizePlanContent(raw: unknown): DailyPlanContent {

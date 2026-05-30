@@ -50,6 +50,7 @@ interface Initiative {
   life_area: string;
   last_action_at: string | null;
   goals?: { title: string; category: string } | null;
+  initiative_milestones?: Array<{ id: string; title: string; status: string; sort_order: number }>;
 }
 
 interface Opportunity {
@@ -93,6 +94,10 @@ export default function GoalsPage() {
   const [newTask, setNewTask] = useState({ title: "", goalId: "", dueDate: "", recurrence: "" });
   const [newInitiative, setNewInitiative] = useState({ title: "", description: "", goalId: "", targetDate: "", lifeArea: "personal" });
   const [newOpportunity, setNewOpportunity] = useState({ title: "", description: "", lifeArea: "personal", urgency: "medium", dueDate: "" });
+  const [completionModal, setCompletionModal] = useState<{
+    title: string;
+    review: { summary: string; biggestWin: string; keyLearning: string; timelineEntry: string; suggestedNext?: string };
+  } | null>(null);
 
   // Fetch goals
   const { data: goalsData, isLoading: goalsLoading } = useQuery({
@@ -219,6 +224,60 @@ export default function GoalsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["initiatives"] });
       queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
+    },
+  });
+
+  const setCurrentFocus = useMutation({
+    mutationFn: async ({ initiativeId, until }: { initiativeId: string; until?: string }) => {
+      const res = await fetch("/api/focus", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initiativeId, until }),
+      });
+      if (!res.ok) throw new Error("Failed to set focus");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+    },
+  });
+
+  const toggleMilestone = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "pending" | "in_progress" | "completed" }) => {
+      await fetch("/api/milestones", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["initiatives"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+    },
+  });
+
+  const completeInitiative = useMutation({
+    mutationFn: async (initiativeId: string) => {
+      const res = await fetch("/api/initiatives/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initiativeId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setCompletionModal({ title: data.initiativeTitle, review: data.review });
+      queryClient.invalidateQueries({ queryKey: ["initiatives"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      queryClient.invalidateQueries({ queryKey: ["ai-suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["memory-timeline"] });
     },
   });
 
@@ -304,10 +363,10 @@ export default function GoalsPage() {
         <div>
           <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
             <Target size={28} style={{ color: "var(--accent-primary)" }} />
-            Direction & Active Initiatives
+            Long-Term Direction & Initiatives
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            <strong>Direction</strong> = long-term outcomes. <strong>Active initiatives</strong> = what you execute this month — they drive your daily plan.
+            <strong>Long-term direction</strong> = outcomes that matter over years. <strong>Active initiatives</strong> = what you execute this month — they drive your daily plan.
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -318,7 +377,7 @@ export default function GoalsPage() {
             <Sparkles size={16} /> Opportunity
           </button>
           <button onClick={() => setShowAddGoal(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
-            <Plus size={16} /> Direction
+            <Plus size={16} /> Long-term direction
           </button>
           <Link href="/dashboard/chat" className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
             <MessageSquare size={16} /> Ask AI to set up
@@ -397,6 +456,9 @@ export default function GoalsPage() {
                       {health.label}
                     </span>
                   </div>
+                  <p style={{ fontSize: "0.78rem", color: health.health === "at_risk" ? "#f59e0b" : "var(--text-muted)", margin: "2px 0 4px" }}>
+                    {health.reason}
+                  </p>
                   <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <span>{lifeAreaLabel(init.life_area)}</span>
                     {init.goals?.title && <span>Goal: {init.goals.title}</span>}
@@ -406,6 +468,75 @@ export default function GoalsPage() {
                   {init.description && (
                     <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>{init.description}</p>
                   )}
+                  {(init.initiative_milestones || []).length > 0 && (
+                    <ul style={{ marginTop: "12px", paddingLeft: "0", listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {[...(init.initiative_milestones || [])]
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((m) => (
+                          <li key={m.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.82rem" }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleMilestone.mutate({
+                                  id: m.id,
+                                  status: m.status === "completed" ? "in_progress" : "completed",
+                                })
+                              }
+                              style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: m.status === "completed" ? "var(--accent-primary)" : "var(--text-muted)" }}
+                            >
+                              {m.status === "completed" ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+                            </button>
+                            <span
+                              style={{
+                                color: m.status === "in_progress" ? "var(--text-primary)" : m.status === "completed" ? "var(--text-muted)" : "var(--text-secondary)",
+                                textDecoration: m.status === "completed" ? "line-through" : "none",
+                                fontWeight: m.status === "in_progress" ? 500 : 400,
+                              }}
+                            >
+                              {m.title}
+                              {m.status === "in_progress" && " ← current milestone"}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentFocus.mutate({ initiativeId: init.id, until: init.target_date || undefined })}
+                    style={{
+                      marginTop: "10px",
+                      fontSize: "0.75rem",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-glass)",
+                      color: "var(--accent-primary)",
+                      cursor: "pointer",
+                      marginRight: "8px",
+                    }}
+                  >
+                    Set as current focus
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Mark "${init.title}" complete? This archives the initiative and generates a review.`)) {
+                        completeInitiative.mutate(init.id);
+                      }
+                    }}
+                    style={{
+                      marginTop: "10px",
+                      fontSize: "0.75rem",
+                      padding: "4px 10px",
+                      borderRadius: "999px",
+                      border: "1px solid var(--border-color)",
+                      background: "var(--bg-glass)",
+                      color: "var(--text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Mark complete
+                  </button>
                   {(tasksByInitiative.get(init.id) || []).length > 0 && (
                     <ul style={{ marginTop: "10px", paddingLeft: "0", listStyle: "none", display: "flex", flexDirection: "column", gap: "6px" }}>
                       {(tasksByInitiative.get(init.id) || []).slice(0, 5).map((t) => (
@@ -436,6 +567,9 @@ export default function GoalsPage() {
           <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Opportunities</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>can outweigh routine tasks</span>
         </div>
+        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>
+          Example: interview tomorrow rearranges your plan — opportunities rank above initiative milestones.
+        </p>
         {opportunitiesLoading ? (
           <div className="skeleton" style={{ height: "72px" }} />
         ) : opportunities.length === 0 ? (
@@ -469,7 +603,7 @@ export default function GoalsPage() {
       {/* Direction (long-term goals) */}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
         <Target size={18} style={{ color: "var(--text-muted)" }} />
-        <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Direction</h2>
+        <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Long-term direction</h2>
         <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>long-term · not daily tasks</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "32px" }}>
@@ -774,6 +908,27 @@ export default function GoalsPage() {
               {createOpportunity.isPending ? "Saving..." : "Save Opportunity"}
             </button>
           </div>
+        </Modal>
+      )}
+      {completionModal && (
+        <Modal title={`Completed: ${completionModal.title}`} onClose={() => setCompletionModal(null)}>
+          <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-primary)", marginBottom: 16 }}>
+            {completionModal.review.summary}
+          </p>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 8 }}>
+            <strong>Biggest win:</strong> {completionModal.review.biggestWin}
+          </p>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: 8 }}>
+            <strong>Learning:</strong> {completionModal.review.keyLearning}
+          </p>
+          <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 16 }}>
+            Added to your <Link href="/dashboard/timeline" style={{ color: "var(--accent-primary)" }}>Memory Timeline</Link>.
+          </p>
+          {completionModal.review.suggestedNext && (
+            <p style={{ fontSize: "0.85rem", color: "var(--accent-primary)" }}>
+              Suggested next: {completionModal.review.suggestedNext} — check Overview for the suggestion banner.
+            </p>
+          )}
         </Modal>
       )}
     </div>
