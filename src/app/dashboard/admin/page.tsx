@@ -4,7 +4,13 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAppStore } from "@/lib/store";
-import { Activity, AlertTriangle, Cpu, DollarSign, Users, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Cpu, DollarSign, Users, Zap, Timer } from "lucide-react";
+
+function fmtMs(ms: number | null) {
+  if (ms === null) return "—";
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
+  return `${ms}ms`;
+}
 
 function fmtUsd(n: number) {
   return `$${n.toFixed(4)}`;
@@ -107,6 +113,23 @@ export default function AdminMonitoringPage() {
           </div>
 
           <section className="glass-card" style={{ padding: "24px" }}>
+            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Timer size={14} />
+              Chat performance (admin only)
+            </h2>
+            {data.chatPerformance ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
+                <LatencyStat label="Avg TTFT today" value={fmtMs(data.chatPerformance.today.avgTtftMs)} sub={`${data.chatPerformance.today.calls} chats`} />
+                <LatencyStat label="Avg response today" value={fmtMs(data.chatPerformance.today.avgDurationMs)} sub={`${data.chatPerformance.today.interrupted} interrupted`} />
+                <LatencyStat label="Avg TTFT (month)" value={fmtMs(data.chatPerformance.month.avgTtftMs)} sub={`${data.chatPerformance.month.calls} chats`} />
+                <LatencyStat label="Avg response (month)" value={fmtMs(data.chatPerformance.month.avgDurationMs)} sub={`${data.chatPerformance.month.interrupted} interrupted`} />
+              </div>
+            ) : (
+              <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No chat latency data yet.</p>
+            )}
+          </section>
+
+          <section className="glass-card" style={{ padding: "24px" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "16px" }}>
               Product funnel (30 days)
             </h2>
@@ -170,7 +193,7 @@ export default function AdminMonitoringPage() {
               {data.recentCalls.length === 0 ? (
                 <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No recent calls.</p>
               ) : (
-                data.recentCalls.slice(0, 12).map((call: { id: string; feature: string; userName: string; cost: number; tokensIn: number; tokensOut: number; createdAt: string }) => (
+                data.recentCalls.slice(0, 12).map((call: { id: string; feature: string; userName: string; cost: number; tokensIn: number; tokensOut: number; createdAt: string; ttftMs?: number | null; durationMs?: number | null }) => (
                   <div key={call.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-color)", fontSize: "0.82rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
                       <span>{call.feature.replace(/_/g, " ")} · {call.userName}</span>
@@ -178,6 +201,9 @@ export default function AdminMonitoringPage() {
                     </div>
                     <div style={{ color: "var(--text-muted)", marginTop: "2px" }}>
                       {new Date(call.createdAt).toLocaleString()} · {call.tokensIn + call.tokensOut} tok
+                      {call.feature === "chat" && (call.ttftMs != null || call.durationMs != null) && (
+                        <> · TTFT {fmtMs(call.ttftMs ?? null)} · {fmtMs(call.durationMs ?? null)}</>
+                      )}
                     </div>
                   </div>
                 ))
@@ -186,6 +212,16 @@ export default function AdminMonitoringPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function LatencyStat({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+      <div style={{ fontSize: "1.25rem", fontWeight: 500, marginTop: "4px" }}>{value}</div>
+      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "2px" }}>{sub}</div>
     </div>
   );
 }

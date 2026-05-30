@@ -289,7 +289,7 @@ export default function DashboardLayout({
             alignItems: "center",
             justifyContent: "space-between",
           }}
-          className="mobile-header"
+          className={`mobile-header ${pathname.startsWith("/dashboard/chat") ? "mobile-header-hidden" : ""}`}
         >
           <button
             onClick={() => setMobileMenuOpen(true)}

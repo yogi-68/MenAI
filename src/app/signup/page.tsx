@@ -175,7 +175,7 @@ export default function SignupPage() {
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
-            Start your journey to a better life. Your AI companion is waiting.
+            Start your execution system. Set initiatives, get daily plans, stay on trajectory.
           </p>
         </div>
 
@@ -344,7 +344,7 @@ export default function SignupPage() {
               lineHeight: 1.5,
             }}
           >
-            By signing up, you agree that MenAI is an AI companion for personal growth and not a substitute for professional medical or mental health advice.
+            By signing up, you agree that MenAI is an execution coaching tool and not a substitute for professional medical or mental health advice.
           </p>
         </div>
 

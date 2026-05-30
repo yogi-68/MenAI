@@ -29,7 +29,13 @@ export interface AdminMonitoringSnapshot {
     cost: number;
     createdAt: string;
     userName: string;
+    ttftMs: number | null;
+    durationMs: number | null;
   }>;
+  chatPerformance: {
+    today: { calls: number; avgTtftMs: number | null; avgDurationMs: number | null; interrupted: number };
+    month: { calls: number; avgTtftMs: number | null; avgDurationMs: number | null; interrupted: number };
+  };
   budget: {
     monthlyLimitUsd: number;
     monthSpendUsd: number;
@@ -50,6 +56,21 @@ function sumUsage(rows: Array<{ tokens_in?: number; tokens_out?: number; cost_es
   );
 }
 
+function avgMs(values: Array<number | null | undefined>): number | null {
+  const nums = values.filter((v): v is number => typeof v === "number" && v >= 0);
+  if (nums.length === 0) return null;
+  return Math.round(nums.reduce((a, b) => a + b, 0) / nums.length);
+}
+
+function chatPerfFromRows(rows: Array<{ ttft_ms?: number | null; duration_ms?: number | null }>) {
+  return {
+    calls: rows.length,
+    avgTtftMs: avgMs(rows.map((r) => r.ttft_ms)),
+    avgDurationMs: avgMs(rows.map((r) => r.duration_ms)),
+    interrupted: rows.filter((r) => r.duration_ms == null).length,
+  };
+}
+
 export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
   const db = await createServiceRoleClient();
   const today = new Date();
@@ -68,18 +89,24 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
     plansTodayRes,
     reflectionsTodayRes,
     initiativesRes,
+    chatLatencyMonthRes,
   ] = await Promise.all([
     db.from("ai_usage_log").select("tokens_in, tokens_out, cost_estimate, feature").gte("created_at", todayIso),
     db.from("ai_usage_log").select("tokens_in, tokens_out, cost_estimate, feature, user_id").gte("created_at", monthIso),
     db
       .from("ai_usage_log")
-      .select("id, feature, model, tokens_in, tokens_out, cost_estimate, created_at, user_id")
+      .select("id, feature, model, tokens_in, tokens_out, cost_estimate, created_at, user_id, ttft_ms, duration_ms")
       .order("created_at", { ascending: false })
       .limit(25),
     db.from("profiles").select("id, full_name"),
     db.from("daily_plans").select("id", { count: "exact", head: true }).eq("plan_date", todayDate),
     db.from("daily_reflections").select("id", { count: "exact", head: true }).eq("reflection_date", todayDate),
     db.from("initiatives").select("id", { count: "exact", head: true }).eq("status", "active"),
+    db
+      .from("ai_usage_log")
+      .select("ttft_ms, duration_ms, created_at")
+      .eq("feature", "chat")
+      .gte("created_at", monthIso),
   ]);
 
   const usageToday = sumUsage(usageTodayRes.data || []);
@@ -122,6 +149,9 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
   const alertLevel =
     percentUsed >= 100 ? "hard" : percentUsed >= 80 ? "soft" : "ok";
 
+  const chatMonthRows = chatLatencyMonthRes.data || [];
+  const chatTodayRows = chatMonthRows.filter((r) => r.created_at >= todayIso);
+
   return {
     period: {
       today: todayIso.split("T")[0],
@@ -150,7 +180,13 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
       cost: Number(row.cost_estimate ?? 0),
       createdAt: row.created_at,
       userName: profileMap.get(row.user_id) || "Unknown",
+      ttftMs: row.ttft_ms ?? null,
+      durationMs: row.duration_ms ?? null,
     })),
+    chatPerformance: {
+      today: chatPerfFromRows(chatTodayRows),
+      month: chatPerfFromRows(chatMonthRows),
+    },
     budget: {
       monthlyLimitUsd,
       monthSpendUsd: usageMonth.cost,

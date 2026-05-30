@@ -286,3 +286,7 @@ export const useAppStore = create<AppState>()(
 export function getChatStore() {
   return useAppStore.getState();
 }
+
+export function isRealConversationId(id: string | null | undefined): id is string {
+  return !!id && !id.startsWith("pending-");
+}

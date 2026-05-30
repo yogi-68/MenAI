@@ -532,6 +532,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   };
 }> {
   const serviceClient = await createServiceRoleClient();
+  const pipelineStart = Date.now();
 
   // ===== STEP 1: Safety Check =====
   const safety = await runSafetyPipeline(input.message);
@@ -677,6 +678,8 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
   let fullResponse = "";
   const encoder = new TextEncoder();
+  let firstTokenAt: number | null = null;
+  let streamErrored = false;
 
   const transformedStream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -687,13 +690,18 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           const { done, value } = await reader.read();
           if (done) break;
           const text = decoder.decode(value, { stream: true });
+          if (text && firstTokenAt === null) firstTokenAt = Date.now();
           fullResponse += text;
           controller.enqueue(encoder.encode(text));
         }
         controller.close();
       } catch (err) {
+        streamErrored = true;
         controller.error(err);
       } finally {
+        const durationMs = Date.now() - pipelineStart;
+        const ttftMs = firstTokenAt !== null ? firstTokenAt - pipelineStart : null;
+
         // Post-stream: save response + background tasks
         const validated = validateResponse(fullResponse, {
           crisisMode: safety.level !== "safe",
@@ -744,7 +752,11 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           "chat",
           model,
           Math.round(estTokens * 0.6),
-          Math.round(estTokens * 0.4)
+          Math.round(estTokens * 0.4),
+          {
+            ttftMs,
+            durationMs: streamErrored || !fullResponse ? null : durationMs,
+          }
         ).catch(() => {});
 
         Promise.resolve(

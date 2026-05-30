@@ -91,7 +91,7 @@ export default function LoginPage() {
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
-            Welcome back. Let&apos;s continue your journey.
+            Sign in to your execution system.
           </p>
         </div>
 

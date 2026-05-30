@@ -37,7 +37,8 @@ export async function logAiUsage(
   feature: string,
   model: string,
   tokensIn: number,
-  tokensOut: number
+  tokensOut: number,
+  opts?: { ttftMs?: number | null; durationMs?: number | null }
 ): Promise<void> {
   const db = await createServiceRoleClient();
   const costEstimate = ((tokensIn + tokensOut) / 1_000_000) * 0.15;
@@ -48,5 +49,7 @@ export async function logAiUsage(
     tokens_in: tokensIn,
     tokens_out: tokensOut,
     cost_estimate: costEstimate,
+    ttft_ms: opts?.ttftMs ?? null,
+    duration_ms: opts?.durationMs ?? null,
   });
 }
