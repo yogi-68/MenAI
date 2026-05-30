@@ -18,18 +18,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
-interface Goal {
-  id: string;
-  title: string;
-  status: string;
-}
-
-interface TaskItem {
-  id: string;
-  title: string;
-  status: string;
-  due_date: string | null;
-}
+import {
+  selectDashboardTasks,
+  formatLatestReflection,
+  type DashboardTask,
+} from "@/lib/dashboard/pending-tasks";
 
 interface Commitment {
   id: string;
@@ -103,31 +96,43 @@ export default function DashboardOverview() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return null;
 
+      const today = new Date().toISOString().split("T")[0];
+
       const [
-        goalsRes,
         tasksRes,
         commitmentsRes,
         reflectionsRes,
       ] = await Promise.allSettled([
-        supabase.from("goals").select("id, title, status").eq("user_id", authUser.id).eq("status", "active"),
-        supabase.from("tasks").select("id, title, status, due_date").eq("user_id", authUser.id).in("status", ["pending", "in_progress"]),
+        supabase
+          .from("tasks")
+          .select("id, title, status, due_date, auto_generated, created_at")
+          .eq("user_id", authUser.id)
+          .in("status", ["pending", "in_progress"])
+          .order("due_date", { ascending: true, nullsFirst: false }),
         supabase.from("commitments").select("id, description, status, consistency_score").eq("user_id", authUser.id).eq("status", "active"),
-        supabase.from("memories").select("content").eq("user_id", authUser.id).eq("memory_type", "reflection").order("created_at", { ascending: false }).limit(1),
+        supabase
+          .from("daily_reflections")
+          .select("moved_forward, blocked_by, reflection_date")
+          .eq("user_id", authUser.id)
+          .order("reflection_date", { ascending: false })
+          .limit(1),
       ]);
 
-      const goals = goalsRes.status === "fulfilled" ? (goalsRes.value.data || []) as Goal[] : [];
-      const tasks = tasksRes.status === "fulfilled" ? (tasksRes.value.data || []) as TaskItem[] : [];
+      const allTasks = tasksRes.status === "fulfilled" ? (tasksRes.value.data || []) as DashboardTask[] : [];
+      const tasks = selectDashboardTasks(allTasks, today);
       const commitments = commitmentsRes.status === "fulfilled" ? (commitmentsRes.value.data || []) as Commitment[] : [];
-        
-      const reflection = reflectionsRes.status === "fulfilled" && reflectionsRes.value.data && reflectionsRes.value.data.length > 0
-        ? reflectionsRes.value.data[0].content
-        : null;
+
+      const reflectionRow =
+        reflectionsRes.status === "fulfilled" && reflectionsRes.value.data?.[0]
+          ? reflectionsRes.value.data[0]
+          : null;
+      const reflection = reflectionRow ? formatLatestReflection(reflectionRow) : null;
 
       return {
-        goals,
         tasks,
         commitments,
         reflection,
+        hasTodayPlanTasks: allTasks.some((t) => t.due_date === today && t.auto_generated),
       };
     },
     staleTime: 60_000,
@@ -158,12 +163,13 @@ export default function DashboardOverview() {
   const tasks = data?.tasks || [];
   const commitments = data?.commitments || [];
   const reflection = data?.reflection;
+  const hasTodayPlanTasks = data?.hasTodayPlanTasks ?? false;
   
   const isNew = rhythm?.maturity_level === "new";
   const currentDirection = rhythm?.cognitive_summary?.direction || (isNew ? "Still gathering signal. Direction will emerge through conversation." : "Loading...");
   const observation = rhythm?.cognitive_summary?.observation;
   const weaknessHint = rhythm?.cognitive_summary?.weakness_hint;
-  const activeFocus = tasks.slice(0, 4).map((t: TaskItem) => t.title);
+  const activeFocus = tasks.map((t) => t.title);
   const suggestedAction = rhythm?.suggested_action;
   const focusPrompt = rhythm?.focus_prompt;
 
@@ -306,10 +312,10 @@ export default function DashboardOverview() {
             
             {rhythmLoading ? (
               <div className="skeleton shimmer" style={{ height: "120px", width: "100%", borderRadius: "8px" }} />
-            ) : activeFocus.length > 0 || tasks.length > 0 ? (
+            ) : activeFocus.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                {(activeFocus.length > 0 ? activeFocus : tasks.slice(0, 4).map((t: TaskItem) => t.title)).map((item: string, idx: number) => {
-                  const task = tasks.find(t => t.title === item);
+                {activeFocus.map((item: string, idx: number) => {
+                  const task = tasks.find((t) => t.title === item);
                   return (
                     <div key={task?.id || idx} style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
                       {task ? (
@@ -346,7 +352,11 @@ export default function DashboardOverview() {
               </div>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-                {isNew ? "Start a conversation to set your focus." : "No active focus tracked."}
+                {isNew
+                  ? "Start a conversation to set your focus."
+                  : hasTodayPlanTasks
+                    ? "Open today's plan to see your tasks."
+                    : "No tasks for today yet — generate your daily plan."}
               </p>
             )}
           </section>
@@ -416,7 +426,12 @@ export default function DashboardOverview() {
               </p>
             ) : (
               <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.8, fontWeight: 300 }}>
-                {isNew ? "Reflections appear after your first few conversations." : "No reflections available yet."}
+                {isNew
+                  ? "Reflections appear after your first few conversations."
+                  : "No reflections yet."}{" "}
+                <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)", textDecoration: "none" }}>
+                  Submit today&apos;s reflection →
+                </Link>
               </p>
             )}
           </section>
