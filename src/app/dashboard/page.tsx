@@ -86,6 +86,16 @@ export default function DashboardOverview() {
     refetchInterval: 5 * 60 * 1000,
   });
 
+  const { data: executionData } = useQuery({
+    queryKey: ["execution-metrics"],
+    queryFn: async () => {
+      const res = await fetch("/api/execution");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard-core"],
     queryFn: async () => {
@@ -237,6 +247,44 @@ export default function DashboardOverview() {
                 </p>
               </div>
             </div>
+          </section>
+        )}
+
+        {executionData?.metrics && (
+          <section className="glass-card" style={{ padding: "28px 40px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <TrendingUp size={20} style={{ color: "var(--accent-primary)" }} />
+                <div>
+                  <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
+                    Momentum
+                  </h2>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                    {executionData.momentum?.label || "building"} · execution {executionData.metrics.last7Days.rate}%
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "24px" }}>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "1.75rem", fontWeight: 300, color: "var(--accent-primary)" }}>
+                    {executionData.momentum?.score ?? "—"}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>momentum score</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "1.75rem", fontWeight: 300 }}>{executionData.metrics.last7Days.rate}%</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>7-day execution</div>
+                </div>
+              </div>
+            </div>
+            {executionData.momentum?.factors?.length > 0 && (
+              <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "16px", lineHeight: 1.6 }}>
+                {executionData.momentum.factors.slice(0, 3).join(" · ")}
+              </p>
+            )}
+            <Link href="/dashboard/plans" style={{ display: "inline-block", marginTop: "16px", fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
+              View today&apos;s plan →
+            </Link>
           </section>
         )}
 

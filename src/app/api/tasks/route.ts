@@ -102,6 +102,12 @@ export async function PATCH(req: NextRequest) {
 
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
+  // Accept actualMinutes on completion for time learning
+  if (updates.actualMinutes !== undefined) {
+    updates.actual_minutes = updates.actualMinutes;
+    delete updates.actualMinutes;
+  }
+
   // Handle skip_count incrementing when a task is skipped
   if (updates.status === "skipped" || updates.status === "missed") {
     const { data: existing } = await supabase

@@ -16,7 +16,12 @@ import {
   Trash2,
   TrendingUp,
   X,
+  Zap,
+  Flag,
+  Sparkles,
 } from "lucide-react";
+import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
+import { computeInitiativeHealth, healthColor } from "@/lib/plans/initiative-health";
 
 interface Goal {
   id: string;
@@ -28,6 +33,29 @@ interface Goal {
   progress: number;
   target_date: string | null;
   created_at: string;
+}
+
+interface Initiative {
+  id: string;
+  title: string;
+  description: string | null;
+  target_date: string | null;
+  status: string;
+  progress: number;
+  goal_id: string | null;
+  life_area: string;
+  last_action_at: string | null;
+  goals?: { title: string; category: string } | null;
+}
+
+interface Opportunity {
+  id: string;
+  title: string;
+  description: string | null;
+  urgency: string;
+  due_date: string | null;
+  life_area: string;
+  status: string;
 }
 
 interface Task {
@@ -42,17 +70,7 @@ interface Task {
   created_at: string;
 }
 
-const CATEGORIES = [
-  { value: "startup", label: "Startup", color: "#7c5cfc" },
-  { value: "fitness", label: "Fitness", color: "#5ce0d8" },
-  { value: "financial", label: "Financial", color: "#fcb05c" },
-  { value: "relationship", label: "Relationships", color: "#fc5c9c" },
-  { value: "learning", label: "Learning", color: "#5c8cfc" },
-  { value: "health", label: "Health", color: "#5ce0d8" },
-  { value: "career", label: "Career", color: "#7c5cfc" },
-  { value: "identity", label: "Identity", color: "#9c5cfc" },
-  { value: "other", label: "Other", color: "#888" },
-];
+const CATEGORIES = LIFE_AREAS.map((a) => ({ value: a.value, label: a.label, color: "#7c5cfc" }));
 
 const PRIORITIES = ["low", "medium", "high", "critical"];
 
@@ -61,12 +79,15 @@ export default function GoalsPage() {
   const queryClient = useQueryClient();
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddInitiative, setShowAddInitiative] = useState(false);
+  const [showAddOpportunity, setShowAddOpportunity] = useState(false);
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | "active" | "completed">("active");
 
-  // New goal form state
-  const [newGoal, setNewGoal] = useState({ title: "", description: "", category: "other", priority: "medium", targetDate: "" });
+  const [newGoal, setNewGoal] = useState({ title: "", description: "", category: "personal", priority: "medium", targetDate: "" });
   const [newTask, setNewTask] = useState({ title: "", goalId: "", dueDate: "", recurrence: "" });
+  const [newInitiative, setNewInitiative] = useState({ title: "", description: "", goalId: "", targetDate: "", lifeArea: "personal" });
+  const [newOpportunity, setNewOpportunity] = useState({ title: "", description: "", lifeArea: "personal", urgency: "medium", dueDate: "" });
 
   // Fetch goals
   const { data: goalsData, isLoading: goalsLoading } = useQuery({
@@ -95,8 +116,91 @@ export default function GoalsPage() {
     },
   });
 
+  // Fetch initiatives
+  const { data: initiativesData, isLoading: initiativesLoading } = useQuery({
+    queryKey: ["initiatives"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+      const res = await fetch("/api/initiatives");
+      const json = await res.json();
+      return (json.initiatives || []) as Initiative[];
+    },
+  });
+
+  const { data: opportunitiesData, isLoading: opportunitiesLoading } = useQuery({
+    queryKey: ["opportunities"],
+    queryFn: async () => {
+      const res = await fetch("/api/opportunities");
+      const json = await res.json();
+      return (json.opportunities || []) as Opportunity[];
+    },
+  });
+
   const goals = goalsData || [];
   const tasks = tasksData || [];
+  const initiatives = initiativesData || [];
+  const opportunities = opportunitiesData || [];
+
+  const createInitiative = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/initiatives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newInitiative.title,
+          description: newInitiative.description,
+          goalId: newInitiative.goalId || null,
+          targetDate: newInitiative.targetDate || null,
+          lifeArea: newInitiative.lifeArea,
+        }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["initiatives"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      setNewInitiative({ title: "", description: "", goalId: "", targetDate: "", lifeArea: "personal" });
+      setShowAddInitiative(false);
+    },
+  });
+
+  const createOpportunity = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/opportunities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newOpportunity),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["opportunities"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      setNewOpportunity({ title: "", description: "", lifeArea: "personal", urgency: "medium", dueDate: "" });
+      setShowAddOpportunity(false);
+    },
+  });
+
+  const deleteOpportunity = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/opportunities?id=${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["opportunities"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+    },
+  });
+
+  const deleteInitiative = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/initiatives?id=${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["initiatives"] });
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+    },
+  });
 
   // Create goal mutation
   const createGoal = useMutation({
@@ -183,10 +287,16 @@ export default function GoalsPage() {
             Goals & Tasks
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            Track your execution. The AI extracts these from your conversations automatically.
+            Goals are direction. Initiatives are what you&apos;re actually executing — they drive your daily plan.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button onClick={() => setShowAddInitiative(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+            <Zap size={16} /> Initiative
+          </button>
+          <button onClick={() => setShowAddOpportunity(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+            <Sparkles size={16} /> Opportunity
+          </button>
           <button onClick={() => setShowAddTask(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
             <Plus size={16} /> Task
           </button>
@@ -219,6 +329,100 @@ export default function GoalsPage() {
           </button>
         ))}
       </div>
+
+      {/* Active Initiatives — primary input for daily plans */}
+      <section style={{ marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+          <Zap size={18} style={{ color: "var(--accent-primary)" }} />
+          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Active Initiatives</h2>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>feeds daily plan</span>
+        </div>
+        {initiativesLoading ? (
+          <div className="skeleton" style={{ height: "72px" }} />
+        ) : initiatives.length === 0 ? (
+          <div className="glass-card" style={{ padding: "24px", cursor: "default" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+              Add a specific initiative with a deadline. Example: &quot;Crack senior developer interview by July&quot; or &quot;Lose 5 kg by August&quot;.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {initiatives.map((init) => {
+              const health = computeInitiativeHealth({
+                status: init.status,
+                targetDate: init.target_date,
+                lastActionAt: init.last_action_at,
+                progress: init.progress,
+              });
+              return (
+              <div key={init.id} className="glass-card" style={{ padding: "16px 18px", cursor: "default", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                <Flag size={16} style={{ color: healthColor(health.health), marginTop: "3px", flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {init.title}
+                    <span style={{ fontSize: "0.7rem", padding: "2px 8px", borderRadius: "999px", background: "var(--bg-glass)", color: healthColor(health.health) }}>
+                      {health.label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <span>{lifeAreaLabel(init.life_area)}</span>
+                    {init.goals?.title && <span>Goal: {init.goals.title}</span>}
+                    {init.target_date && <span>Due {init.target_date}</span>}
+                    {health.daysSinceLastAction !== null && <span>Last action {health.daysSinceLastAction}d ago</span>}
+                  </div>
+                  {init.description && (
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>{init.description}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteInitiative.mutate(init.id)}
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5 }}
+                  title="Remove initiative"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );})}
+          </div>
+        )}
+      </section>
+
+      {/* Opportunities — time-sensitive upside */}
+      <section style={{ marginBottom: "32px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+          <Sparkles size={18} style={{ color: "var(--accent-secondary)" }} />
+          <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Opportunities</h2>
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>can outweigh routine tasks</span>
+        </div>
+        {opportunitiesLoading ? (
+          <div className="skeleton" style={{ height: "72px" }} />
+        ) : opportunities.length === 0 ? (
+          <div className="glass-card" style={{ padding: "24px", cursor: "default" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+              Anything unusually important or time-sensitive this week? Interview invite, client lead, scholarship deadline?
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {opportunities.map((opp) => (
+              <div key={opp.id} className="glass-card" style={{ padding: "16px 18px", cursor: "default", display: "flex", gap: "12px" }}>
+                <Sparkles size={16} style={{ color: "var(--accent-secondary)", marginTop: "3px", flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>{opp.title}</div>
+                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                    {opp.urgency} urgency · {lifeAreaLabel(opp.life_area)}
+                    {opp.due_date && ` · due ${opp.due_date}`}
+                  </div>
+                  {opp.description && <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px" }}>{opp.description}</p>}
+                </div>
+                <button onClick={() => deleteOpportunity.mutate(opp.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", opacity: 0.5 }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Goals List */}
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "32px" }}>
@@ -420,6 +624,105 @@ export default function GoalsPage() {
               disabled={!newTask.title || createTask.isPending}
             >
               {createTask.isPending ? "Creating..." : "Create Task"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Add Initiative Modal */}
+      {showAddInitiative && (
+        <Modal title="Add Active Initiative" onClose={() => setShowAddInitiative(false)}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "4px" }}>
+            Be specific with a deadline. Example: &quot;Crack senior developer interview by July&quot; or &quot;Lose 5 kg by August&quot;.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <input
+              className="input-field"
+              placeholder="Specific project with a measurable outcome"
+              value={newInitiative.title}
+              onChange={(e) => setNewInitiative({ ...newInitiative, title: e.target.value })}
+              autoFocus
+            />
+            <textarea
+              className="input-field"
+              placeholder="What does done look like? (optional)"
+              rows={2}
+              value={newInitiative.description}
+              onChange={(e) => setNewInitiative({ ...newInitiative, description: e.target.value })}
+              style={{ resize: "vertical" }}
+            />
+            <select
+              className="input-field"
+              value={newInitiative.lifeArea}
+              onChange={(e) => setNewInitiative({ ...newInitiative, lifeArea: e.target.value })}
+            >
+              {LIFE_AREAS.map((a) => (
+                <option key={a.value} value={a.value}>{a.label}</option>
+              ))}
+            </select>
+            <select
+              className="input-field"
+              value={newInitiative.goalId}
+              onChange={(e) => setNewInitiative({ ...newInitiative, goalId: e.target.value })}
+            >
+              <option value="">Link to goal (optional)</option>
+              {goals.filter((g) => g.status === "active").map((g) => (
+                <option key={g.id} value={g.id}>{g.title}</option>
+              ))}
+            </select>
+            <input
+              className="input-field"
+              type="date"
+              value={newInitiative.targetDate}
+              onChange={(e) => setNewInitiative({ ...newInitiative, targetDate: e.target.value })}
+            />
+            <button
+              className="btn-primary"
+              style={{ width: "100%", marginTop: "4px" }}
+              onClick={() => createInitiative.mutate()}
+              disabled={!newInitiative.title || createInitiative.isPending}
+            >
+              {createInitiative.isPending ? "Creating..." : "Create Initiative"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {showAddOpportunity && (
+        <Modal title="Log an Opportunity" onClose={() => setShowAddOpportunity(false)}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "4px" }}>
+            Time-sensitive upside — interview invite, client lead, scholarship, partnership.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <input
+              className="input-field"
+              placeholder="What's the opportunity?"
+              value={newOpportunity.title}
+              onChange={(e) => setNewOpportunity({ ...newOpportunity, title: e.target.value })}
+              autoFocus
+            />
+            <textarea
+              className="input-field"
+              placeholder="Why does it matter now? (optional)"
+              rows={2}
+              value={newOpportunity.description}
+              onChange={(e) => setNewOpportunity({ ...newOpportunity, description: e.target.value })}
+              style={{ resize: "vertical" }}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <select className="input-field" value={newOpportunity.lifeArea} onChange={(e) => setNewOpportunity({ ...newOpportunity, lifeArea: e.target.value })}>
+                {LIFE_AREAS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+              </select>
+              <select className="input-field" value={newOpportunity.urgency} onChange={(e) => setNewOpportunity({ ...newOpportunity, urgency: e.target.value })}>
+                <option value="low">Low urgency</option>
+                <option value="medium">Medium urgency</option>
+                <option value="high">High urgency</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+            <input className="input-field" type="date" value={newOpportunity.dueDate} onChange={(e) => setNewOpportunity({ ...newOpportunity, dueDate: e.target.value })} />
+            <button className="btn-primary" style={{ width: "100%" }} onClick={() => createOpportunity.mutate()} disabled={!newOpportunity.title || createOpportunity.isPending}>
+              {createOpportunity.isPending ? "Saving..." : "Save Opportunity"}
             </button>
           </div>
         </Modal>

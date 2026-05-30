@@ -1,227 +1,143 @@
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
-import { useAppStore } from "@/lib/store";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, TrendingUp, Calendar, Eye, Target } from "lucide-react";
+import { FileText, TrendingUp, Target, AlertTriangle, Sparkles, RefreshCw } from "lucide-react";
 
-interface WeeklyReport {
-  weekStart: string;
-  weekEnd: string;
-  goalsProgress: number;
-  tasksCompleted: number;
-  tasksTotal: number;
-  dominantPattern: string | null;
-  directionStability: string;
-  executionTrend: string;
-  keyInsight: string;
+interface WeeklyReview {
+  biggestWin: string;
+  biggestBottleneck: string;
+  initiativeHealthChanges: string[];
+  lifeAreaDistribution: string;
+  opportunitiesSummary: string;
+  focusRecommendation: string;
+  executionSummary: string;
+  momentumScore: number;
+  narrative: string;
 }
 
 export default function ReportsPage() {
-  const { user } = useAppStore();
-  const supabase = createClient();
-
-  const { data: weeklyReport, isLoading } = useQuery({
-    queryKey: ["weekly-report"],
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ["weekly-review-ai"],
     queryFn: async () => {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return null;
-
-      // Calculate this week's date range
-      const now = new Date();
-      const weekStart = new Date(now);
-      weekStart.setDate(now.getDate() - now.getDay());
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-
-      const weekStartStr = weekStart.toISOString().split('T')[0];
-      const weekEndStr = weekEnd.toISOString().split('T')[0];
-
-      // Fetch data for this week
-      const [tasksRes, goalsRes, patternsRes] = await Promise.allSettled([
-        supabase
-          .from("tasks")
-          .select("status")
-          .eq("user_id", authUser.id)
-          .gte("created_at", weekStartStr)
-          .lte("created_at", weekEndStr),
-        supabase
-          .from("goals")
-          .select("status, progress")
-          .eq("user_id", authUser.id),
-        supabase
-          .from("execution_patterns")
-          .select("pattern, frequency, severity")
-          .eq("user_id", authUser.id)
-          .order("severity", { ascending: false })
-          .limit(1),
-      ]);
-
-      const tasks = tasksRes.status === "fulfilled" ? (tasksRes.value.data || []) : [];
-      const goals = goalsRes.status === "fulfilled" ? (goalsRes.value.data || []) : [];
-      const patterns = patternsRes.status === "fulfilled" ? (patternsRes.value.data || []) : [];
-
-      const tasksCompleted = tasks.filter((t: any) => t.status === "completed").length;
-      const tasksTotal = tasks.length;
-      const completionRate = tasksTotal > 0 ? (tasksCompleted / tasksTotal) * 100 : 0;
-
-      const activeGoals = goals.filter((g: any) => g.status === "active").length;
-      const goalsProgress = activeGoals > 0 ? 
-        goals.reduce((sum: number, g: any) => sum + (g.progress || 0), 0) / activeGoals : 0;
-
-      // Direction stability
-      let directionStability = "Stable";
-      if (activeGoals === 0) directionStability = "Unclear";
-      else if (activeGoals > 5) directionStability = "Scattered";
-
-      // Execution trend
-      let executionTrend = "Building";
-      if (completionRate >= 70) executionTrend = "Strong momentum";
-      else if (completionRate >= 40) executionTrend = "Steady progress";
-      else if (completionRate > 0) executionTrend = "Early momentum";
-      else executionTrend = "Stalled";
-
-      // Key insight
-      let keyInsight = "";
-      if (patterns.length > 0) {
-        const pattern = patterns[0];
-        keyInsight = `${pattern.pattern} pattern detected at ${pattern.severity} severity. ${pattern.frequency} occurrence.`;
-      } else if (completionRate >= 70) {
-        keyInsight = "Execution consistency maintained above 70%.";
-      } else if (tasksTotal === 0) {
-        keyInsight = "No execution data captured this week.";
-      } else {
-        keyInsight = `${completionRate.toFixed(0)}% task completion. Focus compression needed.`;
-      }
-
-      return {
-        weekStart: weekStartStr,
-        weekEnd: weekEndStr,
-        goalsProgress,
-        tasksCompleted,
-        tasksTotal,
-        dominantPattern: patterns.length > 0 ? patterns[0].pattern : null,
-        directionStability,
-        executionTrend,
-        keyInsight,
-      } as WeeklyReport;
+      const res = await fetch("/api/reports/weekly");
+      if (!res.ok) throw new Error("Failed to load review");
+      return res.json() as Promise<{
+        review: WeeklyReview;
+        weekStart: string;
+        weekEnd: string;
+        cached: boolean;
+      }>;
     },
-    staleTime: 60_000,
+    staleTime: 10 * 60_000,
+    retry: 1,
   });
+
+  const review = data?.review;
 
   return (
     <div style={{ padding: "64px 48px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
-      {/* Header */}
-      <div className="animate-fade-in" style={{ marginBottom: "72px" }}>
+      <div className="animate-fade-in" style={{ marginBottom: "48px" }}>
         <h1 style={{ fontSize: "2.5rem", fontWeight: 400, letterSpacing: "-0.03em", lineHeight: 1.2 }}>
-          Trajectory Reports
+          Weekly Review
         </h1>
         <p style={{ color: "var(--text-secondary)", fontSize: "1.1rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6 }}>
-          Longitudinal synthesis of execution patterns and direction stability
+          Strategic guidance from your execution data — not a task count report.
         </p>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
-        
-        {/* Weekly Report Header */}
-        <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-            <FileText size={20} style={{ color: "var(--accent-primary)" }} />
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-primary)", fontWeight: 500 }}>
-              Weekly Report
-            </h2>
-          </div>
-          
-          {isLoading ? (
-            <div className="skeleton shimmer" style={{ height: "100px", width: "100%", borderRadius: "8px" }} />
-          ) : weeklyReport ? (
-            <>
-              <div style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "24px", fontWeight: 300 }}>
-                {new Date(weeklyReport.weekStart).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - {new Date(weeklyReport.weekEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "28px" }}>
-                <div>
-                  <div style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
-                    Execution
-                  </div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 300, color: "var(--text-primary)" }}>
-                    {weeklyReport.tasksCompleted} / {weeklyReport.tasksTotal}
-                  </div>
-                  <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "4px" }}>
-                    {weeklyReport.tasksTotal > 0 ? `${Math.round((weeklyReport.tasksCompleted / weeklyReport.tasksTotal) * 100)}% completion` : "No tasks"}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
-                    Direction
-                  </div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 300, color: "var(--text-primary)" }}>
-                    {weeklyReport.directionStability}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 500 }}>
-                    Momentum
-                  </div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 300, color: "var(--text-primary)" }}>
-                    {weeklyReport.executionTrend}
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-              Insufficient data for weekly synthesis.
-            </p>
-          )}
-        </section>
-
-        {/* Key Insight */}
-        {weeklyReport?.keyInsight && (
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <Eye size={20} style={{ color: "var(--accent-secondary)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--accent-secondary)", fontWeight: 500 }}>
-                Key Observation
-              </h2>
-            </div>
-            <p style={{ fontSize: "1rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
-              {weeklyReport.keyInsight}
-            </p>
-          </section>
-        )}
-
-        {/* Dominant Pattern */}
-        {weeklyReport?.dominantPattern && (
-          <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-              <TrendingUp size={20} style={{ color: "var(--text-muted)" }} />
-              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-                Execution Pattern
-              </h2>
-            </div>
-            <p style={{ fontSize: "1rem", color: "var(--text-primary)", lineHeight: 1.8, fontWeight: 300 }}>
-              Dominant pattern: <span style={{ color: "var(--accent-primary)", fontWeight: 400 }}>{weeklyReport.dominantPattern}</span>
-            </p>
-          </section>
-        )}
-
-        {/* Coming Soon: Monthly Reports */}
-        <section className="glass-card" style={{ padding: "40px", transition: "all 0.3s ease", opacity: 0.6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-            <Calendar size={20} style={{ color: "var(--text-muted)" }} />
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500 }}>
-              Monthly Report
-            </h2>
-          </div>
-          <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", fontWeight: 300, lineHeight: 1.8 }}>
-            Monthly synthesis generates after 30 days of data.
+        {data && (
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "8px" }}>
+            {new Date(data.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            {" – "}
+            {new Date(data.weekEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            {data.cached && " · cached"}
           </p>
-        </section>
+        )}
       </div>
+
+      {isLoading ? (
+        <div className="skeleton shimmer" style={{ height: "400px", borderRadius: "12px" }} />
+      ) : review ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+          <section className="glass-card" style={{ padding: "32px 36px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <TrendingUp size={18} style={{ color: "var(--accent-primary)" }} />
+                <span style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>
+                  Momentum score
+                </span>
+              </div>
+              <span style={{ fontSize: "2rem", fontWeight: 300, color: "var(--accent-primary)" }}>{review.momentumScore}</span>
+            </div>
+            <p style={{ fontSize: "1.05rem", lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 300 }}>
+              {review.narrative}
+            </p>
+            <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginTop: "12px" }}>{review.executionSummary}</p>
+          </section>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "24px" }}>
+            <section className="glass-card" style={{ padding: "28px 32px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+                <Sparkles size={16} style={{ color: "var(--accent-secondary)" }} />
+                <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Biggest win</h2>
+              </div>
+              <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-primary)" }}>{review.biggestWin}</p>
+            </section>
+
+            <section className="glass-card" style={{ padding: "28px 32px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+                <AlertTriangle size={16} style={{ color: "#f59e0b" }} />
+                <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Biggest bottleneck</h2>
+              </div>
+              <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-primary)" }}>{review.biggestBottleneck}</p>
+            </section>
+          </div>
+
+          {review.initiativeHealthChanges.length > 0 && (
+            <section className="glass-card" style={{ padding: "28px 32px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+                <Target size={16} style={{ color: "var(--text-muted)" }} />
+                <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Initiative health</h2>
+              </div>
+              {review.initiativeHealthChanges.map((item) => (
+                <p key={item} style={{ fontSize: "0.9rem", color: "var(--text-secondary)", margin: "0 0 6px" }}>· {item}</p>
+              ))}
+            </section>
+          )}
+
+          <section className="glass-card" style={{ padding: "28px 32px" }}>
+            <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "14px" }}>Life area distribution</h2>
+            <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-secondary)" }}>{review.lifeAreaDistribution}</p>
+          </section>
+
+          <section className="glass-card" style={{ padding: "28px 32px" }}>
+            <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "14px" }}>Opportunities</h2>
+            <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-secondary)" }}>{review.opportunitiesSummary}</p>
+          </section>
+
+          <section className="glass-card" style={{ padding: "32px 36px", borderLeft: "3px solid var(--accent-primary)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+              <FileText size={16} style={{ color: "var(--accent-primary)" }} />
+              <h2 style={{ fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-primary)" }}>Focus next week</h2>
+            </div>
+            <p style={{ fontSize: "1.05rem", lineHeight: 1.8, color: "var(--text-primary)", fontWeight: 400 }}>{review.focusRecommendation}</p>
+          </section>
+
+          <button
+            disabled={isFetching}
+            className="btn-secondary"
+            style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: "8px" }}
+            onClick={async () => {
+              await fetch("/api/reports/weekly?force=true");
+              refetch();
+            }}
+          >
+            <RefreshCw size={14} /> {isFetching ? "Regenerating..." : "Regenerate review"}
+          </button>
+        </div>
+      ) : (
+        <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "60px 0" }}>
+          Not enough data for a weekly review yet. Complete a few days of plans and reflections first.
+        </p>
+      )}
     </div>
   );
 }
