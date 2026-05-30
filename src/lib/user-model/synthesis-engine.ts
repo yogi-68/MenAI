@@ -11,10 +11,14 @@ import { USER_MODEL_VERSION } from "@/lib/user-model/types";
 import {
   buildPrimaryHeadline,
   buildUserModelNarrative,
-  buildWhoAmIAnswer,
   emptyUserModel,
 } from "@/lib/user-model/narrative";
 import { computeExecutionAllocation } from "@/lib/user-model/execution-allocation";
+import {
+  buildWhoAmIAnswerFromContext,
+  synthesizeWhoAmIAnswer,
+  type IdentitySynthesisInput,
+} from "@/lib/user-model/identity-synthesis";
 
 function computeConfidence(input: {
   hasPrimary: boolean;
@@ -82,7 +86,26 @@ export async function synthesizeUserModel(
     empty.identity.vision = ctx.profile?.vision ?? null;
     empty.identity.longTermDirections = ctx.goals.map((g) => g.title);
     empty.recentActivity = buildRecentActivity(ctx.completedTasks7d, ctx.reflections7d);
-    empty.whoAmIAnswer = buildWhoAmIAnswer(empty);
+    empty.whoAmIAnswer = buildWhoAmIAnswerFromContext({
+      vision: ctx.profile?.vision ?? null,
+      founderMode: Boolean(ctx.profile?.founder_mode),
+      workStyle: null,
+      identityLabels: [],
+      identitySignals: ctx.identitySignals,
+      goals: ctx.goals,
+      initiativeThemes: [],
+      focusTitle: null,
+      focusDomain: "general",
+      patterns: [],
+      completedTasks7d: ctx.completedTasks7d,
+      reflections7d: ctx.reflections7d,
+      obstacles: [],
+      stillNeeds: empty.stillNeeds,
+      confidence: "low",
+      portfolioCount: 0,
+      opportunities: [],
+      recentReflectionBlocks: [],
+    });
 
     await supabase
       .from("profiles")
@@ -99,6 +122,42 @@ export async function synthesizeUserModel(
     ctx.initiatives,
     ctx.focusInitiativeId ?? primary.id
   );
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const [patternsRes, profileExtraRes, reflectionsRes] = await Promise.all([
+    supabase
+      .from("execution_patterns")
+      .select("pattern, behavioral_impact, severity")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(4),
+    supabase
+      .from("profiles")
+      .select("work_style, lifestyle_issues, cognitive_state")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("daily_reflections")
+      .select("blocked_by")
+      .eq("user_id", userId)
+      .gte("reflection_date", sevenDaysAgo.toISOString().split("T")[0])
+      .order("reflection_date", { ascending: false })
+      .limit(3),
+  ]);
+
+  const patterns = patternsRes.data || [];
+  const profileExtra = profileExtraRes.data;
+  const reflectionBlocks = (reflectionsRes.data || [])
+    .map((r) => r.blocked_by?.trim())
+    .filter(Boolean) as string[];
+
+  const initiativeThemes = ctx.initiatives.map((i) => ({
+    title: i.title,
+    lifeArea: i.life_area,
+    domain: detectDomain(`${i.title} ${i.description || ""}`, i.life_area),
+  }));
 
   const planContext = await loadPlanContextData(supabase, userId, primary.id);
   const linkedGoal = primary.goal_id
@@ -218,7 +277,29 @@ export async function synthesizeUserModel(
     recentActivity,
   });
 
-  model.whoAmIAnswer = buildWhoAmIAnswer(model);
+  model.whoAmIAnswer = await synthesizeWhoAmIAnswer(
+    {
+      vision: ctx.profile?.vision ?? null,
+      founderMode: Boolean(ctx.profile?.founder_mode),
+      workStyle: profileExtra?.work_style ?? null,
+      identityLabels,
+      identitySignals: ctx.identitySignals,
+      goals: ctx.goals,
+      initiativeThemes,
+      focusTitle: primary.title,
+      focusDomain: domain,
+      patterns,
+      completedTasks7d: ctx.completedTasks7d,
+      reflections7d: ctx.reflections7d,
+      obstacles,
+      stillNeeds: model.stillNeeds,
+      confidence: model.confidence,
+      portfolioCount: ctx.initiatives.length,
+      opportunities: ctx.opportunities.map((o) => o.title),
+      recentReflectionBlocks: reflectionBlocks,
+    } satisfies IdentitySynthesisInput,
+    userId
+  );
 
   await supabase
     .from("profiles")

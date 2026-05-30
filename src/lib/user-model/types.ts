@@ -5,7 +5,7 @@ import type {
   ExecutionAllocationEntry,
 } from "@/lib/user-model/execution-allocation";
 
-export const USER_MODEL_VERSION = 2 as const;
+export const USER_MODEL_VERSION = 3 as const;
 
 export type { ActivePortfolioEntry, AllocationRole, ExecutionAllocationEntry };
 

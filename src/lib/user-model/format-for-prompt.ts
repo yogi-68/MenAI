@@ -53,7 +53,7 @@ export function formatUserModelForPrompt(model: UserModel): string {
     "",
     "One person, multiple pursuits. Keep initiative interview contexts separate — never use fitness context for business tasks.",
     "Today's plan SHOULD mix initiatives using execution allocation. Focus gets the largest block; portfolio initiatives get proportional time.",
-    "When the user asks 'who am I', describe focus + portfolio + long-term direction distinctly."
+    "When the user asks 'who am I', use whoAmIAnswer — identity, patterns, direction, constraints. NEVER answer with initiative titles, deadlines, or goal summaries alone."
   );
 
   return sections.join("\n");

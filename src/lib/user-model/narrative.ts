@@ -1,6 +1,34 @@
 import type { UserModel } from "@/lib/user-model/types";
 import { USER_MODEL_VERSION } from "@/lib/user-model/types";
 import type { CoachDomain } from "@/lib/plans/coach-insights";
+import { buildWhoAmIAnswerFromContext } from "@/lib/user-model/identity-synthesis";
+
+export function buildWhoAmIAnswer(model: UserModel): string {
+  return buildWhoAmIAnswerFromContext({
+    vision: model.identity.vision,
+    founderMode: model.identity.labels.some((l) => /entrepreneur/i.test(l)),
+    workStyle: null,
+    identityLabels: model.identity.labels,
+    identitySignals: [],
+    goals: model.identity.longTermDirections.map((title) => ({ title, category: null })),
+    initiativeThemes: model.activePortfolio.map((p) => ({
+      title: p.title,
+      lifeArea: p.lifeArea,
+      domain: p.domain,
+    })),
+    focusTitle: model.currentFocus.title,
+    focusDomain: model.currentFocus.domain,
+    patterns: [],
+    completedTasks7d: model.recentActivity?.includes("tasks completed") ? 3 : 0,
+    reflections7d: 0,
+    obstacles: model.obstacles,
+    stillNeeds: model.stillNeeds,
+    confidence: model.confidence,
+    portfolioCount: model.activePortfolio.length,
+    opportunities: model.opportunities,
+    recentReflectionBlocks: [],
+  });
+}
 
 function formatDeadline(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -23,47 +51,6 @@ function domainThemeLabel(domain: CoachDomain): string {
     default:
       return "active execution";
   }
-}
-
-export function buildWhoAmIAnswer(model: UserModel): string {
-  const parts: string[] = [];
-
-  if (model.identity.labels.length > 0) {
-    parts.push(`Identity: ${model.identity.labels.join(". ")}.`);
-  }
-
-  if (model.currentFocus.title) {
-    parts.push(
-      `Primary execution focus: ${model.primaryOutcome.headline || model.currentFocus.title}.`
-    );
-  }
-
-  if (model.secondaryOutcomes.length > 0) {
-    const secondary = model.secondaryOutcomes
-      .slice(0, 3)
-      .map((o) => o.title)
-      .join("; ");
-    parts.push(`Also actively pursuing: ${secondary}.`);
-  }
-
-  if (model.executionAllocation.length > 1) {
-    const mix = model.executionAllocation
-      .map((a) => `${a.title} (${a.percent}%)`)
-      .join(", ");
-    parts.push(`Today's execution mix: ${mix}.`);
-  }
-
-  if (model.stillNeeds.length > 0) {
-    parts.push(
-      `What's still unclear: ${model.stillNeeds.slice(0, 4).map((s) => `• ${s}`).join(" ")}`
-    );
-  }
-
-  if (parts.length === 0) {
-    return "MenAI doesn't have enough structured context yet. Add one initiative with a deadline and answer the planning questions — then I can describe who you're becoming with specificity.";
-  }
-
-  return parts.join("\n\n");
 }
 
 export function buildUserModelNarrative(input: {

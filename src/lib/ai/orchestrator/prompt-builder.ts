@@ -281,8 +281,9 @@ Remember: your response should create an emotional SHIFT. The user should feel D
   if (ctx.userModel) {
     parts.push(formatUserModelForPrompt(ctx.userModel));
     if (/who am i|what am i building|what do you know about me/i.test(ctx.input.message)) {
-      parts.push(`## Direct answer for identity questions
-Use this synthesized answer (adapt tone, don't copy verbatim):
+      parts.push(`## Direct answer for "Who am I?"
+This is identity synthesis — NOT a goal or initiative summary. Use whoAmIAnswer below (adapt tone, don't copy verbatim). Never open with "You're focused on [initiative] by [date]".
+
 ${ctx.userModel.whoAmIAnswer}`);
     }
   }

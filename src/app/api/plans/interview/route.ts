@@ -64,13 +64,16 @@ export async function POST(request: NextRequest) {
     }
 
     const input = await buildDimensionInput(supabase, user.id);
-    const { snapshot, goalAnalysis, nextQuestion } = await getPlanContextState(supabase, user.id);
+    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason } =
+      await getPlanContextState(supabase, user.id);
     const done = !snapshot.shouldInterview || !nextQuestion;
 
     return NextResponse.json({
       done,
       regenerated: action === "answer",
       goalAnalysis,
+      biggestUnknown: done ? null : biggestUnknown,
+      stopReason,
       snapshot: {
         planningQuality: snapshot.planningQuality,
         shouldInterview: snapshot.shouldInterview,

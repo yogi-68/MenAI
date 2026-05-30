@@ -28,7 +28,7 @@ export interface PlanContextSnapshot {
   overall: number;
   planningQuality: "Strong" | "Good" | "Fair" | "Needs context";
   shouldInterview: boolean;
-  stopReason?: "threshold_met" | "low_marginal_gain" | "no_gaps";
+  stopReason?: "threshold_met" | "low_marginal_gain" | "no_gaps" | "max_questions";
 }
 
 export interface DimensionInput {

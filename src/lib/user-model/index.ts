@@ -6,3 +6,4 @@ export { synthesizeUserModel, scheduleUserModelRefresh } from "@/lib/user-model/
 export { computeExecutionAllocation, formatExecutionAllocationForPrompt } from "@/lib/user-model/execution-allocation";
 export type { ActivePortfolioEntry, AllocationRole, ExecutionAllocationEntry } from "@/lib/user-model/execution-allocation";
 export { formatUserModelForPrompt, formatUserModelSummary, userModelToCoachBriefing } from "@/lib/user-model/format-for-prompt";
+export { buildWhoAmIAnswerFromContext, synthesizeWhoAmIAnswer } from "@/lib/user-model/identity-synthesis";

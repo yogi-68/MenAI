@@ -8,7 +8,6 @@ import {
 import {
   buildGoalAnalysis,
   detectDomain,
-  pickNextMissingQuestion,
   type GoalAnalysis,
   type KnownFacts,
 } from "@/lib/plans/coach-insights";
@@ -17,6 +16,13 @@ import {
   resolvePrimaryInitiative,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import { getUserModel } from "@/lib/user-model/loader";
+import {
+  buildDynamicQuestionPayload,
+  evaluateInterviewContinuation,
+  generateDynamicInterviewQuestion,
+  type DynamicQuestionPayload,
+} from "@/lib/plans/dynamic-interview";
 
 export interface PlanContextData {
   weeklyAvailableHours?: number | null;
@@ -231,12 +237,7 @@ export function buildKnownFactsFromInput(
   };
 }
 
-export interface InterviewQuestionPayload {
-  variableId: string;
-  prompt: string;
-  subtitle?: string;
-  inputType: "text" | "number" | "date";
-}
+export interface InterviewQuestionPayload extends DynamicQuestionPayload {}
 
 export async function getPlanContextState(
   supabase: SupabaseClient,
@@ -245,6 +246,8 @@ export async function getPlanContextState(
   snapshot: PlanContextSnapshot;
   goalAnalysis: GoalAnalysis | null;
   nextQuestion: InterviewQuestionPayload | null;
+  biggestUnknown: string | null;
+  stopReason?: string;
 }> {
   const input = await buildDimensionInput(supabase, userId);
   const snapshot = buildPlanContextSnapshot(input);
@@ -256,28 +259,51 @@ export async function getPlanContextState(
   const facts = buildKnownFactsFromInput(input, primary, linkedGoal?.title ?? null);
   const goalAnalysis = primary ? buildGoalAnalysis(facts) : null;
 
-  if (!snapshot.shouldInterview || !goalAnalysis) {
-    return { snapshot, goalAnalysis, nextQuestion: null };
+  if (!goalAnalysis || !primary) {
+    return {
+      snapshot,
+      goalAnalysis,
+      nextQuestion: null,
+      biggestUnknown: null,
+      stopReason: "no_gaps",
+    };
   }
 
-  const next = pickNextMissingQuestion(
-    goalAnalysis.missingVariables,
-    input.planContext.interviewAskedToday || []
-  );
+  const continuation = evaluateInterviewContinuation({
+    missing: goalAnalysis.missingVariables,
+    askedToday: input.planContext.interviewAskedToday || [],
+    overallScore: snapshot.overall,
+    hasInitiatives: input.initiatives.length > 0,
+  });
 
-  if (!next) {
-    return { snapshot, goalAnalysis, nextQuestion: null };
+  if (!continuation.shouldInterview || !continuation.nextGap) {
+    return {
+      snapshot: { ...snapshot, shouldInterview: false, stopReason: continuation.stopReason },
+      goalAnalysis,
+      nextQuestion: null,
+      biggestUnknown: continuation.nextGap?.label ?? null,
+      stopReason: continuation.stopReason,
+    };
   }
+
+  const userModel = await getUserModel(supabase, userId);
+  const questionNumber = (input.planContext.interviewAskedToday || []).length + 1;
+  const generated = await generateDynamicInterviewQuestion({
+    gap: continuation.nextGap,
+    goalAnalysis,
+    userModel,
+    initiativeTitle: primary.title,
+    domain: facts.domain,
+    questionNumber,
+    userId,
+  });
 
   return {
-    snapshot,
+    snapshot: { ...snapshot, shouldInterview: true },
     goalAnalysis,
-    nextQuestion: {
-      variableId: next.id,
-      prompt: next.question,
-      subtitle: next.why,
-      inputType: next.inputType,
-    },
+    nextQuestion: buildDynamicQuestionPayload(continuation.nextGap, generated, questionNumber),
+    biggestUnknown: continuation.nextGap.label,
+    stopReason: undefined,
   };
 }
 

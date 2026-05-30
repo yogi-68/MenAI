@@ -3,6 +3,8 @@
  * Every user-facing sentence should prove understanding, inference, or discovery.
  */
 
+import { assignExpectedGains, pickHighestGainGap } from "@/lib/plans/marginal-gain";
+
 export type CoachDomain = "fitness" | "business" | "learning" | "career" | "general";
 
 export interface KnownFacts {
@@ -21,6 +23,8 @@ export interface MissingVariable {
   question: string;
   inputType: "text" | "number" | "date";
   why: string;
+  /** Expected planning-quality gain if answered (~0–25). */
+  expectedGain: number;
 }
 
 export interface GoalAnalysis {
@@ -114,7 +118,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
     .filter(Boolean)
     .join(" ");
   const domain = facts.domain;
-  const missing: MissingVariable[] = [];
+  const missing: Omit<MissingVariable, "expectedGain">[] = [];
 
   const has = (key: string) => {
     const v = ctx[key];
@@ -233,7 +237,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
       });
   }
 
-  return missing;
+  return assignExpectedGains(missing);
 }
 
 export function buildGoalAnalysis(facts: KnownFacts): GoalAnalysis {
@@ -414,5 +418,5 @@ export function pickNextMissingQuestion(
   missing: MissingVariable[],
   alreadyAsked: string[]
 ): MissingVariable | null {
-  return missing.find((m) => !alreadyAsked.includes(m.id)) ?? null;
+  return pickHighestGainGap(missing, alreadyAsked);
 }
