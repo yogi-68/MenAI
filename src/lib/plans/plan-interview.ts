@@ -16,12 +16,7 @@ import {
   resolvePrimaryInitiative,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
-import { buildEvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import type { IdentityCoverageMap, IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
-import {
-  buildInterviewQuestionPayload,
-  runAiIdentityInterviewStep,
-} from "@/lib/plans/ai-identity-interview";
 import {
   getIdentityAskedToday,
   loadIdentityProfile,
@@ -29,6 +24,18 @@ import {
   saveIdentityAnswer,
   saveIdentityCoverage,
 } from "@/lib/plans/identity-profile-store";
+import {
+  pickNextPlanningQuestion,
+  planningGapsForUi,
+  shouldRunPlanningInterview,
+} from "@/lib/plans/planning-interview";
+import {
+  applyInitiativeSideEffects,
+  bumpCoverageAfterAnswer,
+  mapAnswerToPlanContextPatch,
+} from "@/lib/plans/interview-answer-map";
+import { computeBaselineCoverage } from "@/lib/user-model/identity-synthesis";
+import { averageCoverage } from "@/lib/user-model/identity-dimensions";
 
 export interface PlanContextData {
   weeklyAvailableHours?: number | null;
@@ -150,7 +157,6 @@ export async function savePlanContextData(
 
   store.byInitiative[initiativeId] = merged;
   await writePlanContextStore(supabase, userId, store);
-  scheduleUserModelRefresh(supabase, userId);
   return merged;
 }
 
@@ -257,7 +263,8 @@ export interface InterviewQuestionPayload {
 
 export async function getPlanContextState(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  options?: { skipSideEffects?: boolean }
 ): Promise<{
   snapshot: PlanContextSnapshot;
   goalAnalysis: GoalAnalysis | null;
@@ -265,6 +272,7 @@ export async function getPlanContextState(
   biggestUnknown: string | null;
   identityCoverage: IdentityCoverageMap | null;
   overallCoverage: number | null;
+  planningGaps: string[];
   stopReason?: string;
 }> {
   const input = await buildDimensionInput(supabase, userId);
@@ -278,17 +286,40 @@ export async function getPlanContextState(
   const goalAnalysis = primary ? buildGoalAnalysis(facts) : null;
 
   const identityProfile = await loadIdentityProfile(supabase, userId);
-  const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
   const askedToday = getIdentityAskedToday(identityProfile);
+  const planningGaps = planningGapsForUi(goalAnalysis, askedToday, input);
 
-  const interview = await runAiIdentityInterviewStep({
-    bundle,
-    identityProfile,
-    askedToday,
-    userId,
-  });
+  const coverage =
+    identityProfile.lastCoverage ??
+    computeBaselineCoverage({
+      vision: exec.profile?.vision ?? null,
+      founderMode: Boolean(exec.profile?.founder_mode),
+      workStyle: null,
+      goals: exec.goals.map((g) => ({ title: g.title, category: g.category, targetDate: g.target_date })),
+      initiatives: exec.initiatives.map((i) => ({
+        id: i.id,
+        title: i.title,
+        description: i.description,
+        lifeArea: i.life_area,
+        domain: detectDomain(`${i.title} ${i.description || ""}`, i.life_area),
+        targetDate: i.target_date,
+      })),
+      focusInitiativeId: exec.focusInitiativeId,
+      focusTitle: primary?.title ?? null,
+      focusDomain: primary
+        ? detectDomain(`${primary.title} ${primary.description || ""}`, primary.life_area)
+        : "general",
+      identitySignals: exec.identitySignals,
+      patterns: [],
+      completedTasks7d: exec.completedTasks7d,
+      reflections7d: exec.reflections7d,
+      reflectionBlocks: [],
+      opportunities: exec.opportunities.map((o) => o.title),
+      planContextFields: input.planContext as Record<string, unknown>,
+      identityAnswers: identityProfile.answers || {},
+    });
 
-  await saveIdentityCoverage(supabase, userId, interview.coverage, interview.overallCoverage);
+  const overallCoverage = averageCoverage(coverage);
 
   if (!primary) {
     return {
@@ -296,34 +327,41 @@ export async function getPlanContextState(
       goalAnalysis,
       nextQuestion: null,
       biggestUnknown: null,
-      identityCoverage: interview.coverage,
-      overallCoverage: interview.overallCoverage,
+      identityCoverage: coverage,
+      overallCoverage,
+      planningGaps: [],
       stopReason: "no_gaps",
     };
   }
 
-  if (!interview.shouldContinue || !interview.question) {
-    return {
-      snapshot: { ...snapshot, shouldInterview: false, stopReason: interview.stopReason },
-      goalAnalysis,
-      nextQuestion: null,
-      biggestUnknown: interview.weakestLabel,
-      identityCoverage: interview.coverage,
-      overallCoverage: interview.overallCoverage,
-      stopReason: interview.stopReason,
-    };
+  const nextQuestion = pickNextPlanningQuestion(input, goalAnalysis, askedToday);
+  const shouldInterview = shouldRunPlanningInterview(input, goalAnalysis, askedToday);
+
+  if (!options?.skipSideEffects) {
+    await saveIdentityCoverage(supabase, userId, coverage, overallCoverage);
   }
 
-  const questionNumber = askedToday.length + 1;
+  if (!shouldInterview || !nextQuestion) {
+    return {
+      snapshot: { ...snapshot, shouldInterview: false, stopReason: "no_gaps" },
+      goalAnalysis,
+      nextQuestion: null,
+      biggestUnknown: planningGaps[0] ?? null,
+      identityCoverage: coverage,
+      overallCoverage,
+      planningGaps,
+      stopReason: "no_gaps",
+    };
+  }
 
   return {
     snapshot: { ...snapshot, shouldInterview: true },
     goalAnalysis,
-    nextQuestion: buildInterviewQuestionPayload(interview.question, questionNumber),
-    biggestUnknown: interview.weakestLabel || interview.question.subtitle || null,
-    identityCoverage: interview.coverage,
-    overallCoverage: interview.overallCoverage,
-    stopReason: undefined,
+    nextQuestion,
+    biggestUnknown: nextQuestion.biggestUnknown || planningGaps[0] || null,
+    identityCoverage: coverage,
+    overallCoverage,
+    planningGaps,
   };
 }
 
@@ -341,82 +379,68 @@ export async function applyInterviewAnswer(
   const primary = exec.primaryInitiative;
   if (!primary) return;
 
-  if (dimension) {
-    await saveIdentityAnswer(supabase, userId, {
-      questionId: variableId,
-      dimension,
-      value: trimmed,
-    });
-  }
+  const effectiveDimension = dimension || "planning_baseline";
+
+  await saveIdentityAnswer(supabase, userId, {
+    questionId: variableId,
+    dimension: effectiveDimension,
+    value: trimmed,
+  });
 
   const planContext = await loadPlanContextData(supabase, userId, primary.id);
   const asked = [...(planContext.interviewAskedToday || [])];
   if (!asked.includes(variableId)) asked.push(variableId);
 
-  const patch: Partial<PlanContextData> = { interviewAskedToday: asked };
-
-  switch (variableId) {
-    case "currentWeight":
-      patch.currentWeight = Number(trimmed) || null;
-      break;
-    case "currentBodyFatPct":
-      patch.currentBodyFatPct = Math.min(60, Math.max(3, Number(trimmed) || 0));
-      break;
-    case "trainingDaysPerWeek":
-      patch.trainingDaysPerWeek = Math.min(7, Math.max(1, Number(trimmed) || 0));
-      break;
-    case "studyHoursPerDay":
-      patch.studyHoursPerDay = Math.min(16, Math.max(1, Number(trimmed) || 0));
-      break;
-    case "weeklyAvailableHours":
-      patch.weeklyAvailableHours = Math.min(80, Math.max(1, Number(trimmed) || 0));
-      break;
-    case "biggestObstacle":
-      patch.biggestObstacle = trimmed;
-      await supabase.from("commitments").insert({
-        user_id: userId,
-        description: `Current blocker: ${trimmed}`,
-        category: "work",
-        timeframe: "ongoing",
-        status: "active",
-        source: "plan_interview",
-      });
-      break;
-    case "initiativeOutcome90d":
-      patch.initiativeOutcome90d = trimmed;
-      await supabase
-        .from("initiatives")
-        .update({
-          description: primary.description
-            ? `${primary.description}\n90-day outcome: ${trimmed}`
-            : `90-day outcome: ${trimmed}`,
-        })
-        .eq("id", primary.id);
-      break;
-    case "currentMetric":
-      patch.currentMetric = trimmed;
-      break;
-    case "targetDate":
-      await supabase.from("initiatives").update({ target_date: trimmed }).eq("id", primary.id);
-      break;
-    default:
-      if (/obstacle|constraint|blocker/i.test(variableId)) {
-        patch.biggestObstacle = trimmed;
-      } else if (/hour|time|capacity/i.test(variableId)) {
-        patch.weeklyAvailableHours = Math.min(80, Math.max(1, Number(trimmed) || 0));
-      } else if (/bodyfat|body_fat/i.test(variableId)) {
-        patch.currentBodyFatPct = Math.min(60, Math.max(3, Number(trimmed) || 0));
-      } else if (/weight/i.test(variableId)) {
-        patch.currentWeight = Number(trimmed) || null;
-      } else if (/train/i.test(variableId)) {
-        patch.trainingDaysPerWeek = Math.min(7, Math.max(1, Number(trimmed) || 0));
-      } else if (/metric|customer|mrr|user/i.test(variableId)) {
-        patch.currentMetric = trimmed;
-      }
-      break;
-  }
+  const patch: Partial<PlanContextData> = {
+    interviewAskedToday: asked,
+    ...mapAnswerToPlanContextPatch(variableId, trimmed, effectiveDimension),
+  };
 
   await savePlanContextData(supabase, userId, primary.id, patch);
+
+  void applyInitiativeSideEffects(
+    supabase,
+    userId,
+    primary.id,
+    variableId,
+    trimmed,
+    patch,
+    primary.description
+  ).catch(() => {});
+
+  const identityProfile = await loadIdentityProfile(supabase, userId);
+  const baseCoverage =
+    identityProfile.lastCoverage ??
+    computeBaselineCoverage({
+      vision: exec.profile?.vision ?? null,
+      founderMode: Boolean(exec.profile?.founder_mode),
+      workStyle: null,
+      goals: exec.goals.map((g) => ({ title: g.title, category: g.category, targetDate: g.target_date })),
+      initiatives: exec.initiatives.map((i) => ({
+        id: i.id,
+        title: i.title,
+        description: i.description,
+        lifeArea: i.life_area,
+        domain: detectDomain(`${i.title} ${i.description || ""}`, i.life_area),
+        targetDate: i.target_date,
+      })),
+      focusInitiativeId: exec.focusInitiativeId,
+      focusTitle: primary.title,
+      focusDomain: detectDomain(`${primary.title} ${primary.description || ""}`, primary.life_area),
+      identitySignals: exec.identitySignals,
+      patterns: [],
+      completedTasks7d: exec.completedTasks7d,
+      reflections7d: exec.reflections7d,
+      reflectionBlocks: [],
+      opportunities: exec.opportunities.map((o) => o.title),
+      planContextFields: { ...planContext, ...patch } as Record<string, unknown>,
+      identityAnswers: identityProfile.answers || {},
+    });
+
+  const updatedCoverage = bumpCoverageAfterAnswer(baseCoverage, variableId, effectiveDimension);
+  await saveIdentityCoverage(supabase, userId, updatedCoverage, averageCoverage(updatedCoverage));
+
+  scheduleUserModelRefresh(supabase, userId);
 }
 
 export async function markInterviewSkipped(
@@ -434,4 +458,5 @@ export async function markInterviewSkipped(
   const asked = [...(planContext.interviewAskedToday || [])];
   if (!asked.includes(variableId)) asked.push(variableId);
   await savePlanContextData(supabase, userId, primary.id, { interviewAskedToday: asked });
+  scheduleUserModelRefresh(supabase, userId);
 }

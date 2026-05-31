@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, SkipForward } from "lucide-react";
-import { missingKnowledgeLabels, type IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
+import type { IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 
 interface InterviewQuestion {
   variableId: string;
@@ -21,6 +21,13 @@ interface ContextSnapshot {
   shouldInterview: boolean;
 }
 
+interface PlanContextResponse {
+  snapshot: ContextSnapshot;
+  nextQuestion: InterviewQuestion | null;
+  biggestUnknown: string | null;
+  planningGaps?: string[];
+}
+
 export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boolean }) {
   const queryClient = useQueryClient();
   const [answer, setAnswer] = useState("");
@@ -30,13 +37,7 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
     queryFn: async () => {
       const res = await fetch("/api/plans/context");
       if (!res.ok) throw new Error("Failed to load context");
-      return res.json() as Promise<{
-        snapshot: ContextSnapshot;
-        nextQuestion: InterviewQuestion | null;
-        biggestUnknown: string | null;
-        identityCoverage: Record<IdentityDimensionId, number> | null;
-        overallCoverage: number | null;
-      }>;
+      return res.json() as Promise<PlanContextResponse>;
     },
     staleTime: 15_000,
     enabled: hasInitiatives,
@@ -55,11 +56,23 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Interview failed");
-      return res.json();
+      return res.json() as Promise<PlanContextResponse & { done?: boolean }>;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setAnswer("");
-      queryClient.invalidateQueries({ queryKey: ["plan-context"] });
+      queryClient.setQueryData(["plan-context"], (prev: PlanContextResponse | undefined) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          snapshot: {
+            ...prev.snapshot,
+            shouldInterview: !result.done && Boolean(result.nextQuestion),
+          },
+          nextQuestion: result.nextQuestion ?? null,
+          biggestUnknown: result.biggestUnknown ?? null,
+          planningGaps: result.planningGaps ?? prev.planningGaps,
+        };
+      });
       queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
     },
@@ -71,14 +84,12 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
 
   if (!hasInitiatives || isLoading || !data) return null;
 
-  const { snapshot, nextQuestion, biggestUnknown, identityCoverage } = data;
+  const { snapshot, nextQuestion, biggestUnknown, planningGaps } = data;
   const showCard = snapshot.shouldInterview && nextQuestion;
 
   if (!showCard) return null;
 
-  const stillNeedToUnderstand = identityCoverage
-    ? missingKnowledgeLabels(identityCoverage, 30)
-    : [];
+  const gaps = (planningGaps ?? []).slice(0, 3);
 
   return (
     <section
@@ -91,20 +102,20 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
           <p style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "6px" }}>
             A few details would sharpen today&apos;s plan.
           </p>
-          {stillNeedToUnderstand.length > 0 && (
+          {gaps.length > 0 && (
             <div style={{ marginBottom: "16px" }}>
               <p style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
-                Still need to understand
+                Still need for planning
               </p>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                {stillNeedToUnderstand.map((label) => (
+                {gaps.map((label) => (
                   <li key={label}>{label}</li>
                 ))}
               </ul>
             </div>
           )}
           <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.6 }}>
-            The biggest unknown:{" "}
+            Next up:{" "}
             <span style={{ color: "var(--text-primary)" }}>
               {(biggestUnknown || nextQuestion.subtitle || "one more detail").charAt(0).toLowerCase() +
                 (biggestUnknown || nextQuestion.subtitle || "one more detail").slice(1)}
@@ -200,7 +211,7 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
                     })
                   }
                 >
-                  {submit.isPending ? "Updating…" : "Answer"}
+                  {submit.isPending ? "Saving…" : "Save"}
                 </button>
                 <button
                   type="button"

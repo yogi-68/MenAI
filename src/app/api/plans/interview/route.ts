@@ -66,13 +66,12 @@ export async function POST(request: NextRequest) {
         answer,
         dimension as IdentityDimensionId | undefined
       );
-      await invalidateTodayPlan(supabase, user.id);
     } else {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
     const input = await buildDimensionInput(supabase, user.id);
-    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason } =
+    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason, planningGaps } =
       await getPlanContextState(supabase, user.id);
     const done = !snapshot.shouldInterview || !nextQuestion;
 
@@ -82,6 +81,7 @@ export async function POST(request: NextRequest) {
       goalAnalysis,
       biggestUnknown: done ? null : biggestUnknown,
       stopReason,
+      planningGaps,
       snapshot: {
         planningQuality: snapshot.planningQuality,
         shouldInterview: snapshot.shouldInterview,

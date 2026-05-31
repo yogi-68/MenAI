@@ -4,7 +4,6 @@ import type {
   IdentityDimensionId,
   IdentityProfileStore,
 } from "@/lib/user-model/identity-dimensions";
-import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 interface PlanContextRoot {
   byInitiative?: Record<string, unknown>;
@@ -100,7 +99,6 @@ export async function saveIdentityAnswer(
   };
 
   await writeStore(supabase, userId, store);
-  scheduleUserModelRefresh(supabase, userId);
   return store.identityProfile;
 }
 
