@@ -5,6 +5,8 @@ import {
   type WhoAmIStatement,
   type WhoAmIStatementTag,
 } from "@/lib/user-model/identity-dimensions";
+import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
+import { buildMemoryGraphIdentityAnswer } from "@/lib/user-model/memory-graph-identity";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { rewriteRoboticPhrase } from "@/lib/user-model/voice-guide";
 
@@ -117,12 +119,15 @@ export function buildEvidenceBasedWhoAmI(
     );
   }
 
-  if (bundle.focusTitle) {
+  if (bundle.focusTitle && isConcreteInitiativeTitle(bundle.focusTitle)) {
     const e = [`Focus initiative: "${bundle.focusTitle}"`];
     evidenceLog.push(...e);
     statements.push(
-      stmt("verified", `Right now, most of your execution energy is on ${bundle.focusTitle}.`, e)
+      stmt("verified", `Right now you're executing on ${bundle.focusTitle}.`, e)
     );
+  } else if (bundle.focusTitle && !isConcreteInitiativeTitle(bundle.focusTitle)) {
+    const e = [`Vague focus label stored: "${bundle.focusTitle}" — not used for identity`];
+    evidenceLog.push(...e);
   }
 
   if (bundle.completedTasks7d > 0) {
@@ -256,64 +261,40 @@ export function buildEvidenceBasedWhoAmI(
     );
   }
 
-  const verified = statements.filter((s) => s.tag === "verified");
-  const inference = statements.filter((s) => s.tag === "strong_inference");
-  const unknown = statements.filter((s) => s.tag === "unknown");
+  const memoryGraph = buildMemoryGraphIdentityAnswer(bundle);
 
-  const paragraphs: string[] = ["From what you've shared so far:"];
-
-  const narrativeParts: string[] = [];
-
-  if (bundle.focusTitle) {
-    narrativeParts.push(
-      `You're trying to build more freedom through projects and income growth — right now most of your energy is on ${bundle.focusTitle}.`
-    );
-  } else if (bundle.goals.length > 0) {
-    const themes = bundle.goals.slice(0, 3).map((g) => g.title.toLowerCase()).join(", ");
-    narrativeParts.push(`You're trying to build more freedom through ${themes}.`);
+  for (const es of memoryGraph.evidenceStatements) {
+    evidenceLog.push(...es.evidence);
+    statements.push(stmt("verified", es.text, es.evidence));
   }
 
-  if (bundle.patterns.some((p) => /inconsist|procrastin|overthink/i.test(p.pattern))) {
-    narrativeParts.push(
-      "You care about execution more than motivation — consistency keeps showing up as the real lever."
-    );
-  } else if (inference.length > 0) {
-    narrativeParts.push(inference.map((s) => s.text.replace(/\.$/, "")).join(". ") + ".");
-  }
-
-  if (bundle.patterns.length > 0) {
-    narrativeParts.push(
-      `The strongest pattern so far: ${bundle.patterns.map((p) => p.pattern).join("; ")}.`
-    );
-  } else if (bundle.completedTasks7d >= 3) {
-    narrativeParts.push(
-      `You've been showing up — ${bundle.completedTasks7d} tasks completed in the last week.`
-    );
-  } else if (bundle.initiatives.length > 0 && bundle.completedTasks7d < 2) {
-    narrativeParts.push(
-      "You've started building structure — the next step is proving consistency on a few real tasks."
+  if (memoryGraph.paragraphs.length === 0) {
+    const e = [`Only ${bundle.goals.length} goal(s), ${bundle.initiatives.length} initiative(s) on file`];
+    evidenceLog.push(...e);
+    statements.push(
+      stmt(
+        "unknown",
+        "Not enough execution history yet — complete a few tasks and tell me what you're building.",
+        e
+      )
     );
   }
 
-  if (verified.length > 0 && !bundle.focusTitle) {
-    const focusLine = verified.find((s) => s.text.includes("energy"));
-    if (focusLine) narrativeParts.push(focusLine.text);
-  }
-
-  paragraphs.push(narrativeParts.join("\n\n"));
-
-  if (unknown.length > 0 || (bundle.completedTasks7d < 3 && bundle.reflections7d < 2)) {
-    const learning =
-      unknown.length > 0
-        ? unknown[0].text.replace(/^There isn't enough/i, "what tends to derail your momentum when things get difficult")
-        : "what tends to derail your momentum when things get difficult.";
-    paragraphs.push(`What I'm still learning is ${learning.replace(/\.$/, "")}.`);
-  }
-
+  const verifiedOnly = statements.filter((s) => s.tag === "verified" && s.evidence.length > 0);
   const rawAnswer =
-    paragraphs.length > 1
-      ? paragraphs.join("\n\n")
-      : "Not enough to go on yet — add one initiative with a deadline and complete a few tasks. A clearer picture will follow from what you do, not what you describe.";
+    memoryGraph.evidenceStatements.length > 0
+      ? [
+          memoryGraph.opening,
+          ...memoryGraph.evidenceStatements.map((s) => s.text),
+          `What I'm still learning is ${memoryGraph.stillLearning}`,
+        ].join("\n\n")
+      : verifiedOnly.length > 0
+        ? [
+            memoryGraph.opening,
+            ...verifiedOnly.slice(0, 4).map((s) => s.text),
+            `What I'm still learning is ${memoryGraph.stillLearning}`,
+          ].join("\n\n")
+        : "Not enough evidence yet — share what you're building and complete a few tasks. Identity comes from what you do and say over time.";
 
   const answer = sanitizeCoachCopy(rewriteRoboticPhrase(rawAnswer));
 

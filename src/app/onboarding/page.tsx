@@ -31,6 +31,15 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const completionRedirectedRef = useRef(false);
   const [askingFollowUp, setAskingFollowUp] = useState(false);
+  const [initiativeBlocked, setInitiativeBlocked] = useState<{
+    message: string;
+    suggestions: string[];
+  } | null>(null);
+  const [initiativeWeak, setInitiativeWeak] = useState<{
+    message: string;
+    sharpenPrompt: string;
+    sharpenOptions: Array<{ value: string; label: string; resultTitle: string }>;
+  } | null>(null);
 
   const [customDate, setCustomDate] = useState("");
 
@@ -172,6 +181,49 @@ export default function OnboardingPage() {
       return;
     }
 
+    if (question.id === "Q2") {
+      const q1Selected = responses.Q1?.responseData?.selected;
+      const directions = Array.isArray(q1Selected)
+        ? q1Selected
+        : q1Selected
+          ? [q1Selected]
+          : selectedOptions.length && currentQuestionId === "Q1"
+            ? selectedOptions
+            : [];
+      const buildingWhat = responses.Q1B?.response || null;
+      const validateRes = await fetch("/api/onboarding/validate-initiative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: response,
+          directions,
+          buildingWhat,
+        }),
+      });
+      const validateData = await validateRes.json();
+      if (!validateData.valid) {
+        setInitiativeBlocked({
+          message: validateData.message,
+          suggestions: validateData.suggestions || [],
+        });
+        setInitiativeWeak(null);
+        setError(validateData.message);
+        return;
+      }
+      if (validateData.needsSharpening) {
+        setInitiativeWeak({
+          message: validateData.message || "Valid direction — let's make it concrete.",
+          sharpenPrompt: validateData.sharpenPrompt || "How are you planning to do this?",
+          sharpenOptions: validateData.sharpenOptions || [],
+        });
+        setInitiativeBlocked(null);
+        setError(null);
+        return;
+      }
+      setInitiativeBlocked(null);
+      setInitiativeWeak(null);
+    }
+
     // Save response
     const saved = await saveResponse(currentQuestionId, response, responseData);
     if (!saved) return;
@@ -228,6 +280,8 @@ export default function OnboardingPage() {
     setSliderValue(3);
     setShowOther(false);
     setOtherText("");
+    setInitiativeBlocked(null);
+    setInitiativeWeak(null);
     setCustomDate("");
     setError(null);
     setAskingFollowUp(false);
@@ -247,7 +301,8 @@ export default function OnboardingPage() {
   };
 
   const canContinue =
-    currentQuestion.type === "text" || currentQuestion.type === "textarea"
+    !initiativeWeak &&
+    (currentQuestion.type === "text" || currentQuestion.type === "textarea"
       ? currentQuestion.optional || textInput.trim().length > 0
       : currentQuestion.type === "slider"
         ? true
@@ -257,7 +312,7 @@ export default function OnboardingPage() {
             ? otherText.trim().length > 0
             : showOther && currentQuestion.allowOther
               ? otherText.trim().length > 0 || selectedOptions.length > 0
-              : selectedOptions.length > 0;
+              : selectedOptions.length > 0);
 
   if (!isMounted || !currentQuestion) {
     return (
@@ -322,6 +377,62 @@ export default function OnboardingPage() {
 
               {/* Input Area */}
               <div style={{ marginTop: "8px" }}>
+                {initiativeWeak && currentQuestionId === "Q2" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                      {initiativeWeak.message}
+                    </p>
+                    <p style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
+                      {initiativeWeak.sharpenPrompt}
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {initiativeWeak.sharpenOptions.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className="btn-secondary"
+                          style={{ textAlign: "left" }}
+                          onClick={() => {
+                            setTextInput(opt.resultTitle);
+                            setInitiativeWeak(null);
+                            setError(null);
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {initiativeBlocked && currentQuestionId === "Q2" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                      {initiativeBlocked.message}
+                    </p>
+                    <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 8 }}>
+                      Which is closest?
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {initiativeBlocked.suggestions.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className="btn-secondary"
+                          style={{ textAlign: "left" }}
+                          onClick={() => {
+                            setTextInput(s);
+                            setInitiativeBlocked(null);
+                            setError(null);
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {currentQuestion.type === "text" && (
                   <input
                     type="text"

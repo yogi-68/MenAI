@@ -19,6 +19,15 @@ import {
 } from "@/lib/plans/language-guard";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { buildPatternGuidanceLines } from "@/lib/plans/pattern-task-guidance";
+import {
+  computeLifeAreaWeights,
+  formatLifeAreaPlanStructure,
+} from "@/lib/plans/life-area-balancer";
+import {
+  formatWeaknessProfilesForPrompt,
+  loadWeaknessProfiles,
+} from "@/lib/mentor/weakness-engine";
+import { formatMentorMemoriesForPrompt, loadMentorMemories } from "@/lib/mentor/mentor-memory";
 import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
 import {
   buildPlanContextSnapshot,
@@ -129,6 +138,8 @@ export interface PlanUserContext {
   userModelNarrative: string;
   executionAllocationLines: string[];
   initiativeContextBlocks: string[];
+  lifeAreaWeightPlan: string;
+  mentorMemoryBlock: string;
 }
 
 function buildDomainScopedContextNotes(
@@ -297,9 +308,10 @@ export async function fetchPlanUserContext(
       .limit(12),
     supabase
       .from("execution_patterns")
-      .select("pattern, behavioral_impact, severity")
+      .select("pattern, behavioral_impact, severity, confidence, occurrences")
       .eq("user_id", userId)
-      .order("severity", { ascending: false })
+      .eq("status", "active")
+      .order("occurrences", { ascending: false })
       .limit(6),
     supabase
       .from("commitments")
@@ -318,6 +330,7 @@ export async function fetchPlanUserContext(
       .from("identity_signals")
       .select("type, description, long_term_direction")
       .eq("user_id", userId)
+      .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(8),
     supabase
@@ -462,6 +475,15 @@ export async function fetchPlanUserContext(
     profileRes.data?.current_focus_until ?? primaryInit?.target_date ?? null;
 
   const patternGuidance = buildPatternGuidanceLines(patterns);
+  const [lifeAreaWeights, weaknessProfiles, mentorMemories] = await Promise.all([
+    computeLifeAreaWeights(supabase, userId),
+    loadWeaknessProfiles(supabase, userId),
+    loadMentorMemories(supabase, userId, 8),
+  ]);
+  const weaknessGuidance = formatWeaknessProfilesForPrompt(weaknessProfiles);
+  const combinedPatternGuidance = [...weaknessGuidance, ...patternGuidance];
+  const lifeAreaWeightPlan = formatLifeAreaPlanStructure(lifeAreaWeights);
+  const mentorMemoryBlock = formatMentorMemoriesForPrompt(mentorMemories);
 
   const balanceRows = balanceTasks.map((t) => ({
     life_area: (t.initiatives as { life_area?: string } | null)?.life_area || "personal",
@@ -645,13 +667,18 @@ export async function fetchPlanUserContext(
       : effectiveScore >= 78
         ? "aggressive"
         : "normal";
+  const planPhase = options.planPhase ?? currentPlanPhase();
+  const middayCompleted = options.middayCompleted ?? [];
   const allocSlots = userModel.executionAllocation.filter((a) => a.percent >= 10).length || 1;
+  /** 3–5 meaningful tasks — people finish plans, not task lists */
   const maxTasks =
     planMode === "context_building"
       ? 2
-      : planMode === "aggressive"
-        ? Math.min(6, 2 + allocSlots * 2)
-        : Math.min(5, 1 + allocSlots * 2);
+      : planPhase === "afternoon" && middayCompleted.length > 0
+        ? 2
+        : planMode === "aggressive"
+          ? Math.min(5, 3 + Math.min(allocSlots - 1, 2))
+          : Math.min(4, 3 + (allocSlots > 2 ? 1 : 0));
 
   const baseMinutes = 480;
   const availableMinutes =
@@ -661,8 +688,6 @@ export async function fetchPlanUserContext(
         ? Math.min(180, baseMinutes)
         : baseMinutes;
 
-  const planPhase = options.planPhase ?? currentPlanPhase();
-  const middayCompleted = options.middayCompleted ?? [];
   let availableMinutesAdjusted = availableMinutes;
   if (planPhase === "afternoon" && middayCompleted.length > 0) {
     availableMinutesAdjusted = Math.max(90, Math.round(availableMinutes * 0.55));
@@ -701,7 +726,7 @@ export async function fetchPlanUserContext(
     unfinishedTasks: unfinishedLines,
     recentProgress: recentProgressLines,
     obstacles: obstacleLines,
-    patternGuidance,
+    patternGuidance: combinedPatternGuidance,
     planContextNotes,
     availableMinutes: availableMinutesAdjusted,
     energyLevel,
@@ -725,6 +750,8 @@ export async function fetchPlanUserContext(
     userModelNarrative: userModel.narrative,
     executionAllocationLines,
     initiativeContextBlocks,
+    lifeAreaWeightPlan,
+    mentorMemoryBlock,
   };
 }
 
@@ -760,14 +787,16 @@ function buildPrompt(ctx: PlanUserContext): string {
 - Do NOT invent execution work from long-term direction or vague goals`
       : ctx.planMode === "aggressive"
         ? `AGGRESSIVE EXECUTION MODE:
-- Generate up to ${ctx.maxTasks} high-leverage tasks — 80%+ MUST link to CURRENT FOCUS initiative
+- Generate 3–5 high-leverage tasks (HARD MAX 5) — quality over quantity
+- 80%+ MUST link to CURRENT FOCUS initiative
 - Prioritize at-risk and stalled focus work
 - Include at least one task that advances the highest-urgency opportunity if any exist
 - Each task needs a concrete "why" tied to the current initiative milestone`
         : `NORMAL MODE:
-- Generate up to ${ctx.maxTasks} tasks — at least 80% MUST link to CURRENT FOCUS initiative
+- Generate 3–4 tasks (HARD MAX 5) — people finish plans, not task lists
+- At least 80% MUST link to CURRENT FOCUS initiative
 - Long-term direction informs WHY, never the task list itself (no generic finance/fitness maintenance unless that IS the focus)
-- Secondary portfolio initiatives: max 1–2 tasks combined, only if allocation >= 20%
+- Secondary portfolio initiatives: max 1 task combined, only if allocation >= 20%
 - Every task needs whyItMatters explaining how it moves the current initiative forward today
 - Include "assumptions" array if context is thin`;
 
@@ -781,9 +810,15 @@ ${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% t
 
 PRIORITY STACK (strict):
 1. URGENT OPPORTUNITIES — time-sensitive events override routine
-2. CURRENT FOCUS initiative — minimum 80% of tasks; all must link to focus milestone
-3. SECONDARY portfolio — max 1–2 tasks total, only if explicitly allocated >= 20%
-4. NEVER generate tasks from long-term goals/direction alone (e.g. "track income" when focus is MenAI)
+2. LIFE AREA BALANCE — distribute tasks across user's life areas (see weights below)
+3. CURRENT FOCUS initiative — largest share but NOT 100% when multiple areas matter
+4. SECONDARY portfolio — max 1–2 tasks total, only if explicitly allocated >= 20%
+5. NEVER generate tasks from long-term goals/direction alone (e.g. "track income" when focus is MenAI)
+
+${ctx.lifeAreaWeightPlan}
+
+MENTOR MEMORY (thoughts, beliefs, self-talk — use to personalize whyItMatters):
+${ctx.mentorMemoryBlock}
 
 CURRENT FOCUS (gets largest share — not the only share):
 ${ctx.currentFocus ? `  - ${ctx.currentFocus}${ctx.currentFocusUntil ? ` until ${ctx.currentFocusUntil}` : ""}` : "  - Not set — spread across active portfolio"}
@@ -812,8 +847,9 @@ ${listOrFallback(ctx.initiativeHealth, "No initiatives")}
 All opportunities:
 ${listOrFallback(ctx.opportunities, "None logged — consider asking if anything time-sensitive this week")}
 
-Execution patterns → task design (MUST follow — generate tasks that counter weaknesses):
+Execution patterns → task design (MUST follow — counter weaknesses with action, not more research):
 ${listOrFallback(ctx.patternGuidance, "No patterns detected yet")}
+- If overthinking is listed: NEVER assign "research competitors" — assign "talk to 1 user" or "send 1 outreach"
 
 Daily reflections (use for context — explains low execution):
 ${listOrFallback(ctx.recentReflections, "None logged yet")}
@@ -881,12 +917,15 @@ ${COACH_WRITING_RULES}
 ${modeInstructions}
 
 LANGUAGE RULES:
-- whatMattersNow must use GOAL ANALYSIS insight or cite missing variable + deadline — never restate the initiative title alone.
-- If missing variables exist, whatMattersNow should name the biggest gap (e.g. "MenAI doesn't know your current body-fat %").
+- whatMattersNow = "This is why today matters" — one human sentence about stakes and momentum, NOT a task title or initiative name alone.
+- daySummary = companion framing ("Today is about...") — NOT "Here are your tasks".
+- whyTheseTasks = 2-4 sentences explaining what actually moves them forward and WHY now — mentor voice, not checklist rationale.
+- Tasks are secondary to meaning. Users finish plans when they understand why, not when they get a longer list.
+- If missing variables exist, whatMattersNow should name the biggest gap honestly.
 - Include "evidenceUsed" array listing each specific data point you relied on.
 - Do NOT use hedging phrases. Say what's missing or what to do today.
 
-CRITICAL: Generate an intelligently mixed plan — not random, not single-domain-only.
+CRITICAL: Lead with meaning, then actions. Max ${ctx.maxTasks} tasks — each must earn its place.
 Urgent opportunities ALWAYS beat routine allocation.
 Each task advances its initiative's CURRENT milestone using ONLY that initiative's context.
 whyTheseTasks MUST explain the allocation mix and why each initiative got its share today.
@@ -895,10 +934,10 @@ ${TASK_QUALITY_PROMPT}
 
 Return JSON only:
 {
-  "whatMattersNow": "One sentence",
-  "topObstacle": "One sentence",
-  "daySummary": "One sentence",
-  "whyTheseTasks": "2-4 sentences — coach voice, reference actual data",
+  "whatMattersNow": "Why today matters — one human sentence about stakes/momentum (not a task title)",
+  "topObstacle": "One sentence — pattern or blocker to watch",
+  "daySummary": "Companion framing: what kind of day this is and why it matters",
+  "whyTheseTasks": "2-4 sentences — what actually moves them forward and why NOW",
   "evidenceUsed": ["data point 1", "data point 2"],
   "assumptions": ["only in normal mode if needed"],
   "tasks": [{

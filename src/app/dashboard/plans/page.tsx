@@ -204,7 +204,7 @@ export default function DailyPlansPage() {
           {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
         </p>
         <h1 style={{ fontSize: "clamp(1.75rem, 4vw, 2.5rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
-          Today&apos;s Plan
+          Today
         </h1>
         {rhythm && (
           <div style={{ marginTop: "16px", padding: "14px 18px", borderRadius: "var(--radius-md)", background: "var(--bg-glass)", border: "1px solid var(--border-color)" }}>
@@ -251,11 +251,16 @@ export default function DailyPlansPage() {
           }}
         >
           <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
-            Top priority
+            Why today matters
           </p>
           <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "var(--text-primary)", fontWeight: 400 }}>
             {topPriority}
           </p>
+          {plan?.whyTheseTasks && (
+            <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-secondary)", marginTop: "14px", marginBottom: 0 }}>
+              {plan.whyTheseTasks}
+            </p>
+          )}
           {totalTasks > 0 && (
             <div style={{ marginTop: "14px" }}>
               <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
@@ -375,7 +380,7 @@ export default function DailyPlansPage() {
 
         <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>Today&apos;s focus</h2>
+          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>What to do</h2>
           {totalTasks > 0 && (
             <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
               {completedTasks}/{totalTasks} complete

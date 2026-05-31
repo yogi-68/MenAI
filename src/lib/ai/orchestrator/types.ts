@@ -17,6 +17,7 @@ export type ConversationState =
   | "FOUNDER_COACHING"    // Startup/business strategic coaching
   | "STRATEGIC_THINKING"  // Long-term decisions and life direction
   | "EXECUTION_REVIEW"    // Reviewing progress and adapting plans
+  | "WISDOM_FIRST"        // Exhaustion, doubt, overwhelm — wisdom before tasks
   | "ESCALATION";         // Crisis mode — safety first
 
 // ===== User Intent (classified BEFORE state selection) =====

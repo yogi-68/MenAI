@@ -1,3 +1,5 @@
+import { assessInitiativeInput } from "@/lib/initiatives/concreteness-gate";
+
 const BAD_TITLE_PATTERNS = [
   /^in the next \d+/i,
   /^within \d+\s*(day|week|month)/i,
@@ -44,18 +46,16 @@ export function validateInitiativeTitle(raw: string): {
   valid: boolean;
   title: string;
   error?: string;
+  suggestions?: string[];
 } {
-  const normalized = normalizeInitiativeTitle(raw);
-  if (isBadInitiativeTitle(raw) && !isBadInitiativeTitle(normalized)) {
-    return { valid: true, title: normalized };
-  }
-  if (isBadInitiativeTitle(normalized)) {
+  const assessment = assessInitiativeInput(raw);
+  if (!assessment.valid) {
     return {
       valid: false,
-      title: normalized,
-      error:
-        "Use a short initiative name (e.g. Launch MenAI Beta, Reach 20 Users, Lose 5 kg) — not a sentence or timeframe.",
+      title: assessment.title,
+      error: assessment.message,
+      suggestions: assessment.suggestions,
     };
   }
-  return { valid: true, title: normalized };
+  return { valid: true, title: assessment.title };
 }

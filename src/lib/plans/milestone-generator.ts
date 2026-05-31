@@ -8,6 +8,39 @@ import {
 } from "@/lib/plans/milestone-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export type InitiativeStage = "exploring" | "first_client" | "has_clients" | "scaling";
+
+const STAGE_MILESTONES: Record<InitiativeStage, string[]> = {
+  exploring: [
+    "Interview 5 potential customers",
+    "Write one-page problem and offer hypothesis",
+    "List 10 ways to validate demand this month",
+    "Run one validation test with real feedback",
+    "Decide go/no-go on offer",
+  ],
+  first_client: [
+    "Define service offer and pricing",
+    "Create outreach list of 50 prospects",
+    "Contact 20 prospects",
+    "Book 3 discovery calls",
+    "Sign first client",
+    "Deliver first project",
+  ],
+  has_clients: [
+    "Document delivery playbook for repeat work",
+    "Raise prices or package offer",
+    "Get 2 referrals from existing clients",
+    "Hit monthly revenue target",
+    "Systematize client onboarding",
+  ],
+  scaling: [
+    "Hire or delegate first repeatable task",
+    "Raise capacity without quality drop",
+    "Hit next revenue milestone",
+    "Reduce founder time per delivery hour",
+  ],
+};
+
 const DEFAULTS_BY_AREA: Record<string, string[]> = {
   health: [
     "Record weight and waist measurement",
@@ -30,20 +63,8 @@ const DEFAULTS_BY_AREA: Record<string, string[]> = {
     "Complete 5 mock interviews",
     "Receive and accept offer",
   ],
-  business: [
-    "Write one-page problem statement and success metric",
-    "Ship first working prototype",
-    "Get feedback from 5 real users",
-    "Get first paying customer",
-    "Hit first revenue milestone",
-  ],
-  finance: [
-    "Record all income and expenses for 30 days",
-    "Set monthly savings target and automate transfer",
-    "Pay off first high-interest debt chunk",
-    "Build 1-month emergency buffer",
-    "Hit savings goal for this initiative",
-  ],
+  business: STAGE_MILESTONES.first_client,
+  finance: STAGE_MILESTONES.first_client,
   relationships: [
     "Schedule 3 meaningful conversations this month",
     "Complete one shared activity or date per week for 4 weeks",
@@ -60,6 +81,14 @@ const DEFAULTS_BY_AREA: Record<string, string[]> = {
   ],
 };
 
+const ANTI_HALLUCINATION = `
+NEVER invent milestones the user did not imply:
+- NO workshops, certifications, courses, or "attend X events" unless explicitly in initiative context
+- NO generic "track income/expenses" unless initiative is explicitly personal finance tracking
+- NO outreach/email tasks unless business/client acquisition is the initiative
+- Use ONLY initiative title, description, success criteria, stage, and life area as evidence
+`.trim();
+
 export async function generateMilestonesForInitiative(
   supabase: SupabaseClient,
   userId: string,
@@ -67,7 +96,8 @@ export async function generateMilestonesForInitiative(
   title: string,
   description?: string | null,
   lifeArea = "personal",
-  force = false
+  force = false,
+  stage?: InitiativeStage | null
 ): Promise<void> {
   const { count } = await supabase
     .from("initiative_milestones")
@@ -82,13 +112,19 @@ export async function generateMilestonesForInitiative(
 
   const area = areaKey(lifeArea);
   const corpus = `${title} ${description || ""}`.toLowerCase();
-  let titles = fitnessBodyFatDefaults(corpus) || DEFAULTS_BY_AREA[area];
+  const businessLike = area === "business" || area === "finance" || /agency|client|saas|startup/.test(corpus);
+  const resolvedStage = stage || (businessLike ? "first_client" : null);
+
+  let titles =
+    fitnessBodyFatDefaults(corpus) ||
+    (resolvedStage && businessLike ? STAGE_MILESTONES[resolvedStage] : null) ||
+    DEFAULTS_BY_AREA[area];
 
   try {
     const openai = getOpenAI();
     const completion = await openai.chat.completions.create({
       model: DEEP_MODEL,
-      temperature: 0.25,
+      temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
         {
@@ -97,14 +133,19 @@ export async function generateMilestonesForInitiative(
 
 ${MILESTONE_QUALITY_PROMPT}
 
-Each milestone title must start with an action verb or include a number.
-Match domain: health = weight/workouts/meals; learning = syllabus/mocks/scores; business = ship/users/revenue.
+${ANTI_HALLUCINATION}
 
+${resolvedStage ? `Stage: ${resolvedStage} — milestones must match this stage exactly.` : ""}
+
+Each milestone title must start with an action verb or include a number.
 JSON only: {"milestones": ["...", "..."]}`,
         },
         {
           role: "user",
-          content: `Initiative: ${title}\n${description ? `Context: ${description}` : ""}\nReturn concrete milestones from first physical action to outcome.`,
+          content: `Initiative: ${title}
+${description ? `Context: ${description}` : ""}
+${resolvedStage ? `Stage: ${resolvedStage}` : ""}
+Return concrete milestones from first physical action to outcome. No workshops unless user mentioned workshops.`,
         },
       ],
     });
@@ -120,7 +161,9 @@ JSON only: {"milestones": ["...", "..."]}`,
     const raw = completion.choices[0]?.message?.content;
     if (raw) {
       const parsed = JSON.parse(raw) as { milestones?: string[] };
-      const filtered = filterConcreteMilestones(parsed.milestones || []);
+      const filtered = filterConcreteMilestones(parsed.milestones || []).filter(
+        (t) => !/\bworkshop|certification|course\b/i.test(t) || /workshop|certification|course/i.test(corpus)
+      );
       if (filtered.length >= 3) titles = filtered.slice(0, 6);
     }
   } catch {
@@ -164,7 +207,10 @@ export async function regenerateMilestonesIfAbstract(
 
   if (!existing?.length) return false;
   const abstractCount = existing.filter((m) => isAbstractMilestone(m.title)).length;
-  if (abstractCount < Math.ceil(existing.length / 2)) return false;
+  const hallucinated = existing.filter((m) =>
+    /\bworkshop|certification\b/i.test(m.title)
+  ).length;
+  if (abstractCount < Math.ceil(existing.length / 2) && hallucinated === 0) return false;
 
   await generateMilestonesForInitiative(
     supabase,
@@ -191,7 +237,6 @@ function fitnessBodyFatDefaults(corpus: string): string[] | null {
   ];
 }
 
-// fix typo - used `area` before defined
 function areaKey(lifeArea: string): keyof typeof DEFAULTS_BY_AREA {
   return lifeArea in DEFAULTS_BY_AREA ? (lifeArea as keyof typeof DEFAULTS_BY_AREA) : "personal";
 }

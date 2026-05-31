@@ -29,6 +29,8 @@ import { validateResponse } from "./response-validator";
 import { validateResponseStyle } from "./style-validator";
 import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
+import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
+import { trackProductEvent } from "@/lib/analytics/track-event";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
 import { getUserModel } from "@/lib/user-model/loader";
@@ -184,6 +186,9 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
 
   // ===== STEP 4a: Classify Intent (fast, no LLM) =====
   const intent = classifyIntent(input.message);
+  if (intent.type === "IDENTITY_EXPLORATION" || /\bwho am i\b/i.test(input.message)) {
+    trackProductEvent(input.userId, "who_am_i_asked").catch(() => {});
+  }
 
   // ===== STEP 4b: Load Context (parallel: history, memory, profile, life context) =====
   // NOTE: extractLifeData() runs in BACKGROUND after response — not here.
@@ -377,6 +382,9 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     importance: emotion.intensity > 6 ? 0.8 : 0.5,
     metadata: { conversation_id: conversationId, state },
   }).catch(() => {});
+
+  // Mentor memory + weakness tracking (always — even for short messages with beliefs)
+  ingestChatMentorSignal(serviceClient, input.userId, input.message).catch(() => {});
 
   // Persist extracted life data (after extraction completes)
   extractedData.then((data) => {
@@ -601,6 +609,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
   // ===== STEP 4a: Classify Intent =====
   const intent = classifyIntent(input.message);
+  if (intent.type === "IDENTITY_EXPLORATION" || /\bwho am i\b/i.test(input.message)) {
+    trackProductEvent(input.userId, "who_am_i_asked").catch(() => {});
+  }
 
   // ===== STEP 4b: Load Context (parallel — extraction runs in BACKGROUND) =====
   const skipMemory = shouldSkipMemory(input.message, emotion);
@@ -785,6 +796,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
             metadata: { conversation_id: conversationId, state },
           }).catch(() => {});
         }
+
+        // Mentor memory + weakness tracking
+        ingestChatMentorSignal(serviceClient, input.userId, input.message).catch(() => {});
 
         // Extract and persist life data (background — fires after stream)
         const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));

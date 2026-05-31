@@ -55,6 +55,7 @@ function minimalBundle(initiativeCount: number): EvidenceBundle {
     focusDomain: "general",
     identitySignals: [],
     patterns: [],
+    mentorMemories: [],
     completedTasks7d: 0,
     reflections7d: 0,
     reflectionBlocks: [],

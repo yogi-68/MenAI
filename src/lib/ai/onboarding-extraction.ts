@@ -24,6 +24,7 @@ const QUESTION_EXTRACTORS: Record<string, (response: string, responseData: any) 
   Q1: extractDirectionAreas,
   Q1B: extractBusinessBuilding,
   Q2: extractInitialCommitment,
+  Q2STAGE: extractInitiativeStage,
   Q3: extractDeadlineFrame,
   Q4: extractObstaclePattern,
   Q5: extractCoachingStyle,
@@ -192,6 +193,33 @@ async function extractPlanningStyle(
   };
 
   return { supportStyle: styleMap[selected] || selected };
+}
+
+/** Q2STAGE: business stage for milestones */
+async function extractInitiativeStage(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const stage = responseData?.selected;
+  if (!stage) return {};
+  return {
+    commitments: [
+      {
+        description: `Initiative stage: ${stage}`,
+        category: "work",
+        timeframe: "ongoing",
+        confidence: 0.9,
+      },
+    ],
+  };
+}
+
+/** Q3: initiative name validation handled at finalize — store as commitment context */
+async function extractInitiativeName(
+  response: string,
+  _responseData: unknown
+): Promise<ExtractionResult> {
+  return extractInitialCommitment(response, _responseData);
 }
 
 /** Q1B: founder — what they're building */

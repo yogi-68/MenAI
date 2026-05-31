@@ -44,6 +44,18 @@ const GUIDANCE: Record<string, PatternGuidance> = {
     preferTasks: ["one task on current focus only", "defer everything else explicitly"],
     coachNote: "Scattered focus — only current focus initiative gets tasks today.",
   },
+  reactive_schedule: {
+    pattern: "reactive_schedule",
+    avoidTasks: ["schedule more meetings", "plan around calendar"],
+    preferTasks: ["protect 90-minute focus block tomorrow", "decline or shorten 1 meeting", "batch email/calls to one slot"],
+    coachNote: "Reactive calendar — protect deep work blocks; shrink meetings.",
+  },
+  distraction: {
+    pattern: "distraction",
+    avoidTasks: ["open social apps", "browse without purpose"],
+    preferTasks: ["phone in another room for 45 min", "one task with notifications off"],
+    coachNote: "Distraction — reduce friction to focus, not more willpower tasks.",
+  },
   burnout: {
     pattern: "burnout",
     avoidTasks: ["long grind sessions", "stack 5 hard tasks"],
@@ -53,17 +65,27 @@ const GUIDANCE: Record<string, PatternGuidance> = {
 };
 
 export function buildPatternGuidanceLines(
-  patterns: Array<{ pattern: string; behavioral_impact?: string | null; severity?: string | null }>
+  patterns: Array<{
+    pattern: string;
+    behavioral_impact?: string | null;
+    severity?: string | null;
+    confidence?: number | null;
+    occurrences?: number | null;
+  }>
 ): string[] {
   const lines: string[] = [];
   for (const p of patterns) {
     const g = GUIDANCE[p.pattern];
+    const stats =
+      p.confidence != null || p.occurrences != null
+        ? ` [confidence ${Math.round((p.confidence ?? 0.7) * 100)}%, mentions ${p.occurrences ?? 1}]`
+        : "";
     if (g) {
       lines.push(
-        `${g.pattern} (${p.severity || "medium"}): ${g.coachNote} AVOID: ${g.avoidTasks.join(", ")}. PREFER: ${g.preferTasks.join(", ")}.`
+        `${g.pattern}${stats} (${p.severity || "medium"}): ${g.coachNote} AVOID: ${g.avoidTasks.join(", ")}. PREFER: ${g.preferTasks.join(", ")}.`
       );
     } else if (p.behavioral_impact) {
-      lines.push(`${p.pattern}: ${p.behavioral_impact}`);
+      lines.push(`${p.pattern}${stats}: ${p.behavioral_impact}`);
     }
   }
   return lines;

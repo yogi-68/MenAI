@@ -48,7 +48,19 @@ export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
     id: "Q2",
     type: "text",
     prompt: "What are you actively trying to achieve in the next 30–90 days?",
-    subtitle: "Short initiative name — e.g. Launch MenAI Beta, Lose 5 kg, Pass UPSC prelims",
+    subtitle: "A concrete initiative — e.g. Launch MenAI Beta, Get 5 clients, Lose 5 kg. Not a vision like 'excel in life'.",
+  },
+  Q2STAGE: {
+    id: "Q2STAGE",
+    type: "forced_choice",
+    prompt: "What stage are you in?",
+    subtitle: "So milestones match where you actually are — not generic templates.",
+    options: [
+      { value: "exploring", label: "Just exploring" },
+      { value: "first_client", label: "Looking for first client" },
+      { value: "has_clients", label: "Already have clients" },
+      { value: "scaling", label: "Scaling" },
+    ],
   },
   Q3: {
     id: "Q3",
@@ -112,13 +124,22 @@ export type OnboardingResponseMap = Record<
   { response?: string | null; responseData?: { selected?: string | string[] } }
 >;
 
-/** Dynamic flow — Q1B only when Business selected */
+import { initiativeNeedsStage } from "@/lib/initiatives/concreteness-gate";
+
+/** Dynamic flow — Q1B when Business; Q2STAGE when business/finance initiative */
 export function buildQuestionFlow(responses: OnboardingResponseMap = {}): string[] {
   const q1 = responses.Q1?.responseData?.selected;
   const areas = Array.isArray(q1) ? q1 : q1 ? [q1] : [];
+  const q2Text = responses.Q2?.response || "";
   const flow: string[] = ["Q1"];
   if (areas.includes("business")) flow.push("Q1B");
-  flow.push("Q2", "Q3", "Q4", "Q5", "Q6", "Q7");
+  flow.push("Q2");
+  const needsStage =
+    areas.includes("business") ||
+    areas.includes("finance") ||
+    initiativeNeedsStage(q2Text, areas.includes("business") ? "business" : null);
+  if (needsStage && q2Text.trim().length > 0) flow.push("Q2STAGE");
+  flow.push("Q3", "Q4", "Q5", "Q6", "Q7");
   return flow;
 }
 

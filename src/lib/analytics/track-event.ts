@@ -10,7 +10,8 @@ export type ProductEventName =
   | "daily_return"
   | "suggestion_shown"
   | "suggestion_accepted"
-  | "suggestion_dismissed";
+  | "suggestion_dismissed"
+  | "who_am_i_asked";
 
 /** Server-side product analytics — invisible to regular users. */
 export async function trackProductEvent(

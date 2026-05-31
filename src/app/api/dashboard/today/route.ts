@@ -22,8 +22,11 @@ export async function GET() {
 
   const today = new Date().toISOString().split("T")[0];
   const hour = new Date().getHours();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-  const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel] =
+  const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel, yesterdayTasksRes] =
     await Promise.all([
       supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
       supabase
@@ -46,6 +49,12 @@ export async function GET() {
         .maybeSingle(),
       buildCognitiveState(user.id),
       getUserModel(supabase, user.id),
+      supabase
+        .from("tasks")
+        .select("id, title, status, due_date, completed_at, auto_generated")
+        .eq("user_id", user.id)
+        .gte("due_date", yesterdayStr)
+        .lte("due_date", yesterdayStr),
     ]);
 
   const planContent = planRes.data?.plan_content as {
@@ -98,6 +107,13 @@ export async function GET() {
         }
       : null;
 
+  const yesterdayTasks = yesterdayTasksRes.data || [];
+  const yesterdayCompleted = yesterdayTasks.filter((t) => t.status === "completed");
+  const yesterdayWin =
+    yesterdayCompleted.find((t) => !t.auto_generated)?.title ||
+    yesterdayCompleted[0]?.title ||
+    null;
+
   const personalBriefing = buildPersonalBriefing({
     model: userModel,
     hour,
@@ -106,6 +122,9 @@ export async function GET() {
     completedToday,
     totalToday: planTaskCount || focusTasks.length + completedToday,
     firstName,
+    yesterdayCompleted: yesterdayCompleted.length,
+    yesterdayTotal: yesterdayTasks.length,
+    yesterdayWin,
   });
 
   return NextResponse.json({

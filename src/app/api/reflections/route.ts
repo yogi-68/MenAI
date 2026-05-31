@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
+import { ingestReflectionSignals } from "@/lib/mentor/reflection-extraction";
+import { runMemoryMaintenance } from "@/lib/mentor/memory-aging";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 export async function GET(req: NextRequest) {
@@ -64,5 +66,13 @@ export async function POST(req: NextRequest) {
   scheduleUserModelRefresh(supabase, user.id);
   trackProductEventOnce(user.id, "reflection_submitted").catch(() => {});
   trackProductEvent(user.id, "reflection_submitted", { date }).catch(() => {});
+
+  await runMemoryMaintenance(supabase, user.id);
+  await ingestReflectionSignals(supabase, user.id, {
+    movedForward: movedForward.trim(),
+    blockedBy: blockedBy.trim(),
+    tomorrowContext: tomorrowContext.trim(),
+  });
+
   return NextResponse.json({ reflection: data }, { status: 201 });
 }

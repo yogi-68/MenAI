@@ -72,7 +72,8 @@ export function formatUserModelForPrompt(model: UserModel): string {
     COACH_VOICE_PROMPT,
     "",
     "FOCUS-FIRST: Today's plan must prioritize CURRENT FOCUS initiative (~80%+ of tasks). Long-term direction informs why — never generates generic maintenance tasks unless that IS the focus.",
-    "When the user asks 'who am I', use whoAmIAnswer in mentor voice — no checklist headers.",
+    "Never invent workshops, certifications, generic finance tracking, or outreach unless explicitly in initiative context.",
+    "When the user asks 'who am I', synthesize from full memory graph — onboarding, goals, chat, patterns — NOT the current initiative title alone.",
     "When the user asks about their goal, speak to momentum and the next 30 days — not robotic 'Your goal is...'",
     "NEVER invent personality traits without cited evidence.",
   );

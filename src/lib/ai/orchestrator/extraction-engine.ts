@@ -44,6 +44,12 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
  * Includes confidence scoring — low-confidence items are filtered out.
  */
 export async function extractLifeData(message: string): Promise<ExtractedLifeData> {
+  const lifeAreaHit = extractLifeAreaInterest(message);
+  if (lifeAreaHit) {
+    console.log("[Extraction] Life area interest (fast path):", lifeAreaHit.identitySignals[0]?.description);
+    return lifeAreaHit;
+  }
+
   // Skip extraction for very short or casual messages
   if (shouldSkipExtraction(message)) {
     console.log("[Extraction] Skipped:", message.slice(0, 50));
@@ -181,6 +187,45 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
     console.error("[Extraction] Error:", e);
     return EMPTY_EXTRACTION;
   }
+}
+
+/**
+ * Fast path: "I am also into fitness" → life area memory (not a task suggestion).
+ */
+function extractLifeAreaInterest(message: string): ExtractedLifeData | null {
+  const lower = message.trim().toLowerCase();
+  const patterns: Array<{ re: RegExp; label: string; direction: string; category: ExtractedLifeData["goals"][0]["category"] }> = [
+    { re: /\b(also |really )?(into|interested in|care about|focus on|working on|love)\s+(fitness|gym|workouts?|training)\b/, label: "Fitness", direction: "Physical health and fitness", category: "fitness" },
+    { re: /\b(also |really )?(into|interested in|care about|focus on|working on)\s+(business|startups?|saas|building)\b/, label: "Business building", direction: "Building a business", category: "startup" },
+    { re: /\b(also |really )?(into|interested in|care about|focus on|working on)\s+(investing|finance|money|wealth|income)\b/, label: "Wealth and income", direction: "Financial freedom and wealth", category: "financial" },
+    { re: /\b(also |really )?(into|interested in|care about|focus on|studying)\s+(learning|study|exams?|upsc|coding)\b/, label: "Learning", direction: "Learning and skill building", category: "learning" },
+    { re: /\b(also |really )?(into|interested in|care about)\s+(health|nutrition|eating well)\b/, label: "Health", direction: "Health and nutrition", category: "health" },
+  ];
+
+  for (const p of patterns) {
+    if (!p.re.test(lower)) continue;
+    return {
+      ...EMPTY_EXTRACTION,
+      goals: [
+        {
+          title: p.label,
+          category: p.category,
+          priority: "medium",
+          confidence: 0.88,
+          description: `Mentioned in chat: ${message.trim().slice(0, 120)}`,
+        },
+      ],
+      identitySignals: [
+        {
+          type: "other",
+          description: p.label,
+          longTermDirection: p.direction,
+          confidence: 0.9,
+        },
+      ],
+    };
+  }
+  return null;
 }
 
 /**

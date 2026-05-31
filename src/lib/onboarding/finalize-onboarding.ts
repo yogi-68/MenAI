@@ -8,7 +8,9 @@ import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator
 import { cancelLegacyDirectionTasks } from "@/lib/plans/legacy-task-cleanup";
 import { ensureTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
-import { normalizeInitiativeTitle } from "@/lib/initiatives/title-quality";
+import { assessInitiativeQuality } from "@/lib/initiatives/initiative-quality-gate";
+import { normalizeWeights } from "@/lib/plans/life-area-balancer";
+import type { InitiativeStage } from "@/lib/plans/milestone-generator";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 
 interface StoredResponse {
@@ -74,9 +76,13 @@ export async function finalizeOnboarding(
   const q1 = byId.get("Q1")?.response_data?.selected;
   const directionAreas = Array.isArray(q1) ? q1 : q1 ? [q1] : [];
   const buildingWhat = (byId.get("Q1B")?.response_text || "").trim();
-  const initiativeTitle = normalizeInitiativeTitle(
-    (byId.get("Q2")?.response_text || "").trim()
-  );
+  const rawInitiative = (byId.get("Q2")?.response_text || "").trim();
+  const initiativeStage = String(byId.get("Q2STAGE")?.response_data?.selected || "") as InitiativeStage;
+  const assessment = assessInitiativeQuality(rawInitiative, {
+    directions: directionAreas,
+    buildingWhat: buildingWhat || null,
+  });
+  const initiativeTitle = assessment.valid && !assessment.needsSharpening ? assessment.title : "";
   const targetDate = resolveTargetDate(byId.get("Q3"));
   const obstacle = String(byId.get("Q4")?.response_data?.selected || "");
   const coachingStyle = String(byId.get("Q5")?.response_data?.selected || "balanced");
@@ -118,6 +124,19 @@ export async function finalizeOnboarding(
     });
   }
 
+  if (!assessment.valid && rawInitiative) {
+    await supabase.from("goals").insert({
+      user_id: userId,
+      title: assessment.title.slice(0, 120),
+      category: "personal",
+      priority: "medium",
+      status: "active",
+      source: "onboarding_vision",
+      description: "Direction captured — needs a concrete initiative before planning.",
+    });
+    goalsCreated += 1;
+  }
+
   const patternMeta = OBSTACLE_PATTERN_MAP[obstacle];
   if (patternMeta) {
     const { data: existingPattern } = await supabase
@@ -152,6 +171,15 @@ export async function finalizeOnboarding(
     profileUpdate.vision = `Building: ${buildingWhat}`;
   }
 
+  const areaWeights: Record<string, number> = {};
+  for (const area of directionAreas) {
+    const mapped = DIRECTION_AREA_MAP[area];
+    if (mapped) areaWeights[mapped.lifeArea] = (areaWeights[mapped.lifeArea] ?? 0) + 1;
+  }
+  if (Object.keys(areaWeights).length > 0) {
+    profileUpdate.life_area_weights = normalizeWeights(areaWeights);
+  }
+
   await supabase.from("profiles").update(profileUpdate).eq("id", userId);
 
   let initiativeId: string | null = null;
@@ -174,6 +202,7 @@ export async function finalizeOnboarding(
           title: initiativeTitle,
           description,
           success_criteria: successCriteria || null,
+          initiative_stage: initiativeStage || null,
           target_date: targetDate,
           life_area: lifeArea,
           status: "active",
@@ -189,7 +218,9 @@ export async function finalizeOnboarding(
           created.id,
           created.title,
           successCriteria || description,
-          lifeArea
+          lifeArea,
+          false,
+          (initiativeStage as InitiativeStage) || null
         );
 
         await supabase

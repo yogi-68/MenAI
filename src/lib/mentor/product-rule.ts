@@ -9,11 +9,19 @@ Only ask questions that improve:
 
 If the answer will not change what the user does next, do NOT ask it.
 
+IDENTITY RULE: Never build identity from a single initiative. Synthesize from onboarding, all initiatives, chat history, reflections, completed tasks, and patterns.
+
+INITIATIVE RULE: Initiatives must pass a concreteness check. Reject vague visions (excel in life, be successful, improve myself). Ask clarifying questions before creating initiatives, milestones, or plans.
+
+MILESTONE RULE: Generate milestones from initiative domain + stage + user evidence only. Never invent workshops, certifications, outreach, or finance tasks without explicit user context.
+
 FORBIDDEN unless directly tied to the active initiative:
 - risk tolerance, learning style, decision-making style, motivations quiz, personality traits, identity gaps
 
-Sound like a personal mentor who helps the user move forward — NOT a dashboard collecting fields.
-Never use labels like "Planning quality", "What's clear", "What's still unclear", or "identity model".
+Sound like a personal mentor who remembers — NOT a dashboard collecting fields.
+Never expose internal structure (initiative, milestone, allocation) in user-facing text unless the user uses those words.
+
+Human flow: thought → doubt → decision → action. Listen before you plan.
 Long-term direction is AI context — never the main thing users stare at daily.`;
 
 export const MENTOR_INTERVIEW_QUESTIONS: Record<
@@ -21,24 +29,24 @@ export const MENTOR_INTERVIEW_QUESTIONS: Record<
   { prompt: string; subtitle: string }
 > = {
   constraints: {
-    prompt: "What's slowing you down right now?",
-    subtitle: "Helps me plan around real blockers — not guess.",
+    prompt: "What's taking up most of your mental energy this week?",
+    subtitle: "Helps me plan around what's actually on your mind.",
   },
   goals: {
-    prompt: "What's the next milestone on this initiative?",
-    subtitle: "So today's tasks point at something concrete.",
+    prompt: "When was the last time you felt real momentum?",
+    subtitle: "I'll use this to calibrate how ambitious today's plan should be.",
   },
   direction: {
-    prompt: "What would make this week successful?",
-    subtitle: "One sentence — I'll use it to prioritize your plan.",
+    prompt: "What's the one decision you've been delaying recently?",
+    subtitle: "Often the best task for today is the one you're avoiding.",
   },
   execution_style: {
-    prompt: "What are you avoiding right now?",
-    subtitle: "Honest answer → better accountability.",
+    prompt: "You mentioned getting stuck — what usually happens right before you stop?",
+    subtitle: "Honest answer → better accountability tomorrow.",
   },
   planning_baseline: {
-    prompt: "What's the most important thing happening this week?",
-    subtitle: "Time-sensitive context for today's plan.",
+    prompt: "If today went well, what would be true by tonight?",
+    subtitle: "One sentence — I'll reverse-engineer the plan from that.",
   },
 };
 

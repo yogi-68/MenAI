@@ -3,6 +3,8 @@ import { detectDomain, type CoachDomain } from "@/lib/plans/coach-insights";
 import { loadExecutionContext } from "@/lib/user-model/resolve-context";
 import { loadPlanContextData } from "@/lib/plans/plan-interview";
 import type { IdentityProfileStore } from "@/lib/user-model/identity-dimensions";
+import { loadMentorMemories } from "@/lib/mentor/mentor-memory";
+import { runMemoryMaintenance } from "@/lib/mentor/memory-aging";
 
 export interface EvidenceBundle {
   vision: string | null;
@@ -21,7 +23,20 @@ export interface EvidenceBundle {
   focusTitle: string | null;
   focusDomain: CoachDomain;
   identitySignals: Array<{ description: string; long_term_direction: string | null }>;
-  patterns: Array<{ pattern: string; behavioral_impact: string | null }>;
+  patterns: Array<{
+    pattern: string;
+    behavioral_impact: string | null;
+    confidence?: number | null;
+    occurrences?: number | null;
+  }>;
+  mentorMemories: Array<{
+    memoryType: string;
+    text: string;
+    confidence: number;
+    effectiveConfidence: number;
+    mentionCount: number;
+    lastMentionedAt: string | null;
+  }>;
   completedTasks7d: number;
   reflections7d: number;
   reflectionBlocks: string[];
@@ -41,7 +56,9 @@ export async function buildEvidenceBundle(
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [profileRes, patternsRes, reflectionsRes] = await Promise.all([
+  await runMemoryMaintenance(supabase, userId).catch(() => {});
+
+  const [profileRes, patternsRes, mentorMemories, reflectionsRes] = await Promise.all([
     supabase
       .from("profiles")
       .select("work_style, founder_mode")
@@ -49,9 +66,12 @@ export async function buildEvidenceBundle(
       .maybeSingle(),
     supabase
       .from("execution_patterns")
-      .select("pattern, behavioral_impact")
+      .select("pattern, behavioral_impact, confidence, occurrences")
       .eq("user_id", userId)
-      .limit(5),
+      .eq("status", "active")
+      .order("occurrences", { ascending: false })
+      .limit(6),
+    loadMentorMemories(supabase, userId, 10),
     supabase
       .from("daily_reflections")
       .select("blocked_by")
@@ -91,6 +111,7 @@ export async function buildEvidenceBundle(
       : "general",
     identitySignals: ctx.identitySignals,
     patterns: patternsRes.data || [],
+    mentorMemories,
     completedTasks7d: ctx.completedTasks7d,
     reflections7d: ctx.reflections7d,
     reflectionBlocks: (reflectionsRes.data || [])
@@ -111,7 +132,8 @@ export function formatEvidenceBundleForPrompt(bundle: EvidenceBundle): string {
     `Active initiatives (${bundle.initiatives.length}): ${bundle.initiatives.map((i) => `${i.title} [${i.domain}]`).join("; ") || "none"}`,
     `Current focus: ${bundle.focusTitle || "unset"}`,
     `Identity signals: ${bundle.identitySignals.map((s) => s.long_term_direction || s.description).join("; ") || "none"}`,
-    `Execution patterns (observed): ${bundle.patterns.map((p) => p.pattern).join("; ") || "none"}`,
+    `Execution patterns (observed): ${bundle.patterns.map((p) => `${p.pattern} (${p.occurrences ?? 1} mentions)`).join("; ") || "none"}`,
+    `Thoughts & beliefs: ${bundle.mentorMemories.map((m) => `[${m.memoryType}] ${m.text}`).join("; ") || "none"}`,
     `Tasks completed (7d): ${bundle.completedTasks7d}`,
     `Reflections (7d): ${bundle.reflections7d}`,
     `Reflection blockers: ${bundle.reflectionBlocks.join("; ") || "none"}`,

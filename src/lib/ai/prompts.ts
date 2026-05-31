@@ -313,12 +313,9 @@ Extraction Rules:
    - "I'll wake up at 6am tomorrow" → {description: "Wake up at 6am", category: "personal", timeframe: "today", confidence: 0.95}
    - "I'm going to finish the landing page" → {description: "Finish landing page", category: "work", timeframe: "this_week", confidence: 0.90}
 
-3. IDENTITY SIGNALS - who they want to become (NEW)
-   Extract ONLY when user expresses identity ambition — NOT from having a project.
-   - Do NOT set type "founder" for exam prep, fitness, weight loss, or career goals
-   - "Building AI SaaS" → project/initiative only; founder identity ONLY if they say entrepreneur/founder/startup
-   - "Preparing for UPSC" → learning identity or omit; NEVER founder
-   - "Lose 10kg" → health project; NEVER founder
+3. IDENTITY SIGNALS — life areas and direction from chat (NOT projects).
+   - "I am also into fitness" → identitySignals: {type: "other", description: "Fitness", longTermDirection: "Physical health and fitness", confidence: 0.9} AND goal direction only — do NOT suggest tasks in extraction
+   - Life area interests update memory for future planning — never auto-create initiatives from casual mentions
 
 4. EXECUTION PATTERNS - behavioral patterns affecting execution (NEW)
    Extract when user describes:

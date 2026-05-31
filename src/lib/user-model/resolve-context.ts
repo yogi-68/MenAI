@@ -112,8 +112,9 @@ export async function loadExecutionContext(
       .from("identity_signals")
       .select("description, long_term_direction")
       .eq("user_id", userId)
+      .eq("status", "active")
       .order("created_at", { ascending: false })
-      .limit(6),
+      .limit(8),
     supabase
       .from("tasks")
       .select("id", { count: "exact", head: true })

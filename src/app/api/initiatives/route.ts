@@ -7,6 +7,7 @@ import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
 import { MAX_ACTIVE_INITIATIVES } from "@/lib/product/constants";
 import { validateInitiativeTitle } from "@/lib/initiatives/title-quality";
+import { assessInitiativeQuality } from "@/lib/initiatives/initiative-quality-gate";
 import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 
 async function invalidatePlanForUser(userId: string) {
@@ -52,9 +53,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  const titleCheck = validateInitiativeTitle(title.trim());
+  const titleCheck = assessInitiativeQuality(title.trim());
   if (!titleCheck.valid) {
-    return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: titleCheck.message,
+        kind: titleCheck.kind,
+        suggestions: titleCheck.suggestions,
+      },
+      { status: 400 }
+    );
+  }
+  if (titleCheck.needsSharpening) {
+    return NextResponse.json(
+      {
+        error: titleCheck.message,
+        needsSharpening: true,
+        sharpenPrompt: titleCheck.sharpenPrompt,
+        sharpenOptions: titleCheck.sharpenOptions,
+      },
+      { status: 422 }
+    );
   }
   if (!targetDate) {
     return NextResponse.json(
@@ -109,9 +128,23 @@ export async function PATCH(req: NextRequest) {
 
   const mapped: Record<string, unknown> = {};
   if (updates.title !== undefined) {
-    const titleCheck = validateInitiativeTitle(String(updates.title).trim());
+    const titleCheck = assessInitiativeQuality(String(updates.title).trim());
     if (!titleCheck.valid) {
-      return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+      return NextResponse.json(
+        { error: titleCheck.message, suggestions: titleCheck.suggestions },
+        { status: 400 }
+      );
+    }
+    if (titleCheck.needsSharpening) {
+      return NextResponse.json(
+        {
+          error: titleCheck.message,
+          needsSharpening: true,
+          sharpenPrompt: titleCheck.sharpenPrompt,
+          sharpenOptions: titleCheck.sharpenOptions,
+        },
+        { status: 422 }
+      );
     }
     mapped.title = titleCheck.title;
   }
@@ -121,6 +154,7 @@ export async function PATCH(req: NextRequest) {
   if (updates.lifeArea !== undefined) mapped.life_area = updates.lifeArea;
   if (updates.status !== undefined) mapped.status = updates.status;
   if (updates.progress !== undefined) mapped.progress = updates.progress;
+  if (updates.initiativeStage !== undefined) mapped.initiative_stage = updates.initiativeStage;
 
   if (updates.status === "active") {
     const { data: current } = await supabase

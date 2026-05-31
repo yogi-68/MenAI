@@ -52,6 +52,7 @@ export function selectModel(params: {
   if (
     state === "FOUNDER_COACHING" ||
     state === "STRATEGIC_THINKING" ||
+    state === "WISDOM_FIRST" ||
     state === "ESCALATION"
   ) {
     return MODELS.premium;

@@ -14,6 +14,7 @@ interface TodayPayload {
   personalBriefing?: {
     phase: "morning" | "afternoon" | "evening";
     headline: string;
+    companionLine: string | null;
     todaysFocus: string | null;
     mostImportantTask: string | null;
     watchOut: string | null;
@@ -148,6 +149,11 @@ export default function DashboardOverview() {
         </h1>
         {!isLoading && data?.personalBriefing && data.hasInitiatives && (
           <div style={{ marginTop: "16px", maxWidth: 640, lineHeight: 1.7 }}>
+            {data.personalBriefing.companionLine && (
+              <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", margin: "0 0 16px", fontStyle: "italic" }}>
+                {data.personalBriefing.companionLine}
+              </p>
+            )}
             {data.personalBriefing.todaysFocus && (
               <p style={{ color: "var(--text-primary)", fontSize: "1.05rem", margin: "0 0 8px" }}>
                 <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Today&apos;s focus: </span>

@@ -139,7 +139,16 @@ export function determineState(params: {
     return "ESCALATION";
   }
 
-
+  // WISDOM_FIRST — exhaustion, doubt, overwhelm (before planning or goal push)
+  if (
+    intent?.type === "BURNOUT_SIGNAL" ||
+    intent?.type === "EXECUTION_BLOCK" ||
+    /\b(exhausted|burnt out|burned out|drained|depleted|no energy|overwhelm|doubt myself|lost motivation|what's the point)\b/i.test(
+      lower
+    )
+  ) {
+    return "WISDOM_FIRST";
+  }
 
   // PLANNING: User wants to plan their day/week/execution
   // BUT: Only route to PLANNING if we have enough context
@@ -420,6 +429,29 @@ Examples:
   "You shipped the MVP. That's not nothing — that's the hardest step in the entire product lifecycle."
   "Four days consistent on the morning routine. Notice how your afternoon focus has improved? That's the compound effect."
   "You did 3 out of 5 tasks. The two you missed — were they actually important, or can we drop them?"`,
+
+    WISDOM_FIRST: `They're exhausted, doubting, or overwhelmed. WISDOM before tasks.
+
+This is the most important mode for retention. Do NOT sound like software.
+
+FORBIDDEN:
+- "Let's complete your milestone"
+- "Here's what you should do today"
+- Listing tasks or initiatives before understanding their state
+
+REQUIRED:
+1. Acknowledge what they've been carrying (reference recent effort if you know it)
+2. Interpret gently — tired from pushing vs tired from wrong direction vs loss of meaning
+3. Ask ONE question to distinguish: physical tiredness vs mental overload vs loss of motivation
+4. Only suggest action if they want it — and make it small
+
+Example (exhaustion):
+  "You've been pushing hard recently. Before we change the plan — tell me whether this is physical tiredness, mental overload, or loss of motivation. Those need different responses."
+
+Example (doubt):
+  "Doubt usually shows up right before something matters. What specifically are you doubting — your ability, the direction, or whether it's worth it?"
+
+Keep sentences human. 3-5 sentences max. No checklist headers.`,
 
     ESCALATION: `This person may be in danger. Be steady. Be real. Don't perform.
 - Express genuine concern in plain words

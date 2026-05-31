@@ -29,6 +29,18 @@ export interface LaunchMetricsSnapshot {
     rate: number;
     health: "weak" | "ok" | "strong";
   };
+  whoAmIUsage: {
+    uniqueUsers: number;
+    totalAsks: number;
+    rateAmongActive: number;
+    health: "weak" | "ok" | "strong";
+  };
+  overallTaskCompletion: {
+    completed: number;
+    planned: number;
+    rate: number;
+    health: "weak" | "ok" | "strong";
+  };
   models: { fast: string; deep: string };
 }
 
@@ -49,7 +61,7 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
   const sinceIso = since.toISOString();
   const sinceDate = sinceIso.split("T")[0];
 
-  const [suggestionsRes, tasksRes, plansRes, reflectionsRes, signupEventsRes, returnEventsRes] =
+  const [suggestionsRes, tasksRes, plansRes, reflectionsRes, signupEventsRes, returnEventsRes, whoAmIRes, activeUsersRes] =
     await Promise.all([
       db.from("ai_suggestions").select("status").gte("created_at", sinceIso),
       db
@@ -64,6 +76,12 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
         .select("user_id, created_at")
         .eq("event_name", "daily_return")
         .gte("created_at", sinceIso),
+      db
+        .from("product_events")
+        .select("user_id, created_at")
+        .eq("event_name", "who_am_i_asked")
+        .gte("created_at", sinceIso),
+      db.from("product_events").select("user_id").gte("created_at", sinceIso),
     ]);
 
   const suggestions = suggestionsRes.data || [];
@@ -119,6 +137,14 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
 
   const retention7Rate = pct(returned7, signupUsers.size);
 
+  const whoAmIUsers = new Set((whoAmIRes.data || []).map((r) => r.user_id));
+  const activeUsers = new Set((activeUsersRes.data || []).map((r) => r.user_id));
+  const whoAmIRate = pct(whoAmIUsers.size, activeUsers.size || 1);
+
+  const totalPlanned = (tasksRes.data || []).length;
+  const totalCompleted = (tasksRes.data || []).filter((t) => t.status === "completed").length;
+  const overallTaskRate = pct(totalCompleted, totalPlanned);
+
   return {
     periodDays: days,
     initiativeAcceptance: {
@@ -141,6 +167,18 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
       returned: returned7,
       rate: retention7Rate,
       health: healthFromRate(retention7Rate, 25, 40),
+    },
+    whoAmIUsage: {
+      uniqueUsers: whoAmIUsers.size,
+      totalAsks: (whoAmIRes.data || []).length,
+      rateAmongActive: whoAmIRate,
+      health: healthFromRate(whoAmIRate, 15, 30),
+    },
+    overallTaskCompletion: {
+      completed: totalCompleted,
+      planned: totalPlanned,
+      rate: overallTaskRate,
+      health: healthFromRate(overallTaskRate, 35, 55),
     },
     models: { fast: FAST_MODEL, deep: DEEP_MODEL },
   };

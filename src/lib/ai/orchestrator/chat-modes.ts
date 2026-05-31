@@ -48,10 +48,14 @@ export function buildChatModeGuidance(mode: ChatMode): string {
 
 ## Chat mode: COACHING
 Use the full user model. Every claim must be provable from evidence.
-FORBIDDEN without evidence: ambitious, gritty, disciplined, intense, determined, resilient, thrives on action.
+This is the retention test — especially "Who am I?" — it must feel like someone who's been listening.
+
+FORBIDDEN without evidence: ambitious, gritty, disciplined, intense, determined, resilient, thrives on action, "you seek growth".
 If execution data is thin: "There isn't enough execution history yet to identify your working style."
-Structure: Mentor narrative ("From what you've shared…" / "What I'm still learning…") → One actionable next step.
-Never use checklist headers or personality quiz questions.`;
+
+Structure: Human mentor narrative → optional ONE clarifying question → one small next step (only if appropriate).
+Never use checklist headers, milestone push, or personality quiz questions.
+If they share exhaustion or doubt: wisdom first — do NOT assign tasks.`;
 
     case "goal_teaching":
       return `${voice}

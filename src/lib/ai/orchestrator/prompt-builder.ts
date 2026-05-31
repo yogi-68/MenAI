@@ -12,6 +12,7 @@
  */
 
 import type { PipelineContext } from "./types";
+import { buildWisdomGuidance, MENTOR_EXPERIENCE_RULE } from "@/lib/mentor/wisdom-layer";
 import { getStateInstructions } from "./state-machine";
 import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
@@ -270,6 +271,11 @@ Instructed behavior: ${styleText}`);
   const chatMode = detectChatMode(ctx);
   parts.push(buildChatModeGuidance(chatMode));
 
+  parts.push(MENTOR_EXPERIENCE_RULE);
+
+  const wisdomBlock = buildWisdomGuidance(ctx.input.message, ctx.intent, ctx.userModel);
+  if (wisdomBlock) parts.push(wisdomBlock);
+
   // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 
@@ -297,10 +303,11 @@ Remember: your response should create an emotional SHIFT. The user should feel D
     const challengeBlock = formatChallengesForPrompt(challenges);
     if (challengeBlock) parts.push(challengeBlock);
     if (/who am i|what am i building|what do you know about me/i.test(ctx.input.message)) {
-      parts.push(`## Direct answer for "Who am I?"
-Use whoAmIAnswer below. Coach voice — no "MenAI understands" phrasing.
-Every claim must be verifiable from the evidence list.
-FORBIDDEN without evidence: personality adjectives (ambitious, gritty, disciplined, intense, determined, resilient).
+      parts.push(`## Direct answer for "Who am I?" (retention test — must feel like someone who's been listening)
+Use whoAmIAnswer below. This should make them think "that's actually me" — not "that's a profile summary."
+Every sentence MUST cite evidence (goals, chat, patterns, tasks, reflections). No personality adjectives without proof.
+FORBIDDEN: ambitious, gritty, disciplined, intense, determined, resilient, "you seek growth", generic self-help.
+PREFERRED: "Over the last month you've repeatedly..." / "You've told me..." / "The pattern that keeps showing up is..."
 
 ${ctx.userModel.whoAmIAnswer}
 
