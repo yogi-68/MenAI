@@ -50,7 +50,7 @@ export default function LandingPage() {
     <div className="landing">
       <nav className="landing-nav">
         <Link href="/" className="landing-brand">
-          <Image src="/logo.png" alt="MenAI" width={36} height={36} className="landing-logo" />
+          <Image src="/logo.png" alt="MenAI" width={36} height={36} className="landing-logo" priority />
           <div>
             <span className="landing-brand-name">MenAI</span>
             <span className="landing-brand-tag">EXECUTION OS</span>

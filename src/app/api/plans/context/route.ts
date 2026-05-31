@@ -17,7 +17,7 @@ export async function GET() {
     }
 
     const input = await buildDimensionInput(supabase, user.id);
-    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason, planningGaps } =
+    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason, identityCoverage, overallCoverage } =
       await getPlanContextState(supabase, user.id);
 
     return NextResponse.json({
@@ -36,7 +36,8 @@ export async function GET() {
       nextQuestion,
       biggestUnknown,
       stopReason,
-      planningGaps,
+      identityCoverage,
+      overallCoverage,
     });
   } catch (error) {
     console.error("Plan context error:", error);

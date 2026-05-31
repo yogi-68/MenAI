@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  classifyAuthError,
+  getAuthErrorMessage,
+  type AuthErrorKind,
+} from "@/lib/auth/auth-errors";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -13,18 +18,58 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [errorKind, setErrorKind] = useState<AuthErrorKind | null>(null);
+  const [resendSent, setResendSent] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "auth_failed") {
+      setError("Google sign-in didn't complete. Try again or use email and password.");
+    }
+  }, []);
+
+  const handleResendConfirmation = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Enter your email above, then resend the confirmation link.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { error: resendError } = await supabase.auth.resend({
+      type: "signup",
+      email: trimmedEmail,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+      },
+    });
+    setLoading(false);
+    if (resendError) {
+      setError(resendError.message);
+      return;
+    }
+    setResendSent(true);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setErrorKind(null);
+    setResendSent(false);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const trimmedEmail = email.trim();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password,
+    });
 
     if (error) {
-      setError(error.message);
+      const kind = classifyAuthError(error);
+      setErrorKind(kind);
+      setError(getAuthErrorMessage(kind));
       setLoading(false);
       return;
     }
@@ -77,7 +122,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} />
+            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} priority />
             <span
               style={{
                 fontSize: "1.5rem",
@@ -164,6 +209,47 @@ export default function LoginPage() {
                 }}
               >
                 {error}
+                {errorKind === "email_not_confirmed" && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={loading}
+                    style={{
+                      display: "block",
+                      marginTop: "10px",
+                      background: "none",
+                      border: "none",
+                      color: "var(--accent-primary)",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      padding: 0,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    {resendSent ? "Confirmation email sent" : "Resend confirmation email"}
+                  </button>
+                )}
+                {errorKind === "invalid_credentials" && (
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    style={{
+                      display: "block",
+                      marginTop: "10px",
+                      background: "none",
+                      border: "none",
+                      color: "var(--accent-primary)",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: 600,
+                      padding: 0,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Sign in with Google instead
+                  </button>
+                )}
               </div>
             )}
 

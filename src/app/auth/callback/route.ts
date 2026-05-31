@@ -6,6 +6,9 @@ import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
+  const next = searchParams.get("next");
+  const safeNext =
+    next && next.startsWith("/") && !next.startsWith("//") ? next : null;
 
   if (code) {
     const cookieStore = await cookies();
@@ -32,9 +35,9 @@ export async function GET(request: Request) {
       const setup = await ensureUserSetup(data.user);
 
       if (setup.onboardingCompleted) {
-        return NextResponse.redirect(`${origin}/dashboard`);
+        return NextResponse.redirect(`${origin}${safeNext ?? "/dashboard"}`);
       }
-      return NextResponse.redirect(`${origin}/onboarding`);
+      return NextResponse.redirect(`${origin}${safeNext ?? "/onboarding"}`);
     }
   }
 

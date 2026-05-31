@@ -150,14 +150,6 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
         inputType: "number",
         why: "Determines how to split cardio, strength, and recovery in your weekly plan.",
       });
-    if (!has("weeklyAvailableHours"))
-      missing.push({
-        id: "weeklyAvailableHours",
-        label: "Available time",
-        question: "How many hours per week can you spend on fitness?",
-        inputType: "number",
-        why: "Keeps daily tasks realistic for your schedule.",
-      });
   } else if (domain === "business") {
     if (!has("currentMetric") && /user|customer|revenue|mrr/i.test(text))
       missing.push({

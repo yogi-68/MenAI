@@ -15,18 +15,7 @@ export function createClient() {
 
   browserClient = createBrowserClient(
     supabaseUrl || "https://placeholder.supabase.co",
-    supabaseAnonKey || "placeholder",
-    {
-      global: {
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-      },
-      db: {
-        schema: "public",
-      },
-    }
+    supabaseAnonKey || "placeholder"
   );
 
   return browserClient;

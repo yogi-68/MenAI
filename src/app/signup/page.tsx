@@ -161,7 +161,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} />
+            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} priority />
             <span
               style={{
                 fontSize: "1.5rem",
