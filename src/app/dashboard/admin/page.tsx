@@ -129,6 +129,26 @@ export default function AdminMonitoringPage() {
             )}
           </section>
 
+          {data.claimQuality && (
+            <section className="glass-card" style={{ padding: "24px" }}>
+              <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "16px" }}>
+                Coaching claim quality (chat, this month)
+              </h2>
+              {data.claimQuality.chatResponsesScored > 0 ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px" }}>
+                  <StatCard icon={Target} label="Verified" value={`${data.claimQuality.percentages.verified}%`} sub={`${data.claimQuality.verified} sentences`} />
+                  <StatCard icon={TrendingUp} label="Inferred" value={`${data.claimQuality.percentages.inferred}%`} sub={`${data.claimQuality.inferred} sentences`} />
+                  <StatCard icon={Activity} label="Unknown" value={`${data.claimQuality.percentages.unknown}%`} sub={`${data.claimQuality.unknown} sentences`} />
+                  <StatCard icon={AlertTriangle} label="Unsupported" value={`${data.claimQuality.percentages.unsupported}%`} sub={`${data.claimQuality.unsupported} sentences — target 0%`} />
+                </div>
+              ) : (
+                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>
+                  No scored chat responses yet. Scores appear after users chat post-deploy.
+                </p>
+              )}
+            </section>
+          )}
+
           <section className="glass-card" style={{ padding: "24px" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "16px" }}>
               Product funnel (30 days)

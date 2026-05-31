@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { aggregateClaimQuality, type ClaimQualityScore } from "@/lib/ai/claim-quality";
 
 export interface AdminMonitoringSnapshot {
   period: { today: string; monthStart: string };
@@ -35,6 +36,19 @@ export interface AdminMonitoringSnapshot {
   chatPerformance: {
     today: { calls: number; avgTtftMs: number | null; avgDurationMs: number | null; interrupted: number };
     month: { calls: number; avgTtftMs: number | null; avgDurationMs: number | null; interrupted: number };
+  };
+  claimQuality: {
+    chatResponsesScored: number;
+    verified: number;
+    inferred: number;
+    unknown: number;
+    unsupported: number;
+    percentages: {
+      verified: number;
+      inferred: number;
+      unknown: number;
+      unsupported: number;
+    };
   };
   budget: {
     monthlyLimitUsd: number;
@@ -104,7 +118,7 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
     db.from("initiatives").select("id", { count: "exact", head: true }).eq("status", "active"),
     db
       .from("ai_usage_log")
-      .select("ttft_ms, duration_ms, created_at")
+      .select("ttft_ms, duration_ms, created_at, metadata")
       .eq("feature", "chat")
       .gte("created_at", monthIso),
   ]);
@@ -152,6 +166,11 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
   const chatMonthRows = chatLatencyMonthRes.data || [];
   const chatTodayRows = chatMonthRows.filter((r) => r.created_at >= todayIso);
 
+  const claimRows = chatMonthRows
+    .map((r) => (r.metadata as { claimQuality?: ClaimQualityScore } | null)?.claimQuality)
+    .filter(Boolean) as ClaimQualityScore[];
+  const claimAgg = aggregateClaimQuality(claimRows.map((q) => ({ claimQuality: q })));
+
   return {
     period: {
       today: todayIso.split("T")[0],
@@ -186,6 +205,14 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
     chatPerformance: {
       today: chatPerfFromRows(chatTodayRows),
       month: chatPerfFromRows(chatMonthRows),
+    },
+    claimQuality: {
+      chatResponsesScored: claimRows.length,
+      verified: claimAgg.verified,
+      inferred: claimAgg.inferred,
+      unknown: claimAgg.unknown,
+      unsupported: claimAgg.unsupported,
+      percentages: claimAgg.percentages,
     },
     budget: {
       monthlyLimitUsd,

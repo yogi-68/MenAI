@@ -261,9 +261,37 @@ export function buildEvidenceBasedWhoAmI(
   const unknown = statements.filter((s) => s.tag === "unknown");
 
   const parts: string[] = [];
-  if (verified.length > 0) parts.push(verified.map((s) => s.text).join(" "));
-  if (inference.length > 0) parts.push(inference.map((s) => s.text).join(" "));
-  if (unknown.length > 0) parts.push(unknown.slice(0, 2).map((s) => s.text).join(" "));
+
+  if (bundle.focusTitle) {
+    parts.push(
+      `What's clear right now:\nRight now, most of your energy is on ${bundle.focusTitle}.`
+    );
+  }
+
+  const focusVerified = verified.filter(
+    (s) =>
+      bundle.focusTitle &&
+      (s.text.includes(bundle.focusTitle) ||
+        /completed.*task|logged.*reflection|strongest pattern|blocker|work style|founder/i.test(
+          s.text
+        ))
+  );
+  const otherVerified = verified.filter((s) => !focusVerified.includes(s));
+
+  if (focusVerified.length > 0) {
+    parts.push(focusVerified.map((s) => s.text).join(" "));
+  }
+  if (otherVerified.length > 0) {
+    parts.push(otherVerified.map((s) => s.text).join(" "));
+  }
+
+  if (inference.length > 0) {
+    parts.push(`Long-term:\n${inference.map((s) => s.text).join(" ")}`);
+  }
+
+  if (unknown.length > 0) {
+    parts.push(`What's still unclear:\n${unknown.slice(0, 2).map((s) => s.text).join(" ")}`);
+  }
 
   const rawAnswer =
     parts.length > 0

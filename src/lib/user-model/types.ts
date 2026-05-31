@@ -72,6 +72,18 @@ export interface UserModel {
   evidence: string[];
   identityCoverage: IdentityCoverageMap;
   overallIdentityCoverage: number;
+
+  /** Planning baseline from focus initiative interview — for coaching challenges */
+  planningSnapshot?: {
+    trainingDaysPerWeek?: number | null;
+    weeklyAvailableHours?: number | null;
+    studyHoursPerDay?: number | null;
+    currentBodyFatPct?: number | null;
+  };
+  executionStats?: {
+    completedTasks7d: number;
+    reflections7d: number;
+  };
 }
 
 export interface InitiativeRow {

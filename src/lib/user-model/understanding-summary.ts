@@ -1,19 +1,11 @@
 import type { UserModel } from "@/lib/user-model/types";
 import { missingKnowledgeLabels } from "@/lib/user-model/identity-dimensions";
 import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
+import { formatPortfolioLine, USER_LABELS } from "@/lib/user-model/user-language";
 
 export interface UnderstandingSummary {
   known: string[];
   unclear: string[];
-}
-
-function formatInitiativeLine(title: string, targetDate: string | null, isFocus: boolean): string {
-  const prefix = isFocus ? "Active focus" : "Also pursuing";
-  if (targetDate) {
-    const d = new Date(targetDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    return `${prefix}: ${title} (by ${d})`;
-  }
-  return `${prefix}: ${title}`;
 }
 
 export function buildUnderstandingSummary(model: UserModel): UnderstandingSummary {
@@ -24,18 +16,24 @@ export function buildUnderstandingSummary(model: UserModel): UnderstandingSummar
     ...model.secondaryOutcomes.filter((o) => o.role === "direction").map((o) => o.title),
   ]);
 
-  for (const theme of themes) {
-    known.push(`Interested in ${theme.toLowerCase()}`);
-  }
-
   for (const init of model.activePortfolio) {
     const match = model.secondaryOutcomes.find((o) => o.id === init.initiativeId);
     const target = match?.targetDate ?? init.targetDate ?? model.primaryOutcome.targetDate;
-    known.push(formatInitiativeLine(init.title, target, init.isFocus));
+    known.push(formatPortfolioLine(init.title, init.isFocus, target));
   }
 
   if (model.activePortfolio.length === 0 && model.currentFocus.title) {
-    known.push(formatInitiativeLine(model.currentFocus.title, model.primaryOutcome.targetDate, true));
+    known.push(
+      formatPortfolioLine(
+        model.currentFocus.title,
+        true,
+        model.primaryOutcome.targetDate
+      )
+    );
+  }
+
+  for (const theme of themes) {
+    known.push(`${USER_LABELS.longTermInterest}: ${theme.toLowerCase()}`);
   }
 
   if (model.recentActivity?.includes("completed")) {
@@ -57,11 +55,8 @@ export function buildUnderstandingSummary(model: UserModel): UnderstandingSummar
   }
 
   const focusTitle = model.currentFocus.title?.toLowerCase() || "";
-  const hasRealEstate =
-    /real estate|property invest|realtor/i.test(focusTitle) ||
-    model.identity.longTermDirections.some((d) => /real estate|property/i.test(d));
-
-  if (hasRealEstate) {
+  const focusIsRealEstate = /real estate|property invest|realtor/i.test(focusTitle);
+  if (focusIsRealEstate) {
     unclear.add("Real-estate priority level");
   }
 

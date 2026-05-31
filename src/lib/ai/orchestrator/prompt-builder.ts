@@ -23,6 +23,10 @@ import {
   buildEvidenceExplanation,
   isWhyBelieveQuestion,
 } from "@/lib/user-model/evidence-explanation";
+import {
+  detectCoachingChallenges,
+  formatChallengesForPrompt,
+} from "@/lib/user-model/coaching-challenge";
 
 /**
  * Detect if observation mode should be triggered
@@ -289,6 +293,9 @@ Remember: your response should create an emotional SHIFT. The user should feel D
   // ===== USER MODEL (single source of truth — overrides fragmented table reads) =====
   if (ctx.userModel) {
     parts.push(formatUserModelForPrompt(ctx.userModel));
+    const challenges = detectCoachingChallenges(ctx.userModel);
+    const challengeBlock = formatChallengesForPrompt(challenges);
+    if (challengeBlock) parts.push(challengeBlock);
     if (/who am i|what am i building|what do you know about me/i.test(ctx.input.message)) {
       parts.push(`## Direct answer for "Who am I?"
 Use whoAmIAnswer below. Coach voice — no "MenAI understands" phrasing.
@@ -301,7 +308,9 @@ Evidence:
 ${ctx.userModel.evidence.map((e) => `- ${e}`).join("\n") || "- none yet"}`);
     }
     if (isWhyBelieveQuestion(ctx.input.message)) {
-      parts.push(buildEvidenceExplanation(ctx.userModel, ctx.input.message));
+      parts.push(`Because: cite specific stored facts (goal titles, initiative names, task counts).
+Acknowledge gaps: "It's still too early to tell whether..."
+${buildEvidenceExplanation(ctx.userModel, ctx.input.message)}`);
     }
   }
 

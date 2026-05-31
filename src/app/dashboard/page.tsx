@@ -158,7 +158,7 @@ export default function DashboardOverview() {
             }}
           >
             <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
-              Current focus
+              What matters most right now
             </p>
             <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>
               {data.userModel?.primaryOutcome || data.userModel?.currentFocusTitle || data.currentFocus.title}
@@ -178,7 +178,7 @@ export default function DashboardOverview() {
         {data?.userModel?.executionAllocation && data.userModel.executionAllocation.length > 0 && (
           <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
-              Today&apos;s execution mix
+              Today&apos;s time mix
             </h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {data.userModel.executionAllocation.map((slot) => (
@@ -356,7 +356,7 @@ export default function DashboardOverview() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "8px" }}>
               <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-secondary)", fontWeight: 500, display: "flex", alignItems: "center", gap: "8px" }}>
                 <Zap size={16} />
-                Active portfolio
+                What else you&apos;re working on
               </h2>
               <Link href="/dashboard/goals" style={{ fontSize: "0.85rem", color: "var(--accent-primary)", textDecoration: "none" }}>
                 Manage →
@@ -388,7 +388,7 @@ export default function DashboardOverview() {
                     }}
                   >
                     {init.title}
-                    {init.isFocus ? " · focus" : ""}
+                    {init.isFocus ? " · priority" : ""}
                     {init.healthLabel ? ` · ${init.healthLabel}` : ""}
                   </span>
                 ))}

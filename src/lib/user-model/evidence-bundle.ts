@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { detectDomain } from "@/lib/plans/coach-insights";
+import { detectDomain, type CoachDomain } from "@/lib/plans/coach-insights";
 import { loadExecutionContext } from "@/lib/user-model/resolve-context";
 import { loadPlanContextData } from "@/lib/plans/plan-interview";
 import type { IdentityProfileStore } from "@/lib/user-model/identity-dimensions";
@@ -19,6 +19,7 @@ export interface EvidenceBundle {
   }>;
   focusInitiativeId: string | null;
   focusTitle: string | null;
+  focusDomain: CoachDomain;
   identitySignals: Array<{ description: string; long_term_direction: string | null }>;
   patterns: Array<{ pattern: string; behavioral_impact: string | null }>;
   completedTasks7d: number;
@@ -85,6 +86,9 @@ export async function buildEvidenceBundle(
     initiatives,
     focusInitiativeId: ctx.focusInitiativeId,
     focusTitle: primary?.title ?? null,
+    focusDomain: primary
+      ? detectDomain(`${primary.title} ${primary.description || ""}`, primary.life_area)
+      : "general",
     identitySignals: ctx.identitySignals,
     patterns: patternsRes.data || [],
     completedTasks7d: ctx.completedTasks7d,

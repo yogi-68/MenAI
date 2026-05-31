@@ -65,6 +65,10 @@ export async function synthesizeUserModel(
     empty.identity.vision = ctx.profile?.vision ?? null;
     empty.identity.longTermDirections = dedupeSemanticThemes(ctx.goals.map((g) => g.title));
     empty.recentActivity = buildRecentActivity(ctx.completedTasks7d, ctx.reflections7d);
+    empty.executionStats = {
+      completedTasks7d: ctx.completedTasks7d,
+      reflections7d: ctx.reflections7d,
+    };
 
     const identityProfile = await loadIdentityProfile(supabase, userId);
     const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
@@ -217,6 +221,16 @@ export async function synthesizeUserModel(
     recentActivity,
     currentMilestone: ctx.currentMilestone?.title ?? null,
     opportunities: ctx.opportunities.map((o) => o.title),
+    planningSnapshot: {
+      trainingDaysPerWeek: planContext.trainingDaysPerWeek as number | null | undefined,
+      weeklyAvailableHours: planContext.weeklyAvailableHours as number | null | undefined,
+      studyHoursPerDay: planContext.studyHoursPerDay as number | null | undefined,
+      currentBodyFatPct: planContext.currentBodyFatPct as number | null | undefined,
+    },
+    executionStats: {
+      completedTasks7d: ctx.completedTasks7d,
+      reflections7d: ctx.reflections7d,
+    },
     confidence: computeConfidence({
       hasPrimary: true,
       goalAnalysis,
@@ -241,6 +255,15 @@ export async function synthesizeUserModel(
   model.evidence = whoAmI.evidence;
   model.identityCoverage = coverage;
   model.overallIdentityCoverage = averageCoverage(coverage);
+
+  for (const entry of model.activePortfolio) {
+    entry.isFocus = entry.initiativeId === primary.id;
+  }
+  if (model.currentFocus.initiativeId !== primary.id) {
+    model.currentFocus.initiativeId = primary.id;
+    model.currentFocus.title = primary.title;
+    model.currentFocus.domain = domain;
+  }
 
   model.narrative = buildUserModelNarrative({
     identityLabels: model.identity.labels,

@@ -27,6 +27,7 @@ import { selectModel, callLLM, callLLMStreaming } from "./router";
 import { buildPrompt } from "./prompt-builder";
 import { validateResponse } from "./response-validator";
 import { validateResponseStyle } from "./style-validator";
+import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
@@ -348,7 +349,8 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     "chat",
     llmResult.model || FAST_MODEL,
     Math.round(llmResult.tokensUsed * 0.6),
-    Math.round(llmResult.tokensUsed * 0.4)
+    Math.round(llmResult.tokensUsed * 0.4),
+    { metadata: { claimQuality: scoreClaimQuality(validated.content, ctx.userModel) } }
   ).catch(() => {});
 
   // Update conversation metadata
@@ -762,6 +764,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           {
             ttftMs,
             durationMs: streamErrored || !fullResponse ? null : durationMs,
+            metadata: { claimQuality: scoreClaimQuality(validated.content, userModel) },
           }
         ).catch(() => {});
 
