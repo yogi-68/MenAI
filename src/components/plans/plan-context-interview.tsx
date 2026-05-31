@@ -3,14 +3,16 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, SkipForward } from "lucide-react";
+import { missingKnowledgeLabels, type IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 
 interface InterviewQuestion {
   variableId: string;
+  dimension?: IdentityDimensionId;
   prompt: string;
   subtitle?: string;
-  inputType: "text" | "number" | "date";
+  inputType: "text" | "number" | "date" | "choice";
+  choices?: string[];
   expectedGain?: number;
-  biggestUnknown?: string;
   questionNumber?: number;
 }
 
@@ -32,7 +34,8 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
         snapshot: ContextSnapshot;
         nextQuestion: InterviewQuestion | null;
         biggestUnknown: string | null;
-        stopReason?: string;
+        identityCoverage: Record<IdentityDimensionId, number> | null;
+        overallCoverage: number | null;
       }>;
     },
     staleTime: 15_000,
@@ -43,6 +46,7 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
     mutationFn: async (payload: {
       action: "answer" | "skip" | "generate_now";
       variableId?: string;
+      dimension?: IdentityDimensionId;
       answer?: string;
     }) => {
       const res = await fetch("/api/plans/interview", {
@@ -53,13 +57,11 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
       if (!res.ok) throw new Error("Interview failed");
       return res.json();
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       setAnswer("");
       queryClient.invalidateQueries({ queryKey: ["plan-context"] });
-      if (result.regenerated || result.done) {
-        queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
-        queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
-      }
+      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
     },
   });
 
@@ -69,14 +71,14 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
 
   if (!hasInitiatives || isLoading || !data) return null;
 
-  const { snapshot, nextQuestion, biggestUnknown } = data;
-  const showCard =
-    snapshot.shouldInterview && nextQuestion && snapshot.planningQuality !== "Strong";
+  const { snapshot, nextQuestion, biggestUnknown, identityCoverage } = data;
+  const showCard = snapshot.shouldInterview && nextQuestion;
 
   if (!showCard) return null;
 
-  const headerUnknown =
-    nextQuestion.biggestUnknown || biggestUnknown || "one more detail";
+  const stillNeedToUnderstand = identityCoverage
+    ? missingKnowledgeLabels(identityCoverage, 30)
+    : [];
 
   return (
     <section
@@ -86,21 +88,26 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
       <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
         <MessageCircle size={20} style={{ color: "#f59e0b", marginTop: "2px", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <p
-            style={{
-              fontSize: "0.95rem",
-              fontWeight: 500,
-              color: "var(--text-primary)",
-              marginBottom: "6px",
-              lineHeight: 1.5,
-            }}
-          >
-            MenAI can make today&apos;s plan more specific.
+          <p style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "6px" }}>
+            A few details would sharpen today&apos;s plan.
           </p>
+          {stillNeedToUnderstand.length > 0 && (
+            <div style={{ marginBottom: "16px" }}>
+              <p style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
+                Still need to understand
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>
+                {stillNeedToUnderstand.map((label) => (
+                  <li key={label}>{label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.6 }}>
-            Biggest unknown:{" "}
+            The biggest unknown:{" "}
             <span style={{ color: "var(--text-primary)" }}>
-              {headerUnknown.charAt(0).toLowerCase() + headerUnknown.slice(1)}
+              {(biggestUnknown || nextQuestion.subtitle || "one more detail").charAt(0).toLowerCase() +
+                (biggestUnknown || nextQuestion.subtitle || "one more detail").slice(1)}
             </span>
           </p>
 
@@ -126,7 +133,29 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
               </p>
             )}
 
-            {nextQuestion.inputType === "date" ? (
+            {nextQuestion.inputType === "choice" && nextQuestion.choices?.length ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
+                {nextQuestion.choices.map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    className="btn-secondary"
+                    disabled={submit.isPending}
+                    style={{ textAlign: "left", justifyContent: "flex-start" }}
+                    onClick={() =>
+                      submit.mutate({
+                        action: "answer",
+                        variableId: nextQuestion.variableId,
+                        dimension: nextQuestion.dimension,
+                        answer: choice,
+                      })
+                    }
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+            ) : nextQuestion.inputType === "date" ? (
               <input
                 className="input-field"
                 type="date"
@@ -143,7 +172,12 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
                 onChange={(e) => setAnswer(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && answer.trim()) {
-                    submit.mutate({ action: "answer", variableId: nextQuestion.variableId, answer });
+                    submit.mutate({
+                      action: "answer",
+                      variableId: nextQuestion.variableId,
+                      dimension: nextQuestion.dimension,
+                      answer,
+                    });
                   }
                 }}
                 style={{ marginBottom: "12px" }}
@@ -151,36 +185,67 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
               />
             )}
 
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-              <button
-                type="button"
-                className="btn-primary"
-                disabled={!answer.trim() || submit.isPending}
-                onClick={() =>
-                  submit.mutate({ action: "answer", variableId: nextQuestion.variableId, answer })
-                }
-              >
-                {submit.isPending ? "Updating…" : "Answer"}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={submit.isPending}
-                style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                onClick={() => submit.mutate({ action: "skip", variableId: nextQuestion.variableId })}
-              >
-                <SkipForward size={14} />
-                Skip
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={submit.isPending}
-                onClick={() => submit.mutate({ action: "generate_now" })}
-              >
-                Generate plan now
-              </button>
-            </div>
+            {nextQuestion.inputType !== "choice" && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!answer.trim() || submit.isPending}
+                  onClick={() =>
+                    submit.mutate({
+                      action: "answer",
+                      variableId: nextQuestion.variableId,
+                      dimension: nextQuestion.dimension,
+                      answer,
+                    })
+                  }
+                >
+                  {submit.isPending ? "Updating…" : "Answer"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={submit.isPending}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                  onClick={() =>
+                    submit.mutate({ action: "skip", variableId: nextQuestion.variableId })
+                  }
+                >
+                  <SkipForward size={14} />
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={submit.isPending}
+                  onClick={() => submit.mutate({ action: "generate_now" })}
+                >
+                  Generate plan now
+                </button>
+              </div>
+            )}
+            {nextQuestion.inputType === "choice" && (
+              <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={submit.isPending}
+                  onClick={() =>
+                    submit.mutate({ action: "skip", variableId: nextQuestion.variableId })
+                  }
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={submit.isPending}
+                  onClick={() => submit.mutate({ action: "generate_now" })}
+                >
+                  Generate plan now
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

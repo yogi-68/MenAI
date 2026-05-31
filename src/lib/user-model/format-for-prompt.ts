@@ -1,4 +1,9 @@
 import type { UserModel } from "@/lib/user-model/types";
+import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
+import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
+import { buildUnderstandingSummary } from "@/lib/user-model/understanding-summary";
+import { COACH_VOICE_PROMPT } from "@/lib/user-model/voice-guide";
+import { missingKnowledgeLabels } from "@/lib/user-model/identity-dimensions";
 
 /** Inject into any LLM system prompt — the single source of truth about this user. */
 export function formatUserModelForPrompt(model: UserModel): string {
@@ -9,8 +14,24 @@ export function formatUserModelForPrompt(model: UserModel): string {
     `Confidence in this model: ${model.confidence}`,
   ];
 
-  if (model.primaryOutcome.headline) {
-    sections.push(`Primary outcome: ${model.primaryOutcome.headline}`);
+  if (model.whoAmIAnswer) {
+    sections.push(`Who am I (evidence-based):\n${model.whoAmIAnswer}`);
+  }
+
+  if (model.evidence.length > 0) {
+    sections.push("Evidence on file:", ...model.evidence.map((e) => `- ${e}`));
+  }
+
+  if (model.whoAmIStatements.length > 0) {
+    sections.push(
+      "Statement tags (internal — only verified + strong_inference may appear in answers):",
+      ...model.whoAmIStatements.map((s) => `- [${s.tag}] ${s.text}`)
+    );
+  }
+
+  const gaps = missingKnowledgeLabels(model.identityCoverage, 30);
+  if (gaps.length > 0) {
+    sections.push("Biggest unknowns (plain language — use in answers, not percentages):", ...gaps.map((g) => `- ${g}`));
   }
 
   if (model.currentMilestone) {
@@ -51,9 +72,13 @@ export function formatUserModelForPrompt(model: UserModel): string {
 
   sections.push(
     "",
+    COACH_VOICE_PROMPT,
+    "",
     "One person, multiple pursuits. Keep initiative interview contexts separate — never use fitness context for business tasks.",
     "Today's plan SHOULD mix initiatives using execution allocation. Focus gets the largest block; portfolio initiatives get proportional time.",
-    "When the user asks 'who am I', use whoAmIAnswer — identity, patterns, direction, constraints. NEVER answer with initiative titles, deadlines, or goal summaries alone."
+    "When the user asks 'who am I', use whoAmIAnswer — ONLY verified facts and labeled strong inferences.",
+    "NEVER invent personality traits (ambitious, gritty, disciplined, intense, determined, resilient) without cited evidence.",
+    "When asked 'why do you believe that', cite specific stored facts (goal titles, initiative names, task counts). Acknowledge gaps honestly.",
   );
 
   return sections.join("\n");
@@ -66,32 +91,32 @@ export function formatUserModelSummary(model: UserModel): {
   insight: string;
 } {
   const primary = model.primaryOutcome.headline || model.currentFocus.title;
-  const longTerm =
-    model.secondaryOutcomes.length > 0
-      ? model.secondaryOutcomes
-          .filter((o) => o.role === "direction")
-          .map((o) => o.title)
-          .slice(0, 2)
-          .join("; ") || model.identity.longTermDirections.slice(0, 2).join("; ")
-      : model.identity.longTermDirections.slice(0, 2).join("; ") || null;
+  const themes = dedupeSemanticThemes([
+    ...model.identity.longTermDirections,
+    ...model.secondaryOutcomes.filter((o) => o.role === "direction").map((o) => o.title),
+  ]);
+  const longTerm = themes.length > 0 ? themes.join(" · ") : null;
 
-  let insight = model.whoAmIAnswer.split("\n\n")[0] || "";
-  if (model.stillNeeds.length > 0) {
-    insight += ` Still needs: ${model.stillNeeds.slice(0, 2).join(", ").toLowerCase()}.`;
-  }
+  const understanding = buildUnderstandingSummary(model);
+  const insight =
+    understanding.known.length > 0
+      ? understanding.known[0]
+      : "Still building your profile from what you've logged so far.";
 
-  return { primary: primary || null, longTerm: longTerm || null, insight: insight.trim() };
+  return { primary: primary || null, longTerm, insight: sanitizeCoachCopy(insight) };
 }
 
 export function userModelToCoachBriefing(model: UserModel) {
+  const understanding = buildUnderstandingSummary(model);
   return {
     tryingToAchieve: model.currentFocus.title,
-    understands: model.understands,
-    stillNeeds: model.stillNeeds,
-    insight: model.whoAmIAnswer.split("\n\n")[0] || model.narrative.split("\n")[0] || "",
+    understands: understanding.known,
+    stillNeeds: understanding.unclear,
+    insight: "",
     mattersToday: model.currentMilestone
       ? `Advance: ${model.currentMilestone}`
       : model.primaryOutcome.headline,
     recentActivity: model.recentActivity,
+    understanding,
   };
 }

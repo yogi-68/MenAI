@@ -1,33 +1,10 @@
 import type { UserModel } from "@/lib/user-model/types";
 import { USER_MODEL_VERSION } from "@/lib/user-model/types";
 import type { CoachDomain } from "@/lib/plans/coach-insights";
-import { buildWhoAmIAnswerFromContext } from "@/lib/user-model/identity-synthesis";
+import { emptyIdentityCoverage } from "@/lib/user-model/identity-dimensions";
 
 export function buildWhoAmIAnswer(model: UserModel): string {
-  return buildWhoAmIAnswerFromContext({
-    vision: model.identity.vision,
-    founderMode: model.identity.labels.some((l) => /entrepreneur/i.test(l)),
-    workStyle: null,
-    identityLabels: model.identity.labels,
-    identitySignals: [],
-    goals: model.identity.longTermDirections.map((title) => ({ title, category: null })),
-    initiativeThemes: model.activePortfolio.map((p) => ({
-      title: p.title,
-      lifeArea: p.lifeArea,
-      domain: p.domain,
-    })),
-    focusTitle: model.currentFocus.title,
-    focusDomain: model.currentFocus.domain,
-    patterns: [],
-    completedTasks7d: model.recentActivity?.includes("tasks completed") ? 3 : 0,
-    reflections7d: 0,
-    obstacles: model.obstacles,
-    stillNeeds: model.stillNeeds,
-    confidence: model.confidence,
-    portfolioCount: model.activePortfolio.length,
-    opportunities: model.opportunities,
-    recentReflectionBlocks: [],
-  });
+  return model.whoAmIAnswer;
 }
 
 function formatDeadline(dateStr: string): string {
@@ -68,9 +45,6 @@ export function buildUserModelNarrative(input: {
 }): string {
   const lines: string[] = [];
 
-  if (input.identityLabels.length > 0) {
-    lines.push(`Identity: ${input.identityLabels.join("; ")}.`);
-  }
   if (input.vision) {
     lines.push(`Long-term vision: ${input.vision}`);
   }
@@ -169,6 +143,10 @@ export function emptyUserModel(): UserModel {
     confidence: "low",
     narrative: "No active initiatives. MenAI needs one specific 90-day outcome with a deadline.",
     whoAmIAnswer: "",
+    whoAmIStatements: [],
+    evidence: [],
+    identityCoverage: emptyIdentityCoverage(),
+    overallIdentityCoverage: 0,
   };
   model.whoAmIAnswer = buildWhoAmIAnswer(model);
   return model;

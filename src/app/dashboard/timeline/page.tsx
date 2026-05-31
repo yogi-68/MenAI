@@ -74,7 +74,7 @@ export default function TimelinePage() {
       ) : !data?.months.length ? (
         <div className="glass-card" style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
           <p style={{ lineHeight: 1.7, marginBottom: 16, fontSize: "0.95rem" }}>
-            No execution events yet. Complete a task, log a reflection, or finish a milestone — those become your timeline.
+            No meaningful events yet. Complete tasks, reflections, and milestones to build your timeline.
           </p>
           <Link href="/dashboard/goals" className="btn-primary" style={{ display: "inline-flex", marginTop: 16, textDecoration: "none" }}>
             Add an initiative

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import type { IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 import {
   applyInterviewAnswer,
   buildDimensionInput,
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const action = body.action as "answer" | "skip" | "generate_now";
     const variableId = typeof body.variableId === "string" ? body.variableId : body.dimension;
+    const dimension = typeof body.dimension === "string" ? body.dimension : undefined;
     const answer = typeof body.answer === "string" ? body.answer.trim() : "";
 
     if (action === "generate_now") {
@@ -57,7 +59,13 @@ export async function POST(request: NextRequest) {
       if (!answer) {
         return NextResponse.json({ error: "Answer required" }, { status: 400 });
       }
-      await applyInterviewAnswer(supabase, user.id, variableId, answer);
+      await applyInterviewAnswer(
+        supabase,
+        user.id,
+        variableId,
+        answer,
+        dimension as IdentityDimensionId | undefined
+      );
       await invalidateTodayPlan(supabase, user.id);
     } else {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });

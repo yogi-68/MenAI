@@ -81,7 +81,8 @@ export async function generateMilestonesForInitiative(
   }
 
   const area = areaKey(lifeArea);
-  let titles = DEFAULTS_BY_AREA[area];
+  const corpus = `${title} ${description || ""}`.toLowerCase();
+  let titles = fitnessBodyFatDefaults(corpus) || DEFAULTS_BY_AREA[area];
 
   try {
     const openai = getOpenAI();
@@ -135,6 +136,15 @@ JSON only: {"milestones": ["...", "..."]}`,
       status: i === 0 ? "in_progress" : "pending",
     }))
   );
+
+  await regenerateMilestonesIfAbstract(
+    supabase,
+    userId,
+    initiativeId,
+    title,
+    description,
+    lifeArea
+  );
 }
 
 /** Replace abstract milestone labels with concrete ones. */
@@ -166,6 +176,19 @@ export async function regenerateMilestonesIfAbstract(
     true
   );
   return true;
+}
+
+function fitnessBodyFatDefaults(corpus: string): string[] | null {
+  if (!/body fat|fat %|\d{1,2}% body|lean bulk|cut to/i.test(corpus)) return null;
+  return [
+    "Record current weight and waist measurement",
+    "Calculate maintenance calories and daily deficit target",
+    "Log meals for 14 consecutive days",
+    "Complete 10 strength training workouts",
+    "Reach 20% body fat checkpoint",
+    "Reach 18% body fat checkpoint",
+    "Reach 15% body fat",
+  ];
 }
 
 // fix typo - used `area` before defined

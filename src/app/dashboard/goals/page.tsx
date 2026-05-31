@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { groupGoalsByTheme } from "@/lib/user-model/theme-dedup";
 import {
   Target,
   Plus,
@@ -385,16 +386,21 @@ export default function GoalsPage() {
         ) : (
           <div className="glass-card" style={{ padding: "20px 24px", cursor: "default" }}>
             <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "12px" }}>
-              {goals.map((goal) => (
-                <li key={goal.id} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+              {groupGoalsByTheme(goals).map(({ theme, goals: grouped }) => (
+                <li key={theme} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
                   <div>
-                    <div style={{ fontSize: "0.95rem", fontWeight: 500 }}>{goal.title}</div>
-                    {goal.description && (
-                      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>{goal.description}</p>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 500 }}>{theme}</div>
+                    {grouped.length > 1 && (
+                      <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "4px 0 0" }}>
+                        {grouped.length} related goals grouped
+                      </p>
+                    )}
+                    {grouped.length === 1 && grouped[0].description && (
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>{grouped[0].description}</p>
                     )}
                   </div>
                   <button
-                    onClick={() => deleteGoal.mutate(goal.id)}
+                    onClick={() => grouped.forEach((g) => deleteGoal.mutate(g.id))}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5, flexShrink: 0 }}
                     title="Remove direction"
                   >
@@ -413,7 +419,9 @@ export default function GoalsPage() {
           <Zap size={18} style={{ color: "var(--accent-primary)" }} />
           <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Active initiatives</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-            {activeInitiativeCount}/3 · each needs a deadline · feeds Today&apos;s Plan
+            {activeInitiativeCount === 1
+              ? "1 active initiative"
+              : `${activeInitiativeCount} active initiatives`}
           </span>
         </div>
         <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.5 }}>

@@ -18,6 +18,11 @@ import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./natu
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
 import { formatCognitiveStateForPrompt } from "./cognition-engine";
 import { formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
+import { buildChatModeGuidance, detectChatMode } from "@/lib/ai/orchestrator/chat-modes";
+import {
+  buildEvidenceExplanation,
+  isWhyBelieveQuestion,
+} from "@/lib/user-model/evidence-explanation";
 
 /**
  * Detect if observation mode should be triggered
@@ -257,6 +262,10 @@ This person is building a startup/product. Think like a co-founder. Push executi
 Instructed behavior: ${styleText}`);
   }
 
+  // ===== CHAT MODE (coaching / goal-aware teaching / general) =====
+  const chatMode = detectChatMode(ctx);
+  parts.push(buildChatModeGuidance(chatMode));
+
   // Conversation state — this determines WHAT to do
   parts.push(`## Your Current Mode\n${getStateInstructions(ctx.state)}`);
 
@@ -282,9 +291,17 @@ Remember: your response should create an emotional SHIFT. The user should feel D
     parts.push(formatUserModelForPrompt(ctx.userModel));
     if (/who am i|what am i building|what do you know about me/i.test(ctx.input.message)) {
       parts.push(`## Direct answer for "Who am I?"
-This is identity synthesis — NOT a goal or initiative summary. Use whoAmIAnswer below (adapt tone, don't copy verbatim). Never open with "You're focused on [initiative] by [date]".
+Use whoAmIAnswer below. Coach voice — no "MenAI understands" phrasing.
+Every claim must be verifiable from the evidence list.
+FORBIDDEN without evidence: personality adjectives (ambitious, gritty, disciplined, intense, determined, resilient).
 
-${ctx.userModel.whoAmIAnswer}`);
+${ctx.userModel.whoAmIAnswer}
+
+Evidence:
+${ctx.userModel.evidence.map((e) => `- ${e}`).join("\n") || "- none yet"}`);
+    }
+    if (isWhyBelieveQuestion(ctx.input.message)) {
+      parts.push(buildEvidenceExplanation(ctx.userModel, ctx.input.message));
     }
   }
 

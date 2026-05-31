@@ -6,7 +6,7 @@ import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
 import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
 import { getUserModel } from "@/lib/user-model/loader";
-import { formatUserModelSummary } from "@/lib/user-model/format-for-prompt";
+import { formatUserModelSummary, userModelToCoachBriefing } from "@/lib/user-model/format-for-prompt";
 
 export const runtime = "nodejs";
 
@@ -67,23 +67,29 @@ export async function GET() {
   });
 
   const modelSummary = formatUserModelSummary(userModel);
+  const coachBriefingFromModel = userModelToCoachBriefing(userModel);
   const focusId = userModel.currentFocus.initiativeId || profileRes.data?.current_focus_initiative_id;
   const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : initiatives[0];
-  const currentFocus = focusInit
-    ? {
-        title: focusInit.title,
-        until: profileRes.data?.current_focus_until || focusInit.target_date,
-        health: computeInitiativeHealth({
-          status: focusInit.status,
-          targetDate: focusInit.target_date,
-          lastActionAt: focusInit.last_action_at,
-          progress: focusInit.progress,
-        }),
-        coachInsight: modelSummary.insight || coachBriefing.insight,
-        primaryOutcome: userModel.primaryOutcome.headline,
-        longTermThemes: modelSummary.longTerm,
-      }
+
+  const focusTitle = userModel.currentFocus.title || focusInit?.title || null;
+  const focusHealth = focusInit
+    ? computeInitiativeHealth({
+        status: focusInit.status,
+        targetDate: focusInit.target_date,
+        lastActionAt: focusInit.last_action_at,
+        progress: focusInit.progress,
+      })
     : null;
+
+  const currentFocus =
+    focusTitle && focusHealth
+      ? {
+          title: focusTitle,
+          until: userModel.currentFocus.until || profileRes.data?.current_focus_until || focusInit?.target_date || null,
+          health: focusHealth,
+          primaryOutcome: userModel.primaryOutcome.headline,
+        }
+      : null;
 
   return NextResponse.json({
     greeting: `${timeOfDay}, ${firstName}.`,
@@ -93,12 +99,18 @@ export async function GET() {
       planContent?.planningContext?.coachInsight ||
       planContent?.whatMattersNow ||
       null,
-    coachBriefing,
+    coachBriefing: {
+      ...coachBriefing,
+      understands: coachBriefingFromModel.understanding.known,
+      stillNeeds: coachBriefingFromModel.understanding.unclear,
+      insight: "",
+    },
     userModel: {
       primaryOutcome: userModel.primaryOutcome.headline,
+      currentFocusTitle: focusTitle,
       longTermThemes: modelSummary.longTerm,
-      whoAmI: userModel.whoAmIAnswer,
       confidence: userModel.confidence,
+      understanding: coachBriefingFromModel.understanding,
       activePortfolio: userModel.activePortfolio.map((p) => ({
         id: p.initiativeId,
         title: p.title,

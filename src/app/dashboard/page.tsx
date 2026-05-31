@@ -35,9 +35,13 @@ interface TodayPayload {
   isEmptyState?: boolean;
   userModel?: {
     primaryOutcome: string | null;
+    currentFocusTitle: string | null;
     longTermThemes: string | null;
-    whoAmI: string;
     confidence: string;
+    understanding?: {
+      known: string[];
+      unclear: string[];
+    };
     activePortfolio?: Array<{
       id: string;
       title: string;
@@ -139,10 +143,6 @@ export default function DashboardOverview() {
           <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
             {data.whatMattersNow}
           </p>
-        ) : data?.coachBriefing?.insight && data.hasInitiatives ? (
-          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
-            {data.coachBriefing.insight}
-          </p>
         ) : null}
       </header>
 
@@ -161,18 +161,8 @@ export default function DashboardOverview() {
               Current focus
             </p>
             <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>
-              {data.userModel?.primaryOutcome || data.currentFocus.title}
+              {data.userModel?.primaryOutcome || data.userModel?.currentFocusTitle || data.currentFocus.title}
             </p>
-            {data.userModel?.longTermThemes && (
-              <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "10px" }}>
-                Longer-term direction: {data.userModel.longTermThemes}
-              </p>
-            )}
-            {data.currentFocus.coachInsight && (
-              <p style={{ fontSize: "0.92rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "10px" }}>
-                {data.currentFocus.coachInsight}
-              </p>
-            )}
             <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
               {data.currentFocus.until ? `Deadline ${data.currentFocus.until}` : "No deadline set"}
               {" · "}
@@ -228,26 +218,48 @@ export default function DashboardOverview() {
         {data?.coachBriefing && data.hasInitiatives && (
           <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
             <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
-              What MenAI understands
+              What&apos;s clear
             </h2>
-            {data.userModel?.whoAmI && (
-              <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.75, marginBottom: 16, whiteSpace: "pre-wrap" }}>
-                {data.userModel.whoAmI}
+            {data.userModel?.understanding ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {data.userModel.understanding.known.length > 0 && (
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: "0.92rem", lineHeight: 1.8 }}>
+                    {data.userModel.understanding.known.map((item) => (
+                      <li key={item} style={{ color: "var(--text-primary)" }}>
+                        <span style={{ color: "#22c55e", marginRight: 8 }}>✓</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {data.userModel.understanding.unclear.length > 0 && (
+                  <div>
+                    <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
+                      Still unclear
+                    </h3>
+                    <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: "0.9rem", lineHeight: 1.8 }}>
+                      {data.userModel.understanding.unclear.map((item) => (
+                        <li key={item} style={{ color: "var(--text-secondary)" }}>
+                          <span style={{ color: "#f59e0b", marginRight: 8 }}>?</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : data.coachBriefing?.understands.length ? (
+              <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
+                {data.coachBriefing.understands.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>
+                Still building your profile from what you&apos;ve logged so far.
               </p>
             )}
-            {!data.userModel?.whoAmI &&
-              (data.coachBriefing.understands.length > 0 ? (
-                <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
-                  {data.coachBriefing.understands.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>
-                  Initiative created — baseline details still missing.
-                </p>
-              ))}
-            {data.coachBriefing.stillNeeds.length > 0 && (
+            {!data.userModel?.understanding && data.coachBriefing.stillNeeds.length > 0 && (
               <>
                 <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
                   Still needs to know

@@ -51,25 +51,6 @@ export async function buildMemoryTimeline(
   const events: TimelineEvent[] = [];
 
   for (const i of initiativesRes.data || []) {
-    events.push({
-      sortKey: i.created_at,
-      month: monthLabel(i.created_at),
-      dayLabel: dayLabel(i.created_at),
-      headline: `Created ${stripPrefix(i.title)} initiative`,
-      category: "initiative",
-    });
-
-    if (i.target_date) {
-      events.push({
-        sortKey: i.created_at,
-        month: monthLabel(i.created_at),
-        dayLabel: dayLabel(i.created_at),
-        headline: `Defined target: ${formatTarget(i.title, i.target_date)}`,
-        subline: `Deadline ${formatDate(i.target_date)}`,
-        category: "decision",
-      });
-    }
-
     if (i.status === "completed" && i.completed_at) {
       const review = i.completion_review as { timelineEntry?: string; summary?: string } | null;
       events.push({
@@ -128,16 +109,6 @@ export async function buildMemoryTimeline(
 
   events.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   return dedupeEvents(events).slice(-limit);
-}
-
-function formatTarget(title: string, targetDate: string): string {
-  const t = title.trim();
-  if (/\d{1,2}\s*%/.test(t)) return `${t} by ${formatDate(targetDate)}`;
-  return `${t} by ${formatDate(targetDate)}`;
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function executionHeadline(title: string): string {

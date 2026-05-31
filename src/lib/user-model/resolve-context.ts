@@ -40,6 +40,15 @@ export function resolvePrimaryInitiative(
   return sorted[0] ?? null;
 }
 
+/** If profile focus points to inactive/missing initiative, return a valid replacement id. */
+export function repairFocusInitiativeId(
+  initiatives: InitiativeRow[],
+  focusInitiativeId: string | null | undefined
+): string | null {
+  const primary = resolvePrimaryInitiative(initiatives, focusInitiativeId);
+  return primary?.id ?? null;
+}
+
 /** Put primary initiative first; remaining sorted by target_date. */
 export function orderInitiativesWithPrimaryFirst(
   initiatives: InitiativeRow[],
@@ -73,7 +82,6 @@ export async function loadExecutionContext(
     signalsRes,
     tasksCountRes,
     reflectionsCountRes,
-    timelineRes,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -117,17 +125,23 @@ export async function loadExecutionContext(
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .gte("reflection_date", sevenDaysAgoIso.split("T")[0]),
-    supabase
-      .from("initiatives")
-      .select("title, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1),
   ]);
 
   const profile = profileRes.data;
   const initiatives = initiativesRes.data || [];
-  const focusInitiativeId = profile?.current_focus_initiative_id ?? null;
+  let focusInitiativeId = profile?.current_focus_initiative_id ?? null;
+  const repairedFocusId = repairFocusInitiativeId(initiatives, focusInitiativeId);
+  if (repairedFocusId !== focusInitiativeId && repairedFocusId && profile) {
+    focusInitiativeId = repairedFocusId;
+    await supabase
+      .from("profiles")
+      .update({
+        current_focus_initiative_id: repairedFocusId,
+        current_focus_until:
+          initiatives.find((i) => i.id === repairedFocusId)?.target_date ?? profile.current_focus_until,
+      })
+      .eq("id", userId);
+  }
   const primaryInitiative = resolvePrimaryInitiative(initiatives, focusInitiativeId);
 
   let currentMilestone: { title: string; initiativeId: string } | null = null;
@@ -146,10 +160,7 @@ export async function loadExecutionContext(
     }
   }
 
-  const recentInit = timelineRes.data?.[0];
-  const recentTimelineHeadline = recentInit
-    ? `Created initiative: ${recentInit.title}`
-    : null;
+  const recentTimelineHeadline = null;
 
   return {
     profile,

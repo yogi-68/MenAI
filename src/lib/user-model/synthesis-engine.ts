@@ -14,11 +14,18 @@ import {
   emptyUserModel,
 } from "@/lib/user-model/narrative";
 import { computeExecutionAllocation } from "@/lib/user-model/execution-allocation";
+import { buildEvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import {
-  buildWhoAmIAnswerFromContext,
-  synthesizeWhoAmIAnswer,
-  type IdentitySynthesisInput,
+  averageCoverage,
+  emptyIdentityCoverage,
+} from "@/lib/user-model/identity-dimensions";
+import {
+  buildEvidenceBasedWhoAmI,
+  computeBaselineCoverage,
 } from "@/lib/user-model/identity-synthesis";
+import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
+import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
+import { loadIdentityProfile } from "@/lib/plans/identity-profile-store";
 
 function computeConfidence(input: {
   hasPrimary: boolean;
@@ -46,34 +53,6 @@ function buildRecentActivity(completedTasks7d: number, reflections7d: number): s
   return "No tasks or reflections logged recently.";
 }
 
-function buildIdentityLabels(input: {
-  vision: string | null;
-  founderMode: boolean;
-  signals: Array<{ description: string; long_term_direction: string | null }>;
-  goals: Array<{ title: string; category: string | null }>;
-}): string[] {
-  const labels = new Set<string>();
-
-  if (input.founderMode) labels.add("Entrepreneurial");
-  if (input.vision) {
-    if (/wealth|financial|freedom|money/i.test(input.vision)) labels.add("Long-term wealth builder");
-    if (/health|fitness|body/i.test(input.vision)) labels.add("Health-focused");
-    if (/learn|study|exam/i.test(input.vision)) labels.add("Dedicated learner");
-  }
-
-  for (const s of input.signals) {
-    const t = s.long_term_direction || s.description;
-    if (t && t.length < 80) labels.add(t);
-  }
-
-  for (const g of input.goals.slice(0, 3)) {
-    if (/business|startup|saas|revenue/i.test(g.title)) labels.add("Business builder");
-    if (/financial|wealth|freedom/i.test(g.title)) labels.add("Financial independence seeker");
-  }
-
-  return [...labels].slice(0, 5);
-}
-
 export async function synthesizeUserModel(
   supabase: SupabaseClient,
   userId: string
@@ -84,28 +63,18 @@ export async function synthesizeUserModel(
   if (!primary) {
     const empty = emptyUserModel();
     empty.identity.vision = ctx.profile?.vision ?? null;
-    empty.identity.longTermDirections = ctx.goals.map((g) => g.title);
+    empty.identity.longTermDirections = dedupeSemanticThemes(ctx.goals.map((g) => g.title));
     empty.recentActivity = buildRecentActivity(ctx.completedTasks7d, ctx.reflections7d);
-    empty.whoAmIAnswer = buildWhoAmIAnswerFromContext({
-      vision: ctx.profile?.vision ?? null,
-      founderMode: Boolean(ctx.profile?.founder_mode),
-      workStyle: null,
-      identityLabels: [],
-      identitySignals: ctx.identitySignals,
-      goals: ctx.goals,
-      initiativeThemes: [],
-      focusTitle: null,
-      focusDomain: "general",
-      patterns: [],
-      completedTasks7d: ctx.completedTasks7d,
-      reflections7d: ctx.reflections7d,
-      obstacles: [],
-      stillNeeds: empty.stillNeeds,
-      confidence: "low",
-      portfolioCount: 0,
-      opportunities: [],
-      recentReflectionBlocks: [],
-    });
+
+    const identityProfile = await loadIdentityProfile(supabase, userId);
+    const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
+    const coverage = identityProfile.lastCoverage ?? computeBaselineCoverage(bundle);
+    const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage);
+    empty.whoAmIAnswer = sanitizeCoachCopy(whoAmI.answer);
+    empty.whoAmIStatements = whoAmI.statements;
+    empty.evidence = whoAmI.evidence;
+    empty.identityCoverage = coverage;
+    empty.overallIdentityCoverage = averageCoverage(coverage);
 
     await supabase
       .from("profiles")
@@ -213,16 +182,11 @@ export async function synthesizeUserModel(
       })),
   ].slice(0, 6);
 
-  const identityLabels = buildIdentityLabels({
-    vision: ctx.profile?.vision ?? null,
-    founderMode: Boolean(ctx.profile?.founder_mode),
-    signals: ctx.identitySignals,
-    goals: ctx.goals,
-  });
+  const identityLabels: string[] = [];
 
-  const recentActivity =
-    buildRecentActivity(ctx.completedTasks7d, ctx.reflections7d) ||
-    ctx.recentTimelineHeadline;
+  const recentActivity = buildRecentActivity(ctx.completedTasks7d, ctx.reflections7d);
+
+  const dedupedDirections = dedupeSemanticThemes(ctx.goals.map((g) => g.title));
 
   const model: UserModel = {
     version: USER_MODEL_VERSION,
@@ -230,7 +194,7 @@ export async function synthesizeUserModel(
     identity: {
       labels: identityLabels,
       vision: ctx.profile?.vision ?? null,
-      longTermDirections: ctx.goals.map((g) => g.title),
+      longTermDirections: dedupedDirections,
     },
     currentFocus: {
       initiativeId: primary.id,
@@ -261,7 +225,22 @@ export async function synthesizeUserModel(
     }),
     narrative: "",
     whoAmIAnswer: "",
+    whoAmIStatements: [],
+    evidence: [],
+    identityCoverage: emptyIdentityCoverage(),
+    overallIdentityCoverage: 0,
   };
+
+  const identityProfile = await loadIdentityProfile(supabase, userId);
+  const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
+  const coverage = identityProfile.lastCoverage ?? computeBaselineCoverage(bundle);
+  const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage);
+
+  model.whoAmIAnswer = sanitizeCoachCopy(whoAmI.answer);
+  model.whoAmIStatements = whoAmI.statements;
+  model.evidence = whoAmI.evidence;
+  model.identityCoverage = coverage;
+  model.overallIdentityCoverage = averageCoverage(coverage);
 
   model.narrative = buildUserModelNarrative({
     identityLabels: model.identity.labels,
@@ -276,30 +255,6 @@ export async function synthesizeUserModel(
     stillNeeds: model.stillNeeds,
     recentActivity,
   });
-
-  model.whoAmIAnswer = await synthesizeWhoAmIAnswer(
-    {
-      vision: ctx.profile?.vision ?? null,
-      founderMode: Boolean(ctx.profile?.founder_mode),
-      workStyle: profileExtra?.work_style ?? null,
-      identityLabels,
-      identitySignals: ctx.identitySignals,
-      goals: ctx.goals,
-      initiativeThemes,
-      focusTitle: primary.title,
-      focusDomain: domain,
-      patterns,
-      completedTasks7d: ctx.completedTasks7d,
-      reflections7d: ctx.reflections7d,
-      obstacles,
-      stillNeeds: model.stillNeeds,
-      confidence: model.confidence,
-      portfolioCount: ctx.initiatives.length,
-      opportunities: ctx.opportunities.map((o) => o.title),
-      recentReflectionBlocks: reflectionBlocks,
-    } satisfies IdentitySynthesisInput,
-    userId
-  );
 
   await supabase
     .from("profiles")

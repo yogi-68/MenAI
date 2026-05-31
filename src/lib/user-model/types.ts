@@ -4,8 +4,14 @@ import type {
   AllocationRole,
   ExecutionAllocationEntry,
 } from "@/lib/user-model/execution-allocation";
+import type {
+  IdentityCoverageMap,
+  WhoAmIStatement,
+} from "@/lib/user-model/identity-dimensions";
 
-export const USER_MODEL_VERSION = 3 as const;
+export type { IdentityCoverageMap, WhoAmIStatement };
+
+export const USER_MODEL_VERSION = 4 as const;
 
 export type { ActivePortfolioEntry, AllocationRole, ExecutionAllocationEntry };
 
@@ -62,6 +68,10 @@ export interface UserModel {
   confidence: UserModelConfidence;
   narrative: string;
   whoAmIAnswer: string;
+  whoAmIStatements: WhoAmIStatement[];
+  evidence: string[];
+  identityCoverage: IdentityCoverageMap;
+  overallIdentityCoverage: number;
 }
 
 export interface InitiativeRow {
