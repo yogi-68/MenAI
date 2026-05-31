@@ -10,11 +10,12 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ONBOARDING_QUESTIONS,
-  QUESTION_ORDER,
+  buildQuestionFlow,
   getNextQuestion,
   getTotalQuestions,
   getQuestionNumber,
-  type OnboardingQuestion,
+  isValidQuestionId,
+  type OnboardingResponseMap,
 } from "@/lib/onboarding/questions";
 
 export default function OnboardingPage() {
@@ -31,10 +32,20 @@ export default function OnboardingPage() {
   const completionRedirectedRef = useRef(false);
   const [askingFollowUp, setAskingFollowUp] = useState(false);
 
+  const [customDate, setCustomDate] = useState("");
+
+  const flowResponses: OnboardingResponseMap = {
+    ...responses,
+    Q1: responses.Q1 ?? (selectedOptions.length && currentQuestionId === "Q1"
+      ? { responseData: { selected: selectedOptions } }
+      : undefined),
+  };
+
   const currentQuestion = ONBOARDING_QUESTIONS[currentQuestionId];
-  const questionNumber = getQuestionNumber(currentQuestionId);
-  const totalQuestions = getTotalQuestions();
+  const questionNumber = getQuestionNumber(currentQuestionId, flowResponses);
+  const totalQuestions = getTotalQuestions(flowResponses);
   const progress = (questionNumber / totalQuestions) * 100;
+  const q3Custom = currentQuestionId === "Q3" && selectedOptions.includes("custom");
 
   // Prevent hydration errors with a mounted check
   const [isMounted, setIsMounted] = useState(false);
@@ -65,7 +76,7 @@ export default function OnboardingPage() {
         } else if (data.progress?.currentQuestionId && !wasReset) {
           const nextId = data.progress.currentQuestionId;
           setCurrentQuestionId(
-            QUESTION_ORDER.includes(nextId) ? nextId : "Q1"
+            isValidQuestionId(nextId) ? nextId : "Q1"
           );
         }
       })
@@ -139,6 +150,13 @@ export default function OnboardingPage() {
         setError("Please select an option");
         return;
       }
+      if (question.id === "Q3" && activeSelectedOptions[0] === "custom") {
+        if (!customDate.trim()) {
+          setError("Pick a target date");
+          return;
+        }
+        response = customDate.trim();
+      }
       responseData = { selected: activeSelectedOptions[0] };
       if (showOther && otherText.trim()) {
         response = otherText.trim();
@@ -165,7 +183,10 @@ export default function OnboardingPage() {
     });
 
     // Move to next question
-    const nextQuestionId = getNextQuestion(currentQuestionId);
+    const nextQuestionId = getNextQuestion(currentQuestionId, {
+      ...responses,
+      [currentQuestionId]: { response, responseData },
+    });
     if (nextQuestionId) {
       // Background update progress
       fetch("/api/onboarding/progress", {
@@ -207,6 +228,7 @@ export default function OnboardingPage() {
     setSliderValue(3);
     setShowOther(false);
     setOtherText("");
+    setCustomDate("");
     setError(null);
     setAskingFollowUp(false);
   };
@@ -229,11 +251,13 @@ export default function OnboardingPage() {
       ? currentQuestion.optional || textInput.trim().length > 0
       : currentQuestion.type === "slider"
         ? true
-        : askingFollowUp
-          ? otherText.trim().length > 0
-          : showOther && currentQuestion.allowOther
-            ? otherText.trim().length > 0 || selectedOptions.length > 0
-            : selectedOptions.length > 0;
+        : q3Custom
+          ? customDate.trim().length > 0
+          : askingFollowUp
+            ? otherText.trim().length > 0
+            : showOther && currentQuestion.allowOther
+              ? otherText.trim().length > 0 || selectedOptions.length > 0
+              : selectedOptions.length > 0;
 
   if (!isMounted || !currentQuestion) {
     return (
@@ -390,6 +414,24 @@ export default function OnboardingPage() {
                           </motion.button>
                         );
                       })}
+
+                      {q3Custom && (
+                        <input
+                          type="date"
+                          value={customDate}
+                          onChange={(e) => setCustomDate(e.target.value)}
+                          className="input-field"
+                          style={{
+                            width: "100%",
+                            padding: "16px 20px",
+                            background: "rgba(255,255,255,0.03)",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: "var(--radius-md)",
+                            color: "var(--text-primary)",
+                            fontSize: "1rem",
+                          }}
+                        />
+                      )}
 
                       {currentQuestion.allowOther && (
                         <motion.button

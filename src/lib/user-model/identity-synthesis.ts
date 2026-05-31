@@ -260,43 +260,60 @@ export function buildEvidenceBasedWhoAmI(
   const inference = statements.filter((s) => s.tag === "strong_inference");
   const unknown = statements.filter((s) => s.tag === "unknown");
 
-  const parts: string[] = [];
+  const paragraphs: string[] = ["From what you've shared so far:"];
+
+  const narrativeParts: string[] = [];
 
   if (bundle.focusTitle) {
-    parts.push(
-      `What's clear right now:\nRight now, most of your energy is on ${bundle.focusTitle}.`
+    narrativeParts.push(
+      `You're trying to build more freedom through projects and income growth — right now most of your energy is on ${bundle.focusTitle}.`
+    );
+  } else if (bundle.goals.length > 0) {
+    const themes = bundle.goals.slice(0, 3).map((g) => g.title.toLowerCase()).join(", ");
+    narrativeParts.push(`You're trying to build more freedom through ${themes}.`);
+  }
+
+  if (bundle.patterns.some((p) => /inconsist|procrastin|overthink/i.test(p.pattern))) {
+    narrativeParts.push(
+      "You care about execution more than motivation — consistency keeps showing up as the real lever."
+    );
+  } else if (inference.length > 0) {
+    narrativeParts.push(inference.map((s) => s.text.replace(/\.$/, "")).join(". ") + ".");
+  }
+
+  if (bundle.patterns.length > 0) {
+    narrativeParts.push(
+      `The strongest pattern so far: ${bundle.patterns.map((p) => p.pattern).join("; ")}.`
+    );
+  } else if (bundle.completedTasks7d >= 3) {
+    narrativeParts.push(
+      `You've been showing up — ${bundle.completedTasks7d} tasks completed in the last week.`
+    );
+  } else if (bundle.initiatives.length > 0 && bundle.completedTasks7d < 2) {
+    narrativeParts.push(
+      "You've started building structure — the next step is proving consistency on a few real tasks."
     );
   }
 
-  const focusVerified = verified.filter(
-    (s) =>
-      bundle.focusTitle &&
-      (s.text.includes(bundle.focusTitle) ||
-        /completed.*task|logged.*reflection|strongest pattern|blocker|work style|founder/i.test(
-          s.text
-        ))
-  );
-  const otherVerified = verified.filter((s) => !focusVerified.includes(s));
-
-  if (focusVerified.length > 0) {
-    parts.push(focusVerified.map((s) => s.text).join(" "));
-  }
-  if (otherVerified.length > 0) {
-    parts.push(otherVerified.map((s) => s.text).join(" "));
+  if (verified.length > 0 && !bundle.focusTitle) {
+    const focusLine = verified.find((s) => s.text.includes("energy"));
+    if (focusLine) narrativeParts.push(focusLine.text);
   }
 
-  if (inference.length > 0) {
-    parts.push(`Long-term:\n${inference.map((s) => s.text).join(" ")}`);
-  }
+  paragraphs.push(narrativeParts.join("\n\n"));
 
-  if (unknown.length > 0) {
-    parts.push(`What's still unclear:\n${unknown.slice(0, 2).map((s) => s.text).join(" ")}`);
+  if (unknown.length > 0 || (bundle.completedTasks7d < 3 && bundle.reflections7d < 2)) {
+    const learning =
+      unknown.length > 0
+        ? unknown[0].text.replace(/^There isn't enough/i, "what tends to derail your momentum when things get difficult")
+        : "what tends to derail your momentum when things get difficult.";
+    paragraphs.push(`What I'm still learning is ${learning.replace(/\.$/, "")}.`);
   }
 
   const rawAnswer =
-    parts.length > 0
-      ? parts.join("\n\n")
-      : "Not enough to go on yet. Add initiatives, answer a few identity questions, and complete some tasks — then a clearer picture will emerge.";
+    paragraphs.length > 1
+      ? paragraphs.join("\n\n")
+      : "Not enough to go on yet — add one initiative with a deadline and complete a few tasks. A clearer picture will follow from what you do, not what you describe.";
 
   const answer = sanitizeCoachCopy(rewriteRoboticPhrase(rawAnswer));
 

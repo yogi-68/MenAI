@@ -112,10 +112,15 @@ export function buildPrimaryHeadline(input: {
   }
 
   if (input.targetDate) {
-    return `${input.title} — deadline ${formatDeadline(input.targetDate)}`;
+    const deadline = formatDeadline(input.targetDate);
+    return `Right now you're trying to create momentum on ${input.title}. The next stretch isn't about everything at once — it's about proving you can move ${input.title} forward consistently before ${deadline}.`;
   }
 
-  return input.title;
+  if (input.title) {
+    return `Right now you're trying to create momentum on ${input.title} — finish what you start and build habits that compound.`;
+  }
+
+  return null;
 }
 
 export function emptyUserModel(): UserModel {

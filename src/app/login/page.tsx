@@ -7,7 +7,7 @@ import {
   getAuthErrorMessage,
   type AuthErrorKind,
 } from "@/lib/auth/auth-errors";
-import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
+import { ResendConfirmationAction } from "@/components/auth/resend-confirmation-action";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorKind, setErrorKind] = useState<AuthErrorKind | null>(null);
-  const [resendSent, setResendSent] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -31,38 +31,12 @@ export default function LoginPage() {
     }
   }, []);
 
-  const handleResendConfirmation = async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail) {
-      setError("Enter your email above, then resend the confirmation link.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const result = await requestSignupConfirmationEmail(trimmedEmail);
-      setResendSent(true);
-      setError("");
-      if (result.alreadyConfirmed) {
-        setError("This email is already confirmed. You can sign in below.");
-        setErrorKind(null);
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "We couldn't resend the email. Try again in a minute."
-      );
-    }
-    setLoading(false);
-  };
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setErrorKind(null);
-    setResendSent(false);
+    setResendLoading(false);
 
     const trimmedEmail = email.trim();
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -200,22 +174,6 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleLogin}>
-            {resendSent && !error && (
-              <div
-                style={{
-                  padding: "12px 16px",
-                  borderRadius: "var(--radius-md)",
-                  background: "rgba(34, 197, 94, 0.1)",
-                  border: "1px solid rgba(34, 197, 94, 0.3)",
-                  color: "#22c55e",
-                  fontSize: "0.85rem",
-                  marginBottom: "20px",
-                }}
-              >
-                Confirmation email sent. Check your inbox and spam folder.
-              </div>
-            )}
-
             {error && (
               <div
                 style={{
@@ -229,27 +187,6 @@ export default function LoginPage() {
                 }}
               >
                 {error}
-                {errorKind === "email_not_confirmed" && (
-                  <button
-                    type="button"
-                    onClick={handleResendConfirmation}
-                    disabled={loading}
-                    style={{
-                      display: "block",
-                      marginTop: "10px",
-                      background: "none",
-                      border: "none",
-                      color: "var(--accent-primary)",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      fontWeight: 600,
-                      padding: 0,
-                      textDecoration: "underline",
-                    }}
-                  >
-                    {resendSent ? "Email sent again" : "Resend confirmation email"}
-                  </button>
-                )}
                 {errorKind === "invalid_credentials" && (
                   <button
                     type="button"
@@ -270,6 +207,16 @@ export default function LoginPage() {
                     Sign in with Google instead
                   </button>
                 )}
+              </div>
+            )}
+
+            {errorKind === "email_not_confirmed" && (
+              <div style={{ marginBottom: "20px" }}>
+                <ResendConfirmationAction
+                  email={email}
+                  loading={resendLoading}
+                  onLoadingChange={setResendLoading}
+                />
               </div>
             )}
 

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  COACHING_STYLE_MAP,
   DIRECTION_AREA_MAP,
   OBSTACLE_PATTERN_MAP,
 } from "@/lib/onboarding/questions";
@@ -7,6 +8,7 @@ import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator
 import { cancelLegacyDirectionTasks } from "@/lib/plans/legacy-task-cleanup";
 import { ensureTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import { normalizeInitiativeTitle } from "@/lib/initiatives/title-quality";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 
 interface StoredResponse {
@@ -21,18 +23,10 @@ function deadlineFromDays(days: number): string {
   return d.toISOString().split("T")[0];
 }
 
-function parseDirectionLines(text: string | null): string[] {
-  if (!text?.trim()) return [];
-  return text
-    .split(/[\n·•,;]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 2);
-}
-
 function reflectionFrequency(value: string | undefined): string {
   switch (value) {
+    case "morning":
     case "morning_night":
-      return "daily";
     case "full_day":
       return "daily";
     case "on_open":
@@ -48,6 +42,15 @@ function primaryLifeArea(selected: string[]): string {
     if (mapped) return mapped.lifeArea;
   }
   return "personal";
+}
+
+function resolveTargetDate(q3: StoredResponse | undefined): string {
+  const selected = String(q3?.response_data?.selected || "60");
+  if (selected === "custom" && q3?.response_text) {
+    return q3.response_text.split("T")[0];
+  }
+  const days = Number(selected);
+  return deadlineFromDays(Number.isFinite(days) ? days : 60);
 }
 
 /**
@@ -70,12 +73,15 @@ export async function finalizeOnboarding(
 
   const q1 = byId.get("Q1")?.response_data?.selected;
   const directionAreas = Array.isArray(q1) ? q1 : q1 ? [q1] : [];
-  const q2Lines = parseDirectionLines(byId.get("Q2")?.response_text || null);
-  const initiativeTitle = (byId.get("Q3")?.response_text || "").trim();
-  const deadlineDays = Number(byId.get("Q4")?.response_data?.selected || "60");
-  const obstacle = String(byId.get("Q5")?.response_data?.selected || "");
-  const planningStyle = String(byId.get("Q6")?.response_data?.selected || "balanced");
-  const checkIn = String(byId.get("Q7")?.response_data?.selected || "morning_night");
+  const buildingWhat = (byId.get("Q1B")?.response_text || "").trim();
+  const initiativeTitle = normalizeInitiativeTitle(
+    (byId.get("Q2")?.response_text || "").trim()
+  );
+  const targetDate = resolveTargetDate(byId.get("Q3"));
+  const obstacle = String(byId.get("Q4")?.response_data?.selected || "");
+  const coachingStyle = String(byId.get("Q5")?.response_data?.selected || "balanced");
+  const checkIn = String(byId.get("Q6")?.response_data?.selected || "morning_night");
+  const successCriteria = (byId.get("Q7")?.response_text || "").trim();
 
   let goalsCreated = 0;
   const existingGoals = await supabase
@@ -112,20 +118,6 @@ export async function finalizeOnboarding(
     });
   }
 
-  for (const line of q2Lines) {
-    if (existingTitles.has(line.toLowerCase())) continue;
-    await supabase.from("goals").insert({
-      user_id: userId,
-      title: line,
-      category: "personal",
-      priority: "medium",
-      status: "active",
-      source: "onboarding",
-    });
-    existingTitles.add(line.toLowerCase());
-    goalsCreated += 1;
-  }
-
   const patternMeta = OBSTACLE_PATTERN_MAP[obstacle];
   if (patternMeta) {
     const { data: existingPattern } = await supabase
@@ -149,21 +141,24 @@ export async function finalizeOnboarding(
     }
   }
 
-  await supabase
-    .from("profiles")
-    .update({
-      work_style: planningStyle,
-      reflection_frequency: reflectionFrequency(checkIn),
-      onboarding_completed: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", userId);
+  const profileUpdate: Record<string, unknown> = {
+    coaching_style: COACHING_STYLE_MAP[coachingStyle] || "balanced",
+    reflection_frequency: reflectionFrequency(checkIn),
+    onboarding_completed: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (buildingWhat) {
+    profileUpdate.vision = `Building: ${buildingWhat}`;
+  }
+
+  await supabase.from("profiles").update(profileUpdate).eq("id", userId);
 
   let initiativeId: string | null = null;
 
   if (initiativeTitle) {
-    const targetDate = deadlineFromDays(Number.isFinite(deadlineDays) ? deadlineDays : 60);
     const lifeArea = primaryLifeArea(directionAreas);
+    const description = buildingWhat ? `Building ${buildingWhat}` : null;
 
     const { count } = await supabase
       .from("initiatives")
@@ -177,7 +172,8 @@ export async function finalizeOnboarding(
         .insert({
           user_id: userId,
           title: initiativeTitle,
-          description: null,
+          description,
+          success_criteria: successCriteria || null,
           target_date: targetDate,
           life_area: lifeArea,
           status: "active",
@@ -192,7 +188,7 @@ export async function finalizeOnboarding(
           userId,
           created.id,
           created.title,
-          null,
+          successCriteria || description,
           lifeArea
         );
 

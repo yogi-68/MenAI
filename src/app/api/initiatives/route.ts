@@ -6,6 +6,7 @@ import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
 import { MAX_ACTIVE_INITIATIVES } from "@/lib/product/constants";
+import { validateInitiativeTitle } from "@/lib/initiatives/title-quality";
 import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
 
 async function invalidatePlanForUser(userId: string) {
@@ -50,6 +51,11 @@ export async function POST(req: NextRequest) {
   if (!title?.trim()) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
+
+  const titleCheck = validateInitiativeTitle(title.trim());
+  if (!titleCheck.valid) {
+    return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+  }
   if (!targetDate) {
     return NextResponse.json(
       { error: "targetDate is required — initiatives need a deadline for reliable planning" },
@@ -65,7 +71,7 @@ export async function POST(req: NextRequest) {
     .insert({
       user_id: user.id,
       goal_id: goalId || null,
-      title: title.trim(),
+      title: titleCheck.title,
       description: description?.trim() || null,
       target_date: targetDate || null,
       life_area: lifeArea || "personal",
@@ -102,7 +108,13 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
   const mapped: Record<string, unknown> = {};
-  if (updates.title !== undefined) mapped.title = updates.title;
+  if (updates.title !== undefined) {
+    const titleCheck = validateInitiativeTitle(String(updates.title).trim());
+    if (!titleCheck.valid) {
+      return NextResponse.json({ error: titleCheck.error }, { status: 400 });
+    }
+    mapped.title = titleCheck.title;
+  }
   if (updates.description !== undefined) mapped.description = updates.description;
   if (updates.targetDate !== undefined) mapped.target_date = updates.targetDate;
   if (updates.goalId !== undefined) mapped.goal_id = updates.goalId;

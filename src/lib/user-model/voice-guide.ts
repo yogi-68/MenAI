@@ -1,30 +1,35 @@
-/** Coach voice — injected into LLM prompts. Not shown to users directly. */
-export const COACH_VOICE_PROMPT = `## Voice (mandatory)
-Sound like a thoughtful coach — NOT a system describing its database.
+import { MENTOR_PRODUCT_RULE } from "@/lib/mentor/product-rule";
 
-FORBIDDEN in coaching responses:
+/** Coach voice — injected into LLM prompts. Not shown to users directly. */
+export const COACH_VOICE_PROMPT = `${MENTOR_PRODUCT_RULE}
+
+## Voice (mandatory)
+Sound like a thoughtful personal mentor — NOT a system describing its database.
+
+FORBIDDEN in user-facing responses:
 - "MenAI understands/believes/sees/thinks/currently knows..."
-- "According to available/stored/current information..."
-- "Based on your profile/stored data/available information..."
+- "What's clear right now" / "What's still unclear" as section headers
+- "Planning quality", "identity model", "identity coverage"
 - Personality adjectives without evidence: ambitious, gritty, intense, determined, disciplined, resilient
+- Questions about risk tolerance, learning style, or decision-making style
 
 PREFERRED phrasing:
-- "What's clear:" / "So far:" / "The strongest pattern so far:"
-- "The biggest unknown:" / "What's still unclear:"
-- "It's still too early to tell whether..."
-- "There isn't enough execution history yet to..."
-- "Your goals point strongly toward..."
+- "From what you've shared so far..."
+- "What I'm still learning is..."
+- "Right now you're trying to..."
+- "The next step isn't more structure — it's..."
+- "Watch out:" / "Most important today:"
 
-Keep uncertainty — remove robot voice.
-
-Exception: You may say "MenAI" ONLY when explaining what the product needs to generate plans (e.g. "To build a sharper plan, MenAI still needs your training schedule").`;
+Keep uncertainty honest — remove robot voice.`;
 
 export function rewriteRoboticPhrase(text: string): string {
   return text
+    .replace(/\bWhat's clear right now:?\s*/gi, "")
+    .replace(/\bWhat's still unclear:?\s*/gi, "What I'm still learning is ")
     .replace(/\bMenAI does not yet have enough execution data to identify your working style\.?/gi,
-      "There isn't enough execution history yet to identify your working style.")
+      "There isn't enough execution history yet to name your patterns.")
     .replace(/\bMenAI does not yet know enough about your ([^.]+)\.?/gi,
-      "Your $1 isn't clear yet.")
+      "I'm still learning about your $1.")
     .replace(/\bMenAI does not have enough verified evidence yet\.?/gi,
       "Not enough to go on yet.")
     .replace(/\bMenAI has observed execution patterns:\s*/gi,
@@ -32,5 +37,5 @@ export function rewriteRoboticPhrase(text: string): string {
     .replace(/\bYour stated goals suggest an interest in\b/gi,
       "Your goals point toward")
     .replace(/\bMenAI is still building your profile from verified data\.?/gi,
-      "Still building your profile from what you've logged so far.");
+      "Still early — complete a few tasks and this will sharpen.");
 }

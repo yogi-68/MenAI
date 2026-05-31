@@ -28,28 +28,37 @@ export const IDENTITY_DIMENSION_LABELS: Record<IdentityDimensionId, string> = {
   planning_baseline: "Planning baseline",
 };
 
-/** Plain-language labels for user-facing UI (no percentages). */
+/** Internal only — never shown in user UI. */
 export const IDENTITY_DIMENSION_PLAIN: Record<IdentityDimensionId, string> = {
-  direction: "Your long-term direction",
-  goals: "Which goals matter most right now",
-  execution_style: "How you work best",
-  constraints: "Your biggest constraints",
-  motivations: "What's driving this goal",
-  environment: "Your daily environment and schedule",
-  decision_style: "How you make decisions",
-  risk_profile: "Your risk tolerance",
-  learning_style: "How you learn best",
-  planning_baseline: "Your current baseline numbers",
+  direction: "Your direction",
+  goals: "Next milestone",
+  execution_style: "What's getting in the way",
+  constraints: "Current blockers",
+  motivations: "Motivations",
+  environment: "Schedule",
+  decision_style: "Decision style",
+  risk_profile: "Risk profile",
+  learning_style: "Learning style",
+  planning_baseline: "This week's priority",
 };
 
+/** Execution-only gaps — never personality quiz labels. */
 export function missingKnowledgeLabels(
   coverage: IdentityCoverageMap,
   threshold = 30
 ): string[] {
-  return IDENTITY_DIMENSION_IDS.filter((id) => (coverage[id] ?? 0) < threshold)
+  const executionDims: IdentityDimensionId[] = [
+    "direction",
+    "goals",
+    "constraints",
+    "execution_style",
+    "planning_baseline",
+  ];
+  return executionDims
+    .filter((id) => (coverage[id] ?? 0) < threshold)
     .sort((a, b) => (coverage[a] ?? 0) - (coverage[b] ?? 0))
     .map((id) => IDENTITY_DIMENSION_PLAIN[id])
-    .slice(0, 5);
+    .slice(0, 3);
 }
 
 export type WhoAmIStatementTag = "verified" | "strong_inference" | "unknown";

@@ -256,33 +256,7 @@ export default function DailyPlansPage() {
           <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "var(--text-primary)", fontWeight: 400 }}>
             {topPriority}
           </p>
-          {(planningQuality || plan?.planningContext?.improvementHints?.length) && (
-            <div style={{ marginTop: "14px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-              {planningQuality && (
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Planning quality:{" "}
-                  <span
-                    style={{
-                      fontWeight: 600,
-                      color:
-                        planningQuality === "Strong" || planningQuality === "Good"
-                          ? "var(--accent-primary)"
-                          : "#f59e0b",
-                    }}
-                  >
-                    {planningQuality}
-                  </span>
-                </span>
-              )}
-              {totalTasks > 0 && (
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  {planningQuality ? "· " : ""}
-                  {completedTasks}/{totalTasks} done today ({completionRate}%)
-                </span>
-              )}
-            </div>
-          )}
-          {!planningQuality && totalTasks > 0 && (
+          {totalTasks > 0 && (
             <div style={{ marginTop: "14px" }}>
               <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                 {completedTasks}/{totalTasks} done today ({completionRate}%)
@@ -582,7 +556,7 @@ export default function DailyPlansPage() {
                       </span>
                     </div>
                     <div style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
-                      <span style={{ color: "var(--text-muted)" }}>Done when: </span>
+                      <span style={{ color: "var(--text-muted)" }}>Success: </span>
                       <span style={{ color: "var(--text-secondary)" }}>
                         {planTask.successMetric}
                       </span>

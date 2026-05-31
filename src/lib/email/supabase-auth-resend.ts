@@ -1,4 +1,5 @@
 import { getAppOrigin } from "@/lib/email/resend";
+import { isRateLimitError } from "@/lib/auth/confirmation-messages";
 
 /** Fallback when Resend is unavailable or the sender domain isn't verified yet. */
 export async function sendSupabaseAuthResend(params: {
@@ -41,6 +42,9 @@ export async function sendSupabaseAuthResend(params: {
       body.error_description ||
       body.message ||
       "Could not send confirmation email";
+    if (isRateLimitError(message)) {
+      throw new Error("__RATE_LIMITED__");
+    }
     throw new Error(message);
   }
 }

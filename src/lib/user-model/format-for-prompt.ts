@@ -3,7 +3,7 @@ import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
 import { buildUnderstandingSummary } from "@/lib/user-model/understanding-summary";
 import { COACH_VOICE_PROMPT } from "@/lib/user-model/voice-guide";
-import { missingKnowledgeLabels } from "@/lib/user-model/identity-dimensions";
+import { MENTOR_PRODUCT_RULE } from "@/lib/mentor/product-rule";
 
 /** Inject into any LLM system prompt — the single source of truth about this user. */
 export function formatUserModelForPrompt(model: UserModel): string {
@@ -27,11 +27,6 @@ export function formatUserModelForPrompt(model: UserModel): string {
       "Statement tags (internal — only verified + strong_inference may appear in answers):",
       ...model.whoAmIStatements.map((s) => `- [${s.tag}] ${s.text}`)
     );
-  }
-
-  const gaps = missingKnowledgeLabels(model.identityCoverage, 30);
-  if (gaps.length > 0) {
-    sections.push("Biggest unknowns (plain language — use in answers, not percentages):", ...gaps.map((g) => `- ${g}`));
   }
 
   if (model.currentMilestone) {
@@ -72,13 +67,14 @@ export function formatUserModelForPrompt(model: UserModel): string {
 
   sections.push(
     "",
+    MENTOR_PRODUCT_RULE,
+    "",
     COACH_VOICE_PROMPT,
     "",
-    "One person, multiple pursuits. Keep initiative interview contexts separate — never use fitness context for business tasks.",
-    "Today's plan SHOULD mix initiatives using execution allocation. Focus gets the largest block; portfolio initiatives get proportional time.",
-    "When the user asks 'who am I', use whoAmIAnswer — ONLY verified facts and labeled strong inferences.",
-    "NEVER invent personality traits (ambitious, gritty, disciplined, intense, determined, resilient) without cited evidence.",
-    "When asked 'why do you believe that', cite specific stored facts (goal titles, initiative names, task counts). Acknowledge gaps honestly.",
+    "FOCUS-FIRST: Today's plan must prioritize CURRENT FOCUS initiative (~80%+ of tasks). Long-term direction informs why — never generates generic maintenance tasks unless that IS the focus.",
+    "When the user asks 'who am I', use whoAmIAnswer in mentor voice — no checklist headers.",
+    "When the user asks about their goal, speak to momentum and the next 30 days — not robotic 'Your goal is...'",
+    "NEVER invent personality traits without cited evidence.",
   );
 
   return sections.join("\n");
@@ -98,23 +94,25 @@ export function formatUserModelSummary(model: UserModel): {
   const longTerm = themes.length > 0 ? themes.join(" · ") : null;
 
   const understanding = buildUnderstandingSummary(model);
-  const insight =
-    understanding.known.length > 0
-      ? understanding.known[0]
-      : "Still building your profile from what you've logged so far.";
 
-  return { primary: primary || null, longTerm, insight: sanitizeCoachCopy(insight) };
+  return {
+    primary: primary || null,
+    longTerm,
+    insight: sanitizeCoachCopy(understanding.mentorBrief),
+  };
 }
 
 export function userModelToCoachBriefing(model: UserModel) {
   const understanding = buildUnderstandingSummary(model);
   return {
     tryingToAchieve: model.currentFocus.title,
-    understands: understanding.known,
-    stillNeeds: understanding.unclear,
-    insight: "",
+    understands: [],
+    stillNeeds: [],
+    insight: understanding.mentorBrief,
+    mentorBrief: understanding.mentorBrief,
+    stillLearning: understanding.stillLearning,
     mattersToday: model.currentMilestone
-      ? `Advance: ${model.currentMilestone}`
+      ? model.currentMilestone
       : model.primaryOutcome.headline,
     recentActivity: model.recentActivity,
     understanding,

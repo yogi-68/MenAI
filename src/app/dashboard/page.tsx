@@ -11,12 +11,23 @@ import { AiSuggestionsBanner } from "@/components/dashboard/ai-suggestions";
 
 interface TodayPayload {
   greeting: string;
+  personalBriefing?: {
+    phase: "morning" | "afternoon" | "evening";
+    headline: string;
+    todaysFocus: string | null;
+    mostImportantTask: string | null;
+    watchOut: string | null;
+    progressLine: string | null;
+    reflectionPrompts: string[] | null;
+    mentorBrief: string;
+    stillLearning: string | null;
+  };
   whatMattersNow: string | null;
   coachBriefing: {
     tryingToAchieve: string | null;
-    understands: string[];
-    stillNeeds: string[];
     insight: string;
+    mentorBrief?: string;
+    stillLearning?: string | null;
     mattersToday: string | null;
     recentActivity: string | null;
   } | null;
@@ -39,8 +50,8 @@ interface TodayPayload {
     longTermThemes: string | null;
     confidence: string;
     understanding?: {
-      known: string[];
-      unclear: string[];
+      mentorBrief: string;
+      stillLearning: string | null;
     };
     activePortfolio?: Array<{
       id: string;
@@ -130,18 +141,41 @@ export default function DashboardOverview() {
     <div className="page-shell">
       <header className="animate-fade-in" style={{ marginBottom: "40px" }}>
         <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          Today
+          Your briefing
         </p>
         <h1 suppressHydrationWarning style={{ fontSize: "clamp(1.75rem, 4vw, 2.25rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
           {isLoading ? `${user?.full_name?.split(" ")[0] || "there"}.` : data?.greeting}
         </h1>
+        {!isLoading && data?.personalBriefing && data.hasInitiatives && (
+          <div style={{ marginTop: "16px", maxWidth: 640, lineHeight: 1.7 }}>
+            {data.personalBriefing.todaysFocus && (
+              <p style={{ color: "var(--text-primary)", fontSize: "1.05rem", margin: "0 0 8px" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Today&apos;s focus: </span>
+                {data.personalBriefing.todaysFocus}
+              </p>
+            )}
+            {data.personalBriefing.mostImportantTask && data.personalBriefing.phase !== "evening" && (
+              <p style={{ color: "var(--text-secondary)", fontSize: "1rem", margin: "0 0 8px" }}>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Most important task: </span>
+                {data.personalBriefing.mostImportantTask}
+              </p>
+            )}
+            {data.personalBriefing.watchOut && (
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", margin: "0 0 8px" }}>
+                <span style={{ color: "#f59e0b", fontSize: "0.85rem" }}>Watch out: </span>
+                {data.personalBriefing.watchOut}
+              </p>
+            )}
+            {data.personalBriefing.progressLine && (
+              <p style={{ color: "var(--text-secondary)", fontSize: "1rem", margin: "0 0 8px" }}>
+                {data.personalBriefing.progressLine}
+              </p>
+            )}
+          </div>
+        )}
         {showEmptySetup ? (
           <p style={{ color: "var(--text-primary)", fontSize: "1.1rem", marginTop: "12px", fontWeight: 400, lineHeight: 1.6, maxWidth: 640 }}>
             Let&apos;s define your first initiative.
-          </p>
-        ) : data?.whatMattersNow && data.hasInitiatives ? (
-          <p style={{ color: "var(--text-secondary)", fontSize: "1.05rem", marginTop: "12px", fontWeight: 300, lineHeight: 1.6, maxWidth: 640 }}>
-            {data.whatMattersNow}
           </p>
         ) : null}
       </header>
@@ -158,10 +192,10 @@ export default function DashboardOverview() {
             }}
           >
             <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "6px" }}>
-              What matters most right now
+              Current initiative
             </p>
             <p style={{ fontSize: "1.05rem", fontWeight: 500, marginBottom: "10px" }}>
-              {data.userModel?.primaryOutcome || data.userModel?.currentFocusTitle || data.currentFocus.title}
+              {data.currentFocus.title}
             </p>
             <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
               {data.currentFocus.until ? `Deadline ${data.currentFocus.until}` : "No deadline set"}
@@ -175,108 +209,21 @@ export default function DashboardOverview() {
           </section>
         )}
 
-        {data?.userModel?.executionAllocation && data.userModel.executionAllocation.length > 0 && (
+        {data?.personalBriefing?.reflectionPrompts && data.hasInitiatives && (
           <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
-              Today&apos;s time mix
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {data.userModel.executionAllocation.map((slot) => (
-                <div key={slot.initiativeId}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)" }}>
-                      {slot.title}
-                      {slot.role === "focus" && (
-                        <span style={{ marginLeft: 8, fontSize: "0.72rem", color: "var(--accent-primary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          Focus
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ fontSize: "0.9rem", color: "var(--accent-primary)", fontWeight: 500 }}>
-                      {slot.percent}%
-                    </span>
-                  </div>
-                  <div style={{ height: 4, borderRadius: 2, background: "var(--bg-glass)", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${slot.percent}%`,
-                        height: "100%",
-                        background: slot.role === "focus" ? "var(--accent-primary)" : "var(--text-muted)",
-                        opacity: slot.role === "focus" ? 1 : 0.55,
-                      }}
-                    />
-                  </div>
-                  <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: "6px 0 0", lineHeight: 1.5 }}>
-                    {slot.rationale}
-                  </p>
-                </div>
+            <p style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 12 }}>
+              End of day
+            </p>
+            <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+              {data.personalBriefing.reflectionPrompts.map((q) => (
+                <li key={q} style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.6 }}>
+                  {q}
+                </li>
               ))}
-            </div>
-          </section>
-        )}
-
-        {data?.coachBriefing && data.hasInitiatives && (
-          <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 28px)" }}>
-            <h2 style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: 16 }}>
-              What&apos;s clear
-            </h2>
-            {data.userModel?.understanding ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {data.userModel.understanding.known.length > 0 && (
-                  <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: "0.92rem", lineHeight: 1.8 }}>
-                    {data.userModel.understanding.known.map((item) => (
-                      <li key={item} style={{ color: "var(--text-primary)" }}>
-                        <span style={{ color: "#22c55e", marginRight: 8 }}>✓</span>
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {data.userModel.understanding.unclear.length > 0 && (
-                  <div>
-                    <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
-                      Still unclear
-                    </h3>
-                    <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: "0.9rem", lineHeight: 1.8 }}>
-                      {data.userModel.understanding.unclear.map((item) => (
-                        <li key={item} style={{ color: "var(--text-secondary)" }}>
-                          <span style={{ color: "#f59e0b", marginRight: 8 }}>?</span>
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ) : data.coachBriefing?.understands.length ? (
-              <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.92rem", color: "var(--text-primary)", lineHeight: 1.7 }}>
-                {data.coachBriefing.understands.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: 16 }}>
-                Still building your profile from what you&apos;ve logged so far.
-              </p>
-            )}
-            {!data.userModel?.understanding && data.coachBriefing.stillNeeds.length > 0 && (
-              <>
-                <h3 style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: 8 }}>
-                  Still needs to know
-                </h3>
-                <ul style={{ margin: "0 0 16px", paddingLeft: 20, fontSize: "0.9rem", color: "#f59e0b", lineHeight: 1.6 }}>
-                  {data.coachBriefing.stillNeeds.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {data.coachBriefing.recentActivity && (
-              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", margin: 0, lineHeight: 1.6, borderTop: "1px solid var(--border-color)", paddingTop: 14 }}>
-                <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>Recently: </span>
-                {data.coachBriefing.recentActivity}
-              </p>
-            )}
+            </ol>
+            <Link href="/dashboard/chat" style={{ display: "inline-flex", marginTop: 16, fontSize: "0.88rem", color: "var(--accent-primary)", textDecoration: "none" }}>
+              Reflect in chat →
+            </Link>
           </section>
         )}
 

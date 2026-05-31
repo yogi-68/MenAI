@@ -13,6 +13,11 @@ import {
   averageCoverage,
 } from "@/lib/user-model/identity-dimensions";
 import { computeBaselineCoverage } from "@/lib/user-model/identity-synthesis";
+import {
+  MENTOR_INTERVIEW_DIMENSION_IDS,
+  MENTOR_INTERVIEW_QUESTIONS,
+  MENTOR_PRODUCT_RULE,
+} from "@/lib/mentor/product-rule";
 
 export const MARGINAL_GAIN_STOP = 3;
 export const MAX_INTERVIEW_QUESTIONS_PER_DAY = 5;
@@ -39,20 +44,26 @@ export interface AiIdentityInterviewResult {
   stopReason?: "low_marginal_gain" | "coverage_sufficient" | "max_questions" | "no_initiatives";
 }
 
-const INTERVIEW_SYSTEM = `You are MenAI's identity interview engine. You NEVER invent personality traits.
+const INTERVIEW_SYSTEM = `You are MenAI's planning interview engine — NOT a personality profiler.
 
-FORBIDDEN claims (unless explicit user evidence): disciplined, thrives on intensity, determined, resilient, naturally X.
+${MENTOR_PRODUCT_RULE}
+
+FORBIDDEN question topics: risk tolerance, learning style, decision-making style, motivations quiz.
 
 Your job:
-1. Score identity dimension coverage 0-100 using ONLY evidence and stored answers — not speculation
-2. Pick the weakest dimension that would materially improve daily planning
-3. Generate ONE high-value question for that dimension
+1. Score execution-relevant dimension coverage 0-100 using ONLY evidence — not speculation
+2. Pick the weakest dimension that would materially improve TODAY'S plan or the current initiative
+3. Generate ONE execution-focused question (see allowed dimensions below)
 4. Stop when expectedGain < 3 or overall coverage >= 78
 
-Dimensions: direction, goals, execution_style, constraints, motivations, environment, decision_style, risk_profile, learning_style, planning_baseline
+Allowed dimensions ONLY: ${MENTOR_INTERVIEW_DIMENSION_IDS.join(", ")}
 
-Use choice inputType when a fixed set of options helps (motivation, work style, constraints, decision style, risk).
-Use number/date/text for measurable planning baselines (body-fat %, hours/week, deadlines).
+Preferred questions (use or adapt):
+${Object.entries(MENTOR_INTERVIEW_QUESTIONS)
+  .map(([k, v]) => `- ${k}: "${v.prompt}" (${v.subtitle})`)
+  .join("\n")}
+
+Use text/number/date input. Use choice only for concrete options (hours available, deadline date).
 
 Return JSON only:
 {
@@ -121,8 +132,11 @@ export function fallbackInterviewStep(
     };
   }
 
-  const sorted = [...IDENTITY_DIMENSION_IDS].sort((a, b) => coverage[a] - coverage[b]);
+  const sorted = [...MENTOR_INTERVIEW_DIMENSION_IDS].sort(
+    (a, b) => coverage[a] - coverage[b]
+  );
   const weakest = sorted[0];
+  const mentorQ = MENTOR_INTERVIEW_QUESTIONS[weakest];
   const expectedGain = Math.max(3, Math.round((100 - coverage[weakest]) / 4));
 
   if (overall >= COVERAGE_STOP_THRESHOLD || expectedGain < MARGINAL_GAIN_STOP) {
@@ -148,8 +162,8 @@ export function fallbackInterviewStep(
     question: {
       id: `${weakest}_open`,
       dimension: weakest,
-      prompt: `What should MenAI know about your ${weakest.replace(/_/g, " ")}?`,
-      subtitle: "This fills a gap in your identity model for better daily plans.",
+      prompt: mentorQ?.prompt ?? "What's slowing you down right now?",
+      subtitle: mentorQ?.subtitle ?? "Helps me shape today's plan around reality.",
       inputType: "text",
       expectedGain,
     },

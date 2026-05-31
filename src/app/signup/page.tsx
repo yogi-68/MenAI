@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
+import { ResendConfirmationAction } from "@/components/auth/resend-confirmation-action";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
@@ -16,7 +16,6 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [resendSent, setResendSent] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -68,27 +67,6 @@ export default function SignupPage() {
     setLoading(false);
   };
 
-  const handleResendConfirmation = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await requestSignupConfirmationEmail(email.trim());
-      if (result.alreadyConfirmed) {
-        setError("This email is already confirmed. You can sign in.");
-      } else {
-        setResendSent(true);
-        setError("");
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "We couldn't resend the email. Try again in a minute."
-      );
-    }
-    setLoading(false);
-  };
-
   const handleGoogleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -133,22 +111,15 @@ export default function SignupPage() {
           <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
             We sent a confirmation link to <strong>{email}</strong>. Open it to activate your account.
           </p>
-          {resendSent && (
-            <p style={{ color: "#22c55e", fontSize: "0.9rem", marginBottom: "12px" }}>
-              Email sent again — check your inbox and spam folder.
-            </p>
-          )}
-          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: 1.6, marginBottom: "8px" }}>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: 1.6, marginBottom: "16px" }}>
             Didn&apos;t get it? Check spam, or sign in with Google if you used that before.
           </p>
-          <button
-            onClick={handleResendConfirmation}
-            disabled={loading}
-            className="btn-secondary"
-            style={{ marginTop: "12px", marginRight: "12px" }}
-          >
-            Resend email
-          </button>
+          <ResendConfirmationAction
+            email={email}
+            loading={loading}
+            onLoadingChange={setLoading}
+            style={{ marginBottom: "12px" }}
+          />
           <Link
             href="/login"
             className="btn-primary"

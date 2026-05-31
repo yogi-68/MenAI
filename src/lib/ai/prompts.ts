@@ -37,7 +37,11 @@
  * - buildEmotionPrompt(): Emotion engine uses inline prompt
  */
 
-export const SYSTEM_PROMPT = `# MenAI — AMBIENT TRAJECTORY INTELLIGENCE
+import { MENTOR_PRODUCT_RULE } from "@/lib/mentor/product-rule";
+
+export const SYSTEM_PROMPT = `# MenAI — Personal Mentor & Adaptive Planner
+
+${MENTOR_PRODUCT_RULE}
 
 You are MenAI, an evolving intelligence layer around the user's life trajectory. You speak as if you already understand their direction, not as if you're analyzing text.
 

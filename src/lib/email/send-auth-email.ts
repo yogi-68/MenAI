@@ -12,15 +12,26 @@ import {
   isResendDomainError,
   sendSupabaseAuthResend,
 } from "@/lib/email/supabase-auth-resend";
+import { isRateLimitError } from "@/lib/auth/confirmation-messages";
 
 export type SendConfirmationResult = {
   ok: true;
   sent: boolean;
   provider: "resend" | "supabase";
-  reason?: "not_found" | "already_confirmed";
+  reason?: "not_found" | "already_confirmed" | "rate_limited";
 };
 
-async function trySendViaResend(email: string, redirectTo: string): Promise<string> {
+/** Only use Resend when the sender domain is verified — avoids a failed send + Supabase retry. */
+function shouldUseResend(): boolean {
+  if (!process.env.RESEND_API_KEY) return false;
+  if (process.env.RESEND_DOMAIN_VERIFIED === "true") return true;
+  const from = getResendFromAddress().toLowerCase();
+  if (from.includes("onboarding@resend.dev")) return false;
+  if (from.includes("@menai.ai")) return false;
+  return true;
+}
+
+async function trySendViaResend(email: string, redirectTo: string): Promise<void> {
   const linkType: GenerateLinkParams["type"] = "magiclink";
   const admin = await createServiceRoleClient();
 
@@ -33,6 +44,9 @@ async function trySendViaResend(email: string, redirectTo: string): Promise<stri
   if (error) {
     if (error.message.toLowerCase().includes("user not found")) {
       throw new Error("__USER_NOT_FOUND__");
+    }
+    if (isRateLimitError(error.message)) {
+      throw new Error("__RATE_LIMITED__");
     }
     throw error;
   }
@@ -60,8 +74,6 @@ async function trySendViaResend(email: string, redirectTo: string): Promise<stri
   if (sendError) {
     throw new Error(sendError.message);
   }
-
-  return data.properties.action_link;
 }
 
 export async function sendAuthConfirmationEmail(params: {
@@ -71,7 +83,7 @@ export async function sendAuthConfirmationEmail(params: {
   const email = params.email.trim().toLowerCase();
   const redirectTo = params.redirectTo ?? `${getAppOrigin()}/auth/callback?next=/onboarding`;
 
-  if (process.env.RESEND_API_KEY) {
+  if (shouldUseResend()) {
     try {
       await trySendViaResend(email, redirectTo);
       return { ok: true, sent: true, provider: "resend" };
@@ -83,14 +95,25 @@ export async function sendAuthConfirmationEmail(params: {
       if (message === "__ALREADY_CONFIRMED__") {
         return { ok: true, sent: false, provider: "supabase", reason: "already_confirmed" };
       }
+      if (message === "__RATE_LIMITED__") {
+        return { ok: true, sent: false, provider: "supabase", reason: "rate_limited" };
+      }
       if (!isResendDomainError(message)) {
         console.warn("Resend failed, falling back to Supabase auth email:", message);
       }
     }
   }
 
-  await sendSupabaseAuthResend({ email, redirectTo, type: "signup" });
-  return { ok: true, sent: true, provider: "supabase" };
+  try {
+    await sendSupabaseAuthResend({ email, redirectTo, type: "signup" });
+    return { ok: true, sent: true, provider: "supabase" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "__RATE_LIMITED__" || isRateLimitError(message)) {
+      return { ok: true, sent: false, provider: "supabase", reason: "rate_limited" };
+    }
+    throw error;
+  }
 }
 
 export async function sendAuthEmailFromHookPayload(payload: {

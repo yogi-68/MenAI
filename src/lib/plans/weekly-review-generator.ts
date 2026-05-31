@@ -308,16 +308,20 @@ export async function generateWeeklyReview(
     const userModel = await getUserModel(supabase, userId);
     const initTitle = userModel.currentFocus.title || initiatives[0]?.title || "your initiative";
     const honest: WeeklyReviewContent = {
-      whatHappened: `This week there isn't enough execution data to identify meaningful progress. You have ${initiatives.length} active initiative${initiatives.length > 1 ? "s" : ""} set up${initTitle ? ` including "${initTitle}"` : ""}, but no completed tasks or daily reflections were logged.`,
+      whatHappened: `You're still in setup mode.
+
+Most of this week went into defining direction and creating structure rather than producing execution data. That's normal early on.
+
+The next step isn't building more structure — it's completing a few real tasks so patterns can start emerging.${initTitle ? ` Your current focus is "${initTitle}".` : ""}`,
       patternDetected:
         reflections.length === 0 && completedTasks.length === 0
-          ? "Structure without execution — MenAI can plan, but it can't learn your patterns until you complete tasks and reflect."
+          ? "Structure without execution — plans stay generic until tasks and reflections land."
           : "",
       biggestWin: "",
       biggestRisk:
-        "Plans will stay generic until MenAI sees real behavior — workouts, study blocks, outreach, or reflections about what blocked you.",
+        "Momentum won't show up in reviews until you finish at least one planned task and log what blocked you.",
       focusNextWeek:
-        "Complete one task from your daily plan and log one end-of-day reflection. That's enough for MenAI to start identifying what works for you.",
+        "Pick one task from your daily plan, finish it, and answer the three end-of-day questions. That's enough for better plans next week.",
       internalMetrics: {
         momentumScore: momentum.score,
         executionRate7d: execution.last7Days.rate,

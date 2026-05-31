@@ -1,7 +1,18 @@
-/** Sends signup confirmation — Resend when configured, Supabase mail as fallback. */
+import {
+  RATE_LIMIT_USER_MESSAGE,
+  RESEND_SUCCESS_MESSAGE,
+} from "@/lib/auth/confirmation-messages";
+
+export type ConfirmationEmailResult = {
+  message: string;
+  alreadyConfirmed?: boolean;
+  rateLimited?: boolean;
+};
+
+/** Sends signup confirmation — Resend when verified, Supabase mail otherwise. */
 export async function requestSignupConfirmationEmail(
   email: string
-): Promise<{ message: string; alreadyConfirmed?: boolean }> {
+): Promise<ConfirmationEmailResult> {
   const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
   const res = await fetch("/api/auth/send-confirmation", {
     method: "POST",
@@ -13,6 +24,7 @@ export async function requestSignupConfirmationEmail(
     error?: string;
     message?: string;
     alreadyConfirmed?: boolean;
+    rateLimited?: boolean;
   };
 
   if (!res.ok) {
@@ -20,7 +32,10 @@ export async function requestSignupConfirmationEmail(
   }
 
   return {
-    message: data.message || "Check your email for a confirmation link.",
+    message: data.message || RESEND_SUCCESS_MESSAGE,
     alreadyConfirmed: data.alreadyConfirmed,
+    rateLimited: data.rateLimited,
   };
 }
+
+export { RATE_LIMIT_USER_MESSAGE, RESEND_SUCCESS_MESSAGE };

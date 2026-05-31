@@ -268,7 +268,7 @@ export async function fetchPlanUserContext(
   ] = await Promise.all([
     supabase
       .from("initiatives")
-      .select("id, title, description, target_date, progress, life_area, last_action_at, status, goal_id, goals(title)")
+      .select("id, title, description, success_criteria, target_date, progress, life_area, last_action_at, status, goal_id, goals(title)")
       .eq("user_id", userId)
       .eq("status", "active")
       .order("target_date", { ascending: true, nullsFirst: false })
@@ -417,6 +417,8 @@ export async function fetchPlanUserContext(
     });
     const parts = [`[${lifeAreaLabel(i.life_area)}]`, i.title, `(${health.label})`];
     if (i.description) parts.push(i.description);
+    const criteria = (i as { success_criteria?: string | null }).success_criteria;
+    if (criteria) parts.push(`success criteria: ${criteria}`);
     if (goalTitle) parts.push(`supports goal: ${goalTitle}`);
     if (i.target_date) {
       const days = daysUntil(i.target_date);
@@ -751,22 +753,23 @@ function buildPrompt(ctx: PlanUserContext): string {
 
   const modeInstructions =
     ctx.planMode === "context_building"
-      ? `CONTEXT-BUILDING MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
-- Generate ONLY 1–2 context-building tasks
-- Ask for missing information in whyTheseTasks (initiatives, deadlines, obstacles, available time)
+      ? `CONTEXT-BUILDING MODE:
+- Generate ONLY 1–2 context-building tasks tied to CURRENT FOCUS initiative
+- Ask for missing execution info in whyTheseTasks (blockers, time available, next milestone)
 - Mark ALL tasks isContextBuilding: true
-- Do NOT invent execution work from vague goals`
+- Do NOT invent execution work from long-term direction or vague goals`
       : ctx.planMode === "aggressive"
-        ? `AGGRESSIVE EXECUTION MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
-- Generate up to ${ctx.maxTasks} high-leverage tasks tied to initiatives and opportunities
-- Prioritize at-risk and stalled initiatives
+        ? `AGGRESSIVE EXECUTION MODE:
+- Generate up to ${ctx.maxTasks} high-leverage tasks — 80%+ MUST link to CURRENT FOCUS initiative
+- Prioritize at-risk and stalled focus work
 - Include at least one task that advances the highest-urgency opportunity if any exist
-- Tasks should be ambitious but still concrete and measurable today`
-        : `NORMAL MODE (planning quality: ${ctx.contextSnapshot.planningQuality}):
-- Generate up to ${ctx.maxTasks} tasks across the active portfolio using EXECUTION ALLOCATION
-- Include at least one task per initiative with allocation >= 15% unless urgent opportunity overrides
-- Include "assumptions" array listing 1–3 assumptions you made due to imperfect context
-- Explain the mix in whyTheseTasks — e.g. "Fitness gets 60% because it's your focus; real estate gets 30% as an active 90-day objective"`;
+- Each task needs a concrete "why" tied to the current initiative milestone`
+        : `NORMAL MODE:
+- Generate up to ${ctx.maxTasks} tasks — at least 80% MUST link to CURRENT FOCUS initiative
+- Long-term direction informs WHY, never the task list itself (no generic finance/fitness maintenance unless that IS the focus)
+- Secondary portfolio initiatives: max 1–2 tasks combined, only if allocation >= 20%
+- Every task needs whyItMatters explaining how it moves the current initiative forward today
+- Include "assumptions" array if context is thin`;
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
 
@@ -776,12 +779,11 @@ ${ctx.userModelNarrative}
 EXECUTION ALLOCATION (distribute tasks and time proportionally — intelligently mixed day):
 ${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% to current focus initiative")}
 
-PRIORITY STACK:
-1. URGENT OPPORTUNITIES — time-sensitive events override routine allocation
-2. FOCUS initiative (${ctx.executionAllocationLines[0]?.match(/(\d+)%/)?.[1] ?? "60"}%+ of tasks) — highest-leverage milestone work
-3. SECONDARY portfolio initiatives — proportional blocks per allocation above
-4. MAINTENANCE — quick touches on neglected or low-% initiatives
-5. Goals (direction only) — never primary task source unless no initiatives exist
+PRIORITY STACK (strict):
+1. URGENT OPPORTUNITIES — time-sensitive events override routine
+2. CURRENT FOCUS initiative — minimum 80% of tasks; all must link to focus milestone
+3. SECONDARY portfolio — max 1–2 tasks total, only if explicitly allocated >= 20%
+4. NEVER generate tasks from long-term goals/direction alone (e.g. "track income" when focus is MenAI)
 
 CURRENT FOCUS (gets largest share — not the only share):
 ${ctx.currentFocus ? `  - ${ctx.currentFocus}${ctx.currentFocusUntil ? ` until ${ctx.currentFocusUntil}` : ""}` : "  - Not set — spread across active portfolio"}
@@ -826,7 +828,14 @@ ${listOrFallback(ctx.upcomingDeadlines, "None")}
 Goals (background DIRECTION only — never generate tasks from these):
 ${listOrFallback(ctx.goals, "None")}
 
-TASK RULE — every task MUST pass: "Can the user finish this today before bed?"
+TASK FORMAT (mandatory for every task):
+- title: specific action verb + deliverable (NOT "work on X")
+- whyItMatters: one sentence — why this moves the CURRENT FOCUS initiative today
+- successMetric: concrete done criteria — verifiable yes/no today (e.g. "Complete signup → onboarding → dashboard without errors")
+- deliverable: what exists when finished
+
+BAD: "Track expenses", "Work on onboarding", "Improve fitness"
+GOOD: "Complete onboarding testing" / Why: "Removes biggest blocker before launch" / Success: "Signup through dashboard works without errors"
 DOMAIN RULE — match task language to initiative life areas:
 - health → nutrition, training, walks — NEVER SaaS/customer/outreach tasks
 - learning → study blocks, syllabus, mocks — NEVER startup/MVP/customer tasks
@@ -859,10 +868,7 @@ ${ctx.timeEstimationInsight ? `Time estimation: ${ctx.timeEstimationInsight}` : 
 Available time: ${availableHours} hours (${ctx.availableMinutes} minutes)
 Energy: ${ctx.energyLevel}
 
-PLANNING QUALITY: ${ctx.contextSnapshot.planningQuality}
-Context dimensions:
-${ctx.contextSnapshot.dimensions.map((d) => `- ${d.label}: ${d.satisfied ? "clear" : `gap — ${d.gapHint || "needs detail"}`}`).join("\n")}
-To improve specificity: ${ctx.confidence.gaps.join("; ") || "None"}
+Context gaps (use for context-building tasks only): ${ctx.confidence.gaps.join("; ") || "None"}
 
 ${ctx.goalAnalysis ? `GOAL ANALYSIS (use this for whatMattersNow — do NOT repeat verbatim):
 ${ctx.goalAnalysis.coachInsight}

@@ -36,13 +36,13 @@ export function classifyAuthError(error: AuthError): AuthErrorKind {
 export function getAuthErrorMessage(kind: AuthErrorKind): string {
   switch (kind) {
     case "email_not_confirmed":
-      return "Confirm your email before signing in. Check your inbox (and spam), or resend the link below.";
+      return "Confirm your email before signing in. Check your inbox and spam folder.";
     case "invalid_credentials":
       return "Email or password didn't match. If you signed up with Google, use Continue with Google instead.";
     case "google_only":
       return "This account uses Google sign-in. Click Continue with Google — password login isn't set up for this email.";
     case "rate_limited":
-      return "Too many attempts. Wait a minute and try again.";
+      return "Check your inbox and spam folder — a confirmation link may already be on its way.";
     default:
       return "Sign-in failed. Check your details or try Google sign-in.";
   }

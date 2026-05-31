@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, SkipForward } from "lucide-react";
-import { missingKnowledgeLabels, type IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
+import type { IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 
 interface InterviewQuestion {
   variableId: string;
@@ -100,14 +100,10 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
 
   if (!hasInitiatives || isLoading || !data) return null;
 
-  const { snapshot, nextQuestion, biggestUnknown, identityCoverage } = data;
+  const { snapshot, nextQuestion } = data;
   const showCard = snapshot.shouldInterview && nextQuestion;
 
   if (!showCard) return null;
-
-  const stillNeedToUnderstand = identityCoverage
-    ? missingKnowledgeLabels(identityCoverage, 30)
-    : [];
 
   return (
     <section
@@ -117,27 +113,8 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
       <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
         <MessageCircle size={20} style={{ color: "#f59e0b", marginTop: "2px", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "6px" }}>
-            A few details would sharpen today&apos;s plan.
-          </p>
-          {stillNeedToUnderstand.length > 0 && (
-            <div style={{ marginBottom: "16px" }}>
-              <p style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
-                Still need to understand
-              </p>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                {stillNeedToUnderstand.map((label) => (
-                  <li key={label}>{label}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.6 }}>
-            The biggest unknown:{" "}
-            <span style={{ color: "var(--text-primary)" }}>
-              {(biggestUnknown || nextQuestion.subtitle || "one more detail").charAt(0).toLowerCase() +
-                (biggestUnknown || nextQuestion.subtitle || "one more detail").slice(1)}
-            </span>
+          <p style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "16px" }}>
+            One quick question to sharpen today&apos;s plan.
           </p>
 
           <div

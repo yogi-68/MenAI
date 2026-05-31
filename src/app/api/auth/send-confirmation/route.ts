@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { sendAuthConfirmationEmail } from "@/lib/email/send-auth-email";
 import { getAppOrigin } from "@/lib/email/resend";
+import {
+  RATE_LIMIT_USER_MESSAGE,
+  RESEND_SUCCESS_MESSAGE,
+} from "@/lib/auth/confirmation-messages";
 
 export const runtime = "nodejs";
-
-const SUCCESS_MESSAGE =
-  "If an account exists for this email, we sent a confirmation link. Check your inbox and spam folder.";
 
 export async function POST(request: Request) {
   try {
@@ -33,26 +34,24 @@ export async function POST(request: Request) {
       });
     }
 
+    if (result.reason === "rate_limited") {
+      return NextResponse.json({
+        success: true,
+        message: RATE_LIMIT_USER_MESSAGE,
+        rateLimited: true,
+      });
+    }
+
     return NextResponse.json({
       success: true,
-      message: result.sent ? SUCCESS_MESSAGE : SUCCESS_MESSAGE,
+      message: RESEND_SUCCESS_MESSAGE,
     });
   } catch (error) {
     console.error("Send confirmation error:", error);
-    const message =
-      error instanceof Error ? error.message.toLowerCase() : "";
-
-    if (message.includes("rate limit") || message.includes("too many")) {
-      return NextResponse.json(
-        { error: "Too many attempts. Wait a minute, then try again." },
-        { status: 429 }
-      );
-    }
-
     return NextResponse.json(
       {
         error:
-          "We couldn't send the email right now. Try Google sign-in, or wait a minute and tap Resend.",
+          "We couldn't send the email right now. Check your inbox — a link may already be on its way.",
       },
       { status: 500 }
     );

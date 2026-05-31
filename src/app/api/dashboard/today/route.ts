@@ -7,6 +7,7 @@ import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
 import { getUserModel } from "@/lib/user-model/loader";
 import { formatUserModelSummary, userModelToCoachBriefing } from "@/lib/user-model/format-for-prompt";
+import { buildPersonalBriefing } from "@/lib/dashboard/personal-briefing";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,6 @@ export async function GET() {
 
   const today = new Date().toISOString().split("T")[0];
   const hour = new Date().getHours();
-  const timeOfDay = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening";
 
   const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel] =
     await Promise.all([
@@ -30,7 +30,6 @@ export async function GET() {
         .from("tasks")
         .select("id, title, status, due_date, auto_generated, created_at, initiative_id")
         .eq("user_id", user.id)
-        .in("status", ["pending", "in_progress"])
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase
         .from("initiatives")
@@ -49,16 +48,24 @@ export async function GET() {
       getUserModel(supabase, user.id),
     ]);
 
-  const firstName = profileRes.data?.full_name?.split(" ")[0] || "there";
-  const allTasks = tasksRes.data || [];
-  const focusTasks = selectDashboardTasks(allTasks, today, 5);
-  const initiatives = initiativesRes.data || [];
-
   const planContent = planRes.data?.plan_content as {
     whatMattersNow?: string;
     planningContext?: { coachInsight?: string };
-    tasks?: Array<{ title: string }>;
+    tasks?: Array<{ title: string; status?: string }>;
   } | null;
+
+  const firstName = profileRes.data?.full_name?.split(" ")[0] || "there";
+  const allTasks = (tasksRes.data || []).filter((t) =>
+    ["pending", "in_progress", "completed"].includes(t.status)
+  );
+  const completedToday = allTasks.filter((t) => t.status === "completed").length;
+  const planTaskCount = planContent?.tasks?.length ?? 0;
+  const focusTasks = selectDashboardTasks(
+    allTasks.filter((t) => t.status !== "completed"),
+    today,
+    5
+  );
+  const initiatives = initiativesRes.data || [];
 
   const currentMilestone = userModel.currentMilestone;
   const coachBriefing = await buildDashboardCoachBriefing(supabase, user.id, {
@@ -91,8 +98,19 @@ export async function GET() {
         }
       : null;
 
+  const personalBriefing = buildPersonalBriefing({
+    model: userModel,
+    hour,
+    focusTitle,
+    focusTasks: focusTasks.map((t) => ({ title: t.title, status: t.status })),
+    completedToday,
+    totalToday: planTaskCount || focusTasks.length + completedToday,
+    firstName,
+  });
+
   return NextResponse.json({
-    greeting: `${timeOfDay}, ${firstName}.`,
+    greeting: personalBriefing.headline,
+    personalBriefing,
     whatMattersNow:
       coachBriefing.mattersToday ||
       userModel.primaryOutcome.headline ||
@@ -101,9 +119,9 @@ export async function GET() {
       null,
     coachBriefing: {
       ...coachBriefing,
-      understands: coachBriefingFromModel.understanding.known,
-      stillNeeds: coachBriefingFromModel.understanding.unclear,
-      insight: "",
+      insight: coachBriefingFromModel.mentorBrief,
+      mentorBrief: coachBriefingFromModel.mentorBrief,
+      stillLearning: coachBriefingFromModel.stillLearning,
     },
     userModel: {
       primaryOutcome: userModel.primaryOutcome.headline,

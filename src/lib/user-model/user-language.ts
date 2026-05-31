@@ -1,14 +1,14 @@
-/** User-facing labels — keep DB/internal terms out of UI copy. */
+/** User-facing labels — mentor briefing, not dashboard fields. */
 
 export const USER_LABELS = {
-  whatMattersMost: "What matters most right now",
+  whatMattersMost: "Today's focus",
   whatElseWorkingOn: "What else you're working on",
-  whatsClear: "What's clear",
-  whatsStillUnclear: "What's still unclear",
-  longTermInterest: "Long-term interest",
-  currentFocus: "What matters most right now",
-  executionMix: "Today's time mix",
+  personalBriefing: "Your briefing",
+  longTermInterest: "Long-term direction",
+  currentFocus: "Today's focus",
   todaysFocus: "Today's focus",
+  watchOut: "Watch out",
+  mostImportant: "Most important task",
 } as const;
 
 export function formatFocusLine(title: string, targetDate: string | null): string {
@@ -25,7 +25,7 @@ export function formatFocusLine(title: string, targetDate: string | null): strin
 
 export function formatPortfolioLine(title: string, isFocus: boolean, targetDate: string | null): string {
   if (isFocus) {
-    return `${USER_LABELS.whatMattersMost}: ${formatFocusLine(title, targetDate)}`;
+    return formatFocusLine(title, targetDate);
   }
-  return `${USER_LABELS.whatElseWorkingOn}: ${formatFocusLine(title, targetDate)}`;
+  return formatFocusLine(title, targetDate);
 }

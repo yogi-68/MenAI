@@ -17,7 +17,7 @@ export async function buildDashboardCoachBriefing(
   const briefing = userModelToCoachBriefing(model);
 
   if (extras?.currentMilestone) {
-    briefing.mattersToday = `Advance: ${extras.currentMilestone}`;
+    briefing.mattersToday = extras.currentMilestone;
   } else if (
     extras?.whatMattersNow &&
     model.currentFocus.title &&

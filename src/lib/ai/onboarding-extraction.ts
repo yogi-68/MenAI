@@ -19,18 +19,16 @@ interface ExtractionResult {
   dailyPriorities?: string[];
 }
 
-// Question mapping to extraction logic for NEW questions
+// Question mapping — aligned with ONBOARDING_QUESTIONS (execution system, not profile)
 const QUESTION_EXTRACTORS: Record<string, (response: string, responseData: any) => Promise<ExtractionResult>> = {
-  Q1: extractPersonalGoals,        // What's most important to you right now in your life?
-  Q2: extractFutureVision,         // Where do you see yourself in a year?
-  Q3: extractObstacles,            // What obstacles are you facing?
-  Q4: extractDailyPriorities,      // What do you want to focus on daily?
-  Q5: extractSupportStyle,         // How do you prefer guidance?
-  Q6: extractLifeBalance,          // What area needs most attention?
-  Q7: extractMotivation,           // What motivates you most?
-  Q8: extractStressResponse,       // When overwhelmed, you typically...
-  Q9: extractReflectionFrequency,  // How often do you want to reflect?
-  Q10: extractInitialCommitment,   // 30-day accomplishment goal
+  Q1: extractDirectionAreas,
+  Q1B: extractBusinessBuilding,
+  Q2: extractInitialCommitment,
+  Q3: extractDeadlineFrame,
+  Q4: extractObstaclePattern,
+  Q5: extractCoachingStyle,
+  Q6: extractReflectionFrequency,
+  Q7: extractSuccessCriteria,
 };
 
 /**
@@ -65,6 +63,186 @@ export async function extractOnboardingMemory(
     console.error(`Extraction error for ${questionId}:`, error);
     throw error;
   }
+}
+
+/** Q1: direction multi-select → goals + identity signals */
+async function extractDirectionAreas(
+  response: string,
+  responseData: { selected?: string | string[] }
+): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
+  const areas = Array.isArray(selected) ? selected : selected ? [selected] : [];
+  if (areas.length === 0) {
+    return extractPersonalGoals(response, responseData);
+  }
+
+  const goals = areas.map((area) => ({
+    title: area.replace(/_/g, " "),
+    category: "personal_growth",
+    priority: "high" as const,
+    confidence: 0.9,
+  }));
+
+  const identitySignals = areas.map((area) => ({
+    type: "direction",
+    description: area.replace(/_/g, " "),
+    longTermDirection: area.replace(/_/g, " "),
+    confidence: 0.9,
+  }));
+
+  return { goals, identitySignals };
+}
+
+/** Q4: deadline frame (30/60/90) */
+async function extractDeadlineFrame(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const days = responseData?.selected;
+  if (!days) return {};
+  return {
+    commitments: [
+      {
+        description: `${days}-day initiative horizon`,
+        category: "personal",
+        timeframe: `${days}_days`,
+        confidence: 0.85,
+      },
+    ],
+  };
+}
+
+/** Q5: obstacle pattern from forced choice */
+async function extractObstaclePattern(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const key = responseData?.selected;
+  if (!key) return {};
+
+  const patternMap: Record<
+    string,
+    { pattern: string; trigger: string; behavioralImpact: string }
+  > = {
+    overthinking: {
+      pattern: "overthinking",
+      trigger: "Uncertainty before committing",
+      behavioralImpact: "Delays shipping and gathering real feedback",
+    },
+    procrastination: {
+      pattern: "procrastination",
+      trigger: "Task feels large or unclear",
+      behavioralImpact: "Important work gets postponed",
+    },
+    burnout: {
+      pattern: "burnout",
+      trigger: "Sustained high load without recovery",
+      behavioralImpact: "Energy drops and consistency breaks",
+    },
+    scattered_focus: {
+      pattern: "scattered_focus",
+      trigger: "Too many open threads",
+      behavioralImpact: "Progress spreads thin across goals",
+    },
+    scattered_focus_priorities: {
+      pattern: "scattered_focus",
+      trigger: "Competing priorities",
+      behavioralImpact: "Hard to protect one initiative at a time",
+    },
+    inconsistency: {
+      pattern: "inconsistency",
+      trigger: "Irregular follow-through",
+      behavioralImpact: "Momentum resets frequently",
+    },
+    avoidance: {
+      pattern: "avoidance",
+      trigger: "Fear of failure or judgment",
+      behavioralImpact: "High-value tasks get skipped",
+    },
+  };
+
+  const mapped = patternMap[key];
+  if (!mapped) return { obstacles: [key] };
+
+  return {
+    obstacles: [key],
+    executionPatterns: [
+      {
+        ...mapped,
+        frequency: "frequent",
+        severity: "medium",
+        confidence: 0.85,
+      },
+    ],
+  };
+}
+
+/** Q6: daily task preference → support/planning style */
+async function extractPlanningStyle(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
+  if (!selected) return {};
+
+  const styleMap: Record<string, string> = {
+    small_actions: "gentle",
+    balanced: "balanced",
+    aggressive: "direct",
+  };
+
+  return { supportStyle: styleMap[selected] || selected };
+}
+
+/** Q1B: founder — what they're building */
+async function extractBusinessBuilding(
+  response: string,
+  _responseData: unknown
+): Promise<ExtractionResult> {
+  if (!response?.trim()) return {};
+  return {
+    identitySignals: [
+      {
+        type: "direction",
+        description: `Building ${response.trim()}`,
+        longTermDirection: response.trim(),
+        confidence: 0.92,
+      },
+    ],
+  };
+}
+
+/** Q5: coaching style preference */
+async function extractCoachingStyle(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
+  if (!selected) return {};
+  const map: Record<string, string> = {
+    supportive: "gentle",
+    balanced: "balanced",
+    direct: "direct",
+  };
+  return { supportStyle: map[selected] || selected };
+}
+
+/** Q7: success criteria for initiative */
+async function extractSuccessCriteria(
+  response: string,
+  _responseData: unknown
+): Promise<ExtractionResult> {
+  if (!response?.trim()) return {};
+  return {
+    commitments: [
+      {
+        description: response.trim(),
+        category: "personal",
+        timeframe: "30_days",
+        confidence: 0.9,
+      },
+    ],
+  };
 }
 
 /**

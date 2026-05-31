@@ -50,7 +50,8 @@ export function buildChatModeGuidance(mode: ChatMode): string {
 Use the full user model. Every claim must be provable from evidence.
 FORBIDDEN without evidence: ambitious, gritty, disciplined, intense, determined, resilient, thrives on action.
 If execution data is thin: "There isn't enough execution history yet to identify your working style."
-Structure: What's clear → What's still unclear → One actionable next step.`;
+Structure: Mentor narrative ("From what you've shared…" / "What I'm still learning…") → One actionable next step.
+Never use checklist headers or personality quiz questions.`;
 
     case "goal_teaching":
       return `${voice}
