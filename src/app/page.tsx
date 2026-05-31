@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   Target,
   Calendar,
@@ -50,7 +50,7 @@ export default function LandingPage() {
     <div className="landing">
       <nav className="landing-nav">
         <Link href="/" className="landing-brand">
-          <Image src="/logo.png" alt="MenAI" width={36} height={36} className="landing-logo" priority />
+          <BrandLogo size={36} className="landing-logo" />
           <div>
             <span className="landing-brand-name">MenAI</span>
             <span className="landing-brand-tag">EXECUTION OS</span>
@@ -210,7 +210,7 @@ export default function LandingPage() {
 
       <footer className="landing-footer">
         <div className="landing-footer-brand">
-          <Image src="/logo.png" alt="MenAI" width={20} height={20} className="landing-logo" />
+          <BrandLogo size={20} className="landing-logo" />
           <span>© {new Date().getFullYear()} MenAI — Execution operating system</span>
         </div>
         <div className="landing-footer-links">

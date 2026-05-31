@@ -1,5 +1,7 @@
-/** Client helper — sends signup confirmation via Resend-backed API. */
-export async function requestSignupConfirmationEmail(email: string): Promise<void> {
+/** Sends signup confirmation — Resend when configured, Supabase mail as fallback. */
+export async function requestSignupConfirmationEmail(
+  email: string
+): Promise<{ message: string; alreadyConfirmed?: boolean }> {
   const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
   const res = await fetch("/api/auth/send-confirmation", {
     method: "POST",
@@ -7,8 +9,18 @@ export async function requestSignupConfirmationEmail(email: string): Promise<voi
     body: JSON.stringify({ email: email.trim(), redirectTo }),
   });
 
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    message?: string;
+    alreadyConfirmed?: boolean;
+  };
+
   if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || "Could not send confirmation email");
+    throw new Error(data.error || "We couldn't send the confirmation email.");
   }
+
+  return {
+    message: data.message || "Check your email for a confirmation link.",
+    alreadyConfirmed: data.alreadyConfirmed,
+  };
 }

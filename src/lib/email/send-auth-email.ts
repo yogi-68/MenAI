@@ -8,19 +8,20 @@ import {
   type AuthEmailAction,
 } from "@/lib/email/auth-email-templates";
 import { getAppOrigin, getResendClient, getResendFromAddress } from "@/lib/email/resend";
+import {
+  isResendDomainError,
+  sendSupabaseAuthResend,
+} from "@/lib/email/supabase-auth-resend";
 
-export type SendConfirmationResult =
-  | { ok: true; sent: true }
-  | { ok: true; sent: false; reason: "not_found" | "already_confirmed" };
+export type SendConfirmationResult = {
+  ok: true;
+  sent: boolean;
+  provider: "resend" | "supabase";
+  reason?: "not_found" | "already_confirmed";
+};
 
-export async function sendAuthConfirmationEmail(params: {
-  email: string;
-  redirectTo?: string;
-}): Promise<SendConfirmationResult> {
-  const email = params.email.trim().toLowerCase();
-  const redirectTo = params.redirectTo ?? `${getAppOrigin()}/auth/callback?next=/onboarding`;
+async function trySendViaResend(email: string, redirectTo: string): Promise<string> {
   const linkType: GenerateLinkParams["type"] = "magiclink";
-
   const admin = await createServiceRoleClient();
 
   const { data, error } = await admin.auth.admin.generateLink({
@@ -31,7 +32,7 @@ export async function sendAuthConfirmationEmail(params: {
 
   if (error) {
     if (error.message.toLowerCase().includes("user not found")) {
-      return { ok: true, sent: false, reason: "not_found" };
+      throw new Error("__USER_NOT_FOUND__");
     }
     throw error;
   }
@@ -41,14 +42,14 @@ export async function sendAuthConfirmationEmail(params: {
   }
 
   if (data.user?.email_confirmed_at) {
-    return { ok: true, sent: false, reason: "already_confirmed" };
+    throw new Error("__ALREADY_CONFIRMED__");
   }
 
   const resend = getResendClient();
   const { error: sendError } = await resend.emails.send({
     from: getResendFromAddress(),
     to: [email],
-    subject: getAuthEmailSubject("magiclink"),
+    subject: getAuthEmailSubject("signup"),
     html: buildAuthEmailHtml({
       action: "signup",
       confirmUrl: data.properties.action_link,
@@ -60,7 +61,36 @@ export async function sendAuthConfirmationEmail(params: {
     throw new Error(sendError.message);
   }
 
-  return { ok: true, sent: true };
+  return data.properties.action_link;
+}
+
+export async function sendAuthConfirmationEmail(params: {
+  email: string;
+  redirectTo?: string;
+}): Promise<SendConfirmationResult> {
+  const email = params.email.trim().toLowerCase();
+  const redirectTo = params.redirectTo ?? `${getAppOrigin()}/auth/callback?next=/onboarding`;
+
+  if (process.env.RESEND_API_KEY) {
+    try {
+      await trySendViaResend(email, redirectTo);
+      return { ok: true, sent: true, provider: "resend" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "__USER_NOT_FOUND__") {
+        return { ok: true, sent: false, provider: "supabase", reason: "not_found" };
+      }
+      if (message === "__ALREADY_CONFIRMED__") {
+        return { ok: true, sent: false, provider: "supabase", reason: "already_confirmed" };
+      }
+      if (!isResendDomainError(message)) {
+        console.warn("Resend failed, falling back to Supabase auth email:", message);
+      }
+    }
+  }
+
+  await sendSupabaseAuthResend({ email, redirectTo, type: "signup" });
+  return { ok: true, sent: true, provider: "supabase" };
 }
 
 export async function sendAuthEmailFromHookPayload(payload: {

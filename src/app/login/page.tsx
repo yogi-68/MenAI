@@ -9,7 +9,7 @@ import {
 } from "@/lib/auth/auth-errors";
 import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
 import Link from "next/link";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 
@@ -40,10 +40,19 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await requestSignupConfirmationEmail(trimmedEmail);
+      const result = await requestSignupConfirmationEmail(trimmedEmail);
       setResendSent(true);
+      setError("");
+      if (result.alreadyConfirmed) {
+        setError("This email is already confirmed. You can sign in below.");
+        setErrorKind(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not resend email");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "We couldn't resend the email. Try again in a minute."
+      );
     }
     setLoading(false);
   };
@@ -117,7 +126,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} priority />
+            <BrandLogo size={44} style={{ borderRadius: "50%" }} />
             <span
               style={{
                 fontSize: "1.5rem",
@@ -191,6 +200,22 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleLogin}>
+            {resendSent && !error && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: "var(--radius-md)",
+                  background: "rgba(34, 197, 94, 0.1)",
+                  border: "1px solid rgba(34, 197, 94, 0.3)",
+                  color: "#22c55e",
+                  fontSize: "0.85rem",
+                  marginBottom: "20px",
+                }}
+              >
+                Confirmation email sent. Check your inbox and spam folder.
+              </div>
+            )}
+
             {error && (
               <div
                 style={{
@@ -222,7 +247,7 @@ export default function LoginPage() {
                       textDecoration: "underline",
                     }}
                   >
-                    {resendSent ? "Confirmation email sent" : "Resend confirmation email"}
+                    {resendSent ? "Email sent again" : "Resend confirmation email"}
                   </button>
                 )}
                 {errorKind === "invalid_credentials" && (

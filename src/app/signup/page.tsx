@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
 import Link from "next/link";
-import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, Eye, EyeOff, Loader2 } from "lucide-react";
 
@@ -16,6 +16,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [resendSent, setResendSent] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -62,17 +63,7 @@ export default function SignupPage() {
       return;
     }
 
-    try {
-      await requestSignupConfirmationEmail(trimmedEmail);
-    } catch (confirmError) {
-      console.error(confirmError);
-      setError(
-        "Account created, but we couldn't send the confirmation email. Use Resend email below or try Google sign-in."
-      );
-      setLoading(false);
-      return;
-    }
-
+    // Email confirmation required — Supabase sends the first email on signUp
     setSuccess(true);
     setLoading(false);
   };
@@ -81,9 +72,19 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
     try {
-      await requestSignupConfirmationEmail(email.trim());
+      const result = await requestSignupConfirmationEmail(email.trim());
+      if (result.alreadyConfirmed) {
+        setError("This email is already confirmed. You can sign in.");
+      } else {
+        setResendSent(true);
+        setError("");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not resend email");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "We couldn't resend the email. Try again in a minute."
+      );
     }
     setLoading(false);
   };
@@ -130,11 +131,15 @@ export default function SignupPage() {
             Check your email
           </h2>
           <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
-            We&apos;ve sent a confirmation link to <strong>{email}</strong>. Click the link to activate
-            your account and get started.
+            We sent a confirmation link to <strong>{email}</strong>. Open it to activate your account.
           </p>
+          {resendSent && (
+            <p style={{ color: "#22c55e", fontSize: "0.9rem", marginBottom: "12px" }}>
+              Email sent again — check your inbox and spam folder.
+            </p>
+          )}
           <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", lineHeight: 1.6, marginBottom: "8px" }}>
-            Didn&apos;t get it? Check spam, or if you signed up with Google before, use Google login instead.
+            Didn&apos;t get it? Check spam, or sign in with Google if you used that before.
           </p>
           <button
             onClick={handleResendConfirmation}
@@ -170,7 +175,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <Link href="/" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="MenAI" width={44} height={44} style={{ borderRadius: "50%" }} priority />
+            <BrandLogo size={44} style={{ borderRadius: "50%" }} />
             <span
               style={{
                 fontSize: "1.5rem",
