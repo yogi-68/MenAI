@@ -87,7 +87,7 @@ function mergeCoverage(
   return out;
 }
 
-function fallbackInterviewStep(
+export function fallbackInterviewStep(
   bundle: EvidenceBundle,
   identityProfile: IdentityProfileStore,
   askedToday: string[]

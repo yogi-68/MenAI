@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, SkipForward } from "lucide-react";
-import type { IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
+import { missingKnowledgeLabels, type IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 
 interface InterviewQuestion {
   variableId: string;
@@ -21,11 +21,22 @@ interface ContextSnapshot {
   shouldInterview: boolean;
 }
 
-interface PlanContextResponse {
+interface PlanContextData {
   snapshot: ContextSnapshot;
   nextQuestion: InterviewQuestion | null;
   biggestUnknown: string | null;
-  planningGaps?: string[];
+  identityCoverage: Record<IdentityDimensionId, number> | null;
+  overallCoverage: number | null;
+}
+
+interface InterviewSubmitResponse {
+  done: boolean;
+  nextQuestion: InterviewQuestion | null;
+  biggestUnknown: string | null;
+  identityCoverage: Record<IdentityDimensionId, number>;
+  overallCoverage: number;
+  snapshot?: { shouldInterview: boolean };
+  timings?: { saveMs: number; nextMs: number; totalMs: number };
 }
 
 export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boolean }) {
@@ -37,9 +48,9 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
     queryFn: async () => {
       const res = await fetch("/api/plans/context");
       if (!res.ok) throw new Error("Failed to load context");
-      return res.json() as Promise<PlanContextResponse>;
+      return res.json() as Promise<PlanContextData>;
     },
-    staleTime: 15_000,
+    staleTime: 60_000,
     enabled: hasInitiatives,
   });
 
@@ -56,25 +67,30 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Interview failed");
-      return res.json() as Promise<PlanContextResponse & { done?: boolean }>;
+      return res.json() as Promise<InterviewSubmitResponse>;
     },
     onSuccess: (result) => {
       setAnswer("");
-      queryClient.setQueryData(["plan-context"], (prev: PlanContextResponse | undefined) => {
+
+      queryClient.setQueryData<PlanContextData>(["plan-context"], (prev) => {
         if (!prev) return prev;
+        const shouldInterview = result.snapshot?.shouldInterview ?? !result.done;
         return {
           ...prev,
-          snapshot: {
-            ...prev.snapshot,
-            shouldInterview: !result.done && Boolean(result.nextQuestion),
-          },
-          nextQuestion: result.nextQuestion ?? null,
-          biggestUnknown: result.biggestUnknown ?? null,
-          planningGaps: result.planningGaps ?? prev.planningGaps,
+          snapshot: { ...prev.snapshot, shouldInterview },
+          nextQuestion: result.nextQuestion,
+          biggestUnknown: result.biggestUnknown,
+          identityCoverage: result.identityCoverage ?? prev.identityCoverage,
+          overallCoverage: result.overallCoverage ?? prev.overallCoverage,
         };
       });
-      queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
+
+      if (result.done) {
+        queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["dashboard-today"] });
+        }, 2000);
+      }
     },
   });
 
@@ -84,12 +100,14 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
 
   if (!hasInitiatives || isLoading || !data) return null;
 
-  const { snapshot, nextQuestion, biggestUnknown, planningGaps } = data;
+  const { snapshot, nextQuestion, biggestUnknown, identityCoverage } = data;
   const showCard = snapshot.shouldInterview && nextQuestion;
 
   if (!showCard) return null;
 
-  const gaps = (planningGaps ?? []).slice(0, 3);
+  const stillNeedToUnderstand = identityCoverage
+    ? missingKnowledgeLabels(identityCoverage, 30)
+    : [];
 
   return (
     <section
@@ -102,20 +120,20 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
           <p style={{ fontSize: "0.95rem", fontWeight: 500, color: "var(--text-primary)", marginBottom: "6px" }}>
             A few details would sharpen today&apos;s plan.
           </p>
-          {gaps.length > 0 && (
+          {stillNeedToUnderstand.length > 0 && (
             <div style={{ marginBottom: "16px" }}>
               <p style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
-                Still need for planning
+                Still need to understand
               </p>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.88rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-                {gaps.map((label) => (
+                {stillNeedToUnderstand.map((label) => (
                   <li key={label}>{label}</li>
                 ))}
               </ul>
             </div>
           )}
           <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", marginBottom: "16px", lineHeight: 1.6 }}>
-            Next up:{" "}
+            The biggest unknown:{" "}
             <span style={{ color: "var(--text-primary)" }}>
               {(biggestUnknown || nextQuestion.subtitle || "one more detail").charAt(0).toLowerCase() +
                 (biggestUnknown || nextQuestion.subtitle || "one more detail").slice(1)}
@@ -211,7 +229,7 @@ export function PlanContextInterview({ hasInitiatives }: { hasInitiatives: boole
                     })
                   }
                 >
-                  {submit.isPending ? "Saving…" : "Save"}
+                  {submit.isPending ? "Saving…" : "Answer"}
                 </button>
                 <button
                   type="button"

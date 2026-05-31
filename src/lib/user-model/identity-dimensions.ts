@@ -72,6 +72,16 @@ export interface IdentityProfileStore {
   interviewDate?: string;
   lastCoverage?: IdentityCoverageMap;
   lastOverallCoverage?: number;
+  cachedQuestion?: {
+    id: string;
+    dimension: IdentityDimensionId;
+    prompt: string;
+    subtitle?: string;
+    inputType: "text" | "number" | "date" | "choice";
+    choices?: string[];
+    expectedGain: number;
+  };
+  cachedQuestionGeneratedAt?: string;
 }
 
 export function emptyIdentityCoverage(): IdentityCoverageMap {

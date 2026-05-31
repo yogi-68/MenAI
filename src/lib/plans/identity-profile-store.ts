@@ -4,6 +4,7 @@ import type {
   IdentityDimensionId,
   IdentityProfileStore,
 } from "@/lib/user-model/identity-dimensions";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
 interface PlanContextRoot {
   byInitiative?: Record<string, unknown>;
@@ -76,7 +77,8 @@ export async function saveIdentityAnswer(
     questionId: string;
     dimension: IdentityDimensionId;
     value: string;
-  }
+  },
+  options?: { skipUserModelRefresh?: boolean }
 ): Promise<IdentityProfileStore> {
   const store = await readStore(supabase, userId);
   const today = todayStr();
@@ -96,9 +98,14 @@ export async function saveIdentityAnswer(
     },
     interviewAskedToday: asked,
     interviewDate: today,
+    cachedQuestion: undefined,
+    cachedQuestionGeneratedAt: undefined,
   };
 
   await writeStore(supabase, userId, store);
+  if (!options?.skipUserModelRefresh) {
+    scheduleUserModelRefresh(supabase, userId);
+  }
   return store.identityProfile;
 }
 

@@ -4,15 +4,24 @@ import type { IdentityDimensionId } from "@/lib/user-model/identity-dimensions";
 import {
   applyInterviewAnswer,
   buildDimensionInput,
+  getFastInterviewResponse,
   getPlanContextState,
   markInterviewSkipped,
 } from "@/lib/plans/plan-interview";
 import { improvementHints } from "@/lib/plans/plan-context-dimensions";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
+import { prefetchAiInterviewQuestion } from "@/lib/plans/interview-fast-path";
 
 export const runtime = "nodejs";
 
+function defer(fn: () => void | Promise<void>): void {
+  void Promise.resolve().then(fn).catch((err) => {
+    console.error("[Interview] background:", err);
+  });
+}
+
 export async function POST(request: NextRequest) {
+  const started = Date.now();
   try {
     const supabase = await createServerSupabaseClient();
     const {
@@ -30,7 +39,7 @@ export async function POST(request: NextRequest) {
     const answer = typeof body.answer === "string" ? body.answer.trim() : "";
 
     if (action === "generate_now") {
-      await invalidateTodayPlan(supabase, user.id);
+      defer(() => invalidateTodayPlan(supabase, user.id));
       const input = await buildDimensionInput(supabase, user.id);
       const { snapshot, goalAnalysis } = await getPlanContextState(supabase, user.id);
       return NextResponse.json({
@@ -39,6 +48,7 @@ export async function POST(request: NextRequest) {
         goalAnalysis,
         snapshot: {
           planningQuality: snapshot.planningQuality,
+          shouldInterview: false,
           improvementHints: improvementHints(input),
           dimensions: snapshot.dimensions.map((d) => ({
             id: d.id,
@@ -46,12 +56,15 @@ export async function POST(request: NextRequest) {
             satisfied: d.satisfied,
           })),
         },
+        timings: { totalMs: Date.now() - started },
       });
     }
 
     if (!variableId || typeof variableId !== "string") {
       return NextResponse.json({ error: "Invalid variable" }, { status: 400 });
     }
+
+    const saveStarted = Date.now();
 
     if (action === "skip") {
       await markInterviewSkipped(supabase, user.id, variableId);
@@ -70,30 +83,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
 
-    const input = await buildDimensionInput(supabase, user.id);
-    const { snapshot, goalAnalysis, nextQuestion, biggestUnknown, stopReason, planningGaps } =
-      await getPlanContextState(supabase, user.id);
-    const done = !snapshot.shouldInterview || !nextQuestion;
+    const saveMs = Date.now() - saveStarted;
+
+    defer(() => invalidateTodayPlan(supabase, user.id));
+    prefetchAiInterviewQuestion(supabase, user.id);
+
+    const nextStarted = Date.now();
+    const fast = await getFastInterviewResponse(
+      supabase,
+      user.id,
+      action === "answer" ? (dimension as IdentityDimensionId | undefined) : undefined
+    );
+    const nextMs = Date.now() - nextStarted;
 
     return NextResponse.json({
-      done,
+      done: fast.done,
       regenerated: action === "answer",
-      goalAnalysis,
-      biggestUnknown: done ? null : biggestUnknown,
-      stopReason,
-      planningGaps,
+      biggestUnknown: fast.biggestUnknown,
+      stopReason: fast.stopReason,
+      identityCoverage: fast.identityCoverage,
+      overallCoverage: fast.overallCoverage,
       snapshot: {
-        planningQuality: snapshot.planningQuality,
-        shouldInterview: snapshot.shouldInterview,
-        improvementHints: improvementHints(input),
-        dimensions: snapshot.dimensions.map((d) => ({
-          id: d.id,
-          label: d.label,
-          satisfied: d.satisfied,
-          gapHint: d.gapHint,
-        })),
+        shouldInterview: fast.shouldInterview,
       },
-      nextQuestion: done ? null : nextQuestion,
+      nextQuestion: fast.nextQuestion,
+      timings: {
+        saveMs,
+        nextMs,
+        totalMs: Date.now() - started,
+      },
     });
   } catch (error) {
     console.error("Plan interview error:", error);
