@@ -7,6 +7,7 @@ import {
   getAuthErrorMessage,
   type AuthErrorKind,
 } from "@/lib/auth/auth-errors";
+import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -38,19 +39,13 @@ export default function LoginPage() {
     }
     setLoading(true);
     setError("");
-    const { error: resendError } = await supabase.auth.resend({
-      type: "signup",
-      email: trimmedEmail,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
-      },
-    });
-    setLoading(false);
-    if (resendError) {
-      setError(resendError.message);
-      return;
+    try {
+      await requestSignupConfirmationEmail(trimmedEmail);
+      setResendSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend email");
     }
-    setResendSent(true);
+    setLoading(false);
   };
 
   const handleLogin = async (e: React.FormEvent) => {

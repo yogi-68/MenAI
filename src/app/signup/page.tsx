@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { requestSignupConfirmationEmail } from "@/lib/auth/request-confirmation-email";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -29,8 +30,10 @@ export default function SignupPage() {
       return;
     }
 
+    const trimmedEmail = email.trim();
+
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: trimmedEmail,
       password,
       options: {
         data: { full_name: name },
@@ -59,6 +62,17 @@ export default function SignupPage() {
       return;
     }
 
+    try {
+      await requestSignupConfirmationEmail(trimmedEmail);
+    } catch (confirmError) {
+      console.error(confirmError);
+      setError(
+        "Account created, but we couldn't send the confirmation email. Use Resend email below or try Google sign-in."
+      );
+      setLoading(false);
+      return;
+    }
+
     setSuccess(true);
     setLoading(false);
   };
@@ -66,15 +80,10 @@ export default function SignupPage() {
   const handleResendConfirmation = async () => {
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (error) {
-      setError(error.message);
+    try {
+      await requestSignupConfirmationEmail(email.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend email");
     }
     setLoading(false);
   };
