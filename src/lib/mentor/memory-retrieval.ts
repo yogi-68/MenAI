@@ -15,6 +15,9 @@ export interface RankedPattern {
 
 export interface MemoryRetrievalContext {
   primaryInitiative: string | null;
+  primaryDirectionMemory: string | null;
+  priorDirections: string[];
+  coreValues: Array<{ text: string; evidenceCount: number; influence: number }>;
   secondaryLifeAreas: Array<{ area: string; label: string; weight: number; source: string }>;
   recentEmergingAreas: string[];
   patterns: RankedPattern[];
@@ -25,6 +28,7 @@ export interface MemoryRetrievalContext {
   activePlanningConstraints: string[];
   goals: string[];
   identitySignals: string[];
+  totalReflections: number;
 }
 
 function patternRankScore(p: {
@@ -57,7 +61,7 @@ export async function loadMemoryRetrievalContext(
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [weights, patternsRes, reflectionsRes, goalsRes, signalsRes, initiativesRes, profileRes] =
+  const [weights, patternsRes, reflectionsRes, goalsRes, signalsRes, initiativesRes, profileRes, priorDirRes] =
     await Promise.all([
       computeLifeAreaWeights(supabase, userId),
       supabase
@@ -98,6 +102,14 @@ export async function loadMemoryRetrievalContext(
         .select("current_focus_initiative_id")
         .eq("id", userId)
         .maybeSingle(),
+      supabase
+        .from("mentor_memories")
+        .select("text, archived_at")
+        .eq("user_id", userId)
+        .eq("memory_type", "direction")
+        .in("status", ["superseded", "archived"])
+        .order("archived_at", { ascending: false })
+        .limit(5),
     ]);
 
   const mentorMemories = bundle?.mentorMemories ?? (await loadMentorMemories(supabase, userId, 15));
@@ -119,6 +131,16 @@ export async function loadMemoryRetrievalContext(
     : activeInits[0];
 
   let primaryInit = bundle?.focusTitle ?? focusedInit?.title ?? null;
+
+  const activeDirections = mentorMemories
+    .filter((m) => m.memoryType === "direction")
+    .sort((a, b) => b.influenceScore - a.influenceScore);
+
+  const topDirection = activeDirections[0];
+  if (topDirection && topDirection.influenceScore >= 0.35) {
+    primaryInit = directionToFocusLabel(topDirection.text) ?? primaryInit;
+  }
+
   if (!primaryInit) {
     const upscGoal = (goalsRes.data || []).find((g) => /upsc|exam prep/i.test(g.title));
     primaryInit =
@@ -177,8 +199,24 @@ export async function loadMemoryRetrievalContext(
     );
   }
 
+  const priorDirections = (priorDirRes.data || []).map((m) => m.text);
+
+  const coreValues = mentorMemories
+    .filter((m) => m.memoryType === "core_value")
+    .map((m) => ({
+      text: m.text,
+      evidenceCount: m.evidenceCount ?? m.mentionCount,
+      influence: m.influenceScore,
+    }))
+    .sort((a, b) => b.influence - a.influence);
+
+  const totalReflections = bundle?.reflections7d ?? reflectionsRes.data?.length ?? 0;
+
   return {
     primaryInitiative: primaryInit,
+    primaryDirectionMemory: topDirection?.text ?? null,
+    priorDirections,
+    coreValues,
     secondaryLifeAreas,
     recentEmergingAreas,
     patterns,
@@ -191,7 +229,19 @@ export async function loadMemoryRetrievalContext(
     identitySignals: (signalsRes.data || []).map(
       (s) => s.long_term_direction || s.description
     ),
+    totalReflections,
   };
+}
+
+function directionToFocusLabel(text: string): string | null {
+  const t = text.toLowerCase();
+  if (/upsc|exam/.test(t)) return "UPSC preparation";
+  if (/finance agency/.test(t)) return "building a finance agency";
+  if (/business/.test(t)) return "building businesses";
+  if (/preparing for|building|studying for|launching|training for/.test(t)) {
+    return text.replace(/^i('m| am) /i, "").trim();
+  }
+  return text.slice(0, 80);
 }
 
 export function detectRetrievalIntent(message: string): "focus" | "stuck" | "identity" | "plan" | null {
@@ -208,23 +258,34 @@ export function detectRetrievalIntent(message: string): "focus" | "stuck" | "ide
 /** Multi-area focus answer — primary initiative + emerging secondary areas. */
 export function buildFocusSynthesis(ctx: MemoryRetrievalContext): string {
   const lines: string[] = [];
-  if (ctx.primaryInitiative && isConcreteInitiativeTitle(ctx.primaryInitiative)) {
-    lines.push(`Primary execution focus: ${ctx.primaryInitiative}.`);
+  const focus =
+    ctx.primaryDirectionMemory
+      ? directionToFocusLabel(ctx.primaryDirectionMemory)
+      : ctx.primaryInitiative;
+
+  if (focus) {
+    lines.push(`${focus} is your primary focus right now.`);
   } else if (ctx.primaryInitiative) {
     lines.push(`Primary direction on file: ${ctx.primaryInitiative}.`);
   }
 
+  const fitnessSecondary =
+    ctx.secondaryLifeAreas.find((a) => a.label === "fitness") ||
+    ctx.coreValues.some((v) => /fitness|gym|training/.test(v.text.toLowerCase()));
+
   const secondary = [
+    ...(fitnessSecondary ? ["fitness"] : []),
     ...ctx.recentEmergingAreas,
     ...ctx.secondaryLifeAreas.map((a) => a.label),
-  ].filter((v, i, arr) => arr.indexOf(v) === i);
+  ].filter((v, i, arr) => arr.indexOf(v) === i && v !== focus?.toLowerCase());
 
   if (secondary.length > 0) {
+    lines.push(`Secondary areas also matter: ${secondary.slice(0, 3).join(", ")}.`);
+  }
+
+  if (ctx.priorDirections.length > 0 && focus && /upsc/i.test(focus)) {
     lines.push(
-      `Secondary areas also matter recently: ${secondary.slice(0, 3).join(", ")} — mentioned in chat, goals, or life-area balance.`
-    );
-    lines.push(
-      `Business/main initiative gets execution priority; secondary areas (e.g. fitness) should appear in plans and identity — never ignore them.`
+      `Note: earlier direction (${ctx.priorDirections[0].slice(0, 60)}) was superseded — do NOT present old focus as current.`
     );
   }
 
@@ -234,26 +295,31 @@ export function buildFocusSynthesis(ctx: MemoryRetrievalContext): string {
   return lines.join("\n");
 }
 
-/** Pattern synthesis for "why am I stuck" — uses mention counts, not keyword parroting. */
+/** Pattern synthesis for "why am I stuck" — uses evidence counts, not keyword parroting. */
 export function buildPatternSynthesis(ctx: MemoryRetrievalContext): string {
   const overthink = ctx.patterns.find((p) => p.pattern === "overthinking");
+  const reflectionNote =
+    ctx.totalReflections > 0 ? "conversations and reflections" : "conversations";
+
   if (!overthink || overthink.mentions < 2) {
     const top = ctx.patterns[0];
     if (top) {
-      return `The strongest friction pattern on file is ${top.pattern.replace(/_/g, " ")} (${top.mentions} mentions, ${Math.round(top.confidence * 100)}% confidence). ${top.behavioralImpact || "It slows execution when it shows up."}`;
+      return `The strongest friction pattern is ${top.pattern.replace(/_/g, " ")} — appeared ${top.mentions} times across ${reflectionNote} (${Math.round(top.rankScore * 100)}% influence). ${top.behavioralImpact || "It slows execution when it shows up."}`;
     }
     return "Not enough pattern history yet — keep sharing what blocks you in chat and reflections.";
   }
 
+  const totalEvidence = overthink.mentions + (ctx.reflectionBlockers.some((b) => /overthink/i.test(b)) ? 1 : 0);
+
   return [
-    `Overthinking has come up ${overthink.mentions} times in your stored patterns (${Math.round(overthink.confidence * 100)}% confidence).`,
+    `Overthinking has appeared ${totalEvidence} times across your recent ${reflectionNote} (${Math.round(overthink.rankScore * 100)}% influence).`,
     "What stands out: you often know the next action but delay committing to it.",
-    "In recent conversations, uncertainty about committing seems more limiting than lack of knowledge.",
-    "Planning should counter this with one small irreversible action — talk to a user, send outreach, ship a draft — not more research.",
+    "The pattern suggests hesitation around committing to decisions rather than lack of information.",
+    "Counter with one small irreversible action today — not more research.",
   ].join("\n");
 }
 
-/** Full mentor identity synthesis — freedom theme, relationships, patterns. */
+/** Full mentor identity synthesis — evolution-aware: core values persist, directions can shift. */
 export function buildMentorIdentitySynthesis(
   ctx: MemoryRetrievalContext,
   bundle: EvidenceBundle
@@ -261,38 +327,61 @@ export function buildMentorIdentitySynthesis(
   const paragraphs: string[] = [];
   const themes = computeThemeActivity(bundle);
 
-  if (ctx.freedomTheme || themes.some((t) => t.key === "wealth" || t.key === "business")) {
+  const freedomValue = ctx.coreValues.find((v) => /freedom|independen|financial/.test(v.text.toLowerCase()));
+  if (freedomValue || ctx.freedomTheme) {
+    const ev = freedomValue?.evidenceCount ?? 1;
+    const inf = Math.round((freedomValue?.influence ?? 0.85) * 100);
     paragraphs.push(
-      "Across your conversations, a recurring theme is freedom — you consistently return to business ownership and financial independence rather than traditional stability."
+      `You consistently value freedom and independence (evidence: ${ev}×, influence: ${inf}%). This core belief persists even when your execution focus changes.`
     );
   }
 
-  const fitness = themes.find((t) => t.key === "fitness");
-  const business = themes.find((t) => t.key === "business" || t.key === "wealth");
-  if (fitness && business) {
+  const hasPriorBusiness =
+    ctx.priorDirections.some((d) => /business|agency|finance/.test(d.toLowerCase())) ||
+    themes.some((t) => t.key === "business" || t.key === "wealth");
+  const currentUpsc =
+    ctx.primaryDirectionMemory && /upsc|exam/i.test(ctx.primaryDirectionMemory);
+
+  if (hasPriorBusiness && currentUpsc) {
     paragraphs.push(
-      "Fitness appears important to you, but mostly as part of becoming stronger and more disciplined — not as a separate vanity goal."
+      "Earlier conversations focused on business ownership and financial freedom, but your recent attention has shifted toward UPSC preparation."
     );
-  } else if (fitness?.recent) {
+  } else if (hasPriorBusiness && !currentUpsc) {
     paragraphs.push(
-      `Fitness has emerged recently (${fitness.mentions} signal${fitness.mentions > 1 ? "s" : ""} on file) as an area you care about alongside your main pursuit.`
+      "Business ownership and financial independence recur as themes in how you think about your future."
     );
+  }
+
+  const fitnessValue = ctx.coreValues.find((v) => /fitness|gym|training/.test(v.text.toLowerCase()));
+  if (fitnessValue) {
+    paragraphs.push(
+      `Fitness remains a recurring part of how you think about discipline and self-improvement (evidence: ${fitnessValue.evidenceCount}×) — not vanity, but part of who you're becoming.`
+    );
+  } else {
+    const fitnessTheme = themes.find((t) => t.key === "fitness");
+    if (fitnessTheme?.recent) {
+      paragraphs.push(
+        `Fitness has emerged recently as an area you care about alongside your main pursuit.`
+      );
+    }
   }
 
   const overthink = ctx.patterns.find((p) => p.pattern === "overthinking");
   if (overthink && overthink.mentions >= 2) {
     paragraphs.push(
-      `A pattern that keeps appearing is overthinking (${overthink.mentions} mentions). Several conversations suggest committing to a direction is often harder than generating ideas.`
+      `A pattern that repeatedly appears is overthinking (${overthink.mentions}× across conversations). Committing to a direction is often harder for you than generating ideas.`
     );
   }
 
   if (ctx.relationshipNotes.length > 0) {
     paragraphs.push(
-      "You've also shown awareness that ambition can affect relationships — particularly how much time and energy work consumes."
+      "You've shown awareness that ambition can affect relationships — particularly how much time and energy work consumes."
     );
-  } else if (ctx.mentorMemories.some((m) => /\bwork too much\b/i.test(m.text))) {
+  }
+
+  if (ctx.priorDirections.length > 0) {
     paragraphs.push(
-      "You've mentioned working too much — balancing ambition with personal life is part of your story, not a generic tip."
+      `Do NOT describe the user as still pursuing: ${ctx.priorDirections.slice(0, 2).join("; ")} — those directions were superseded.`
     );
   }
 
@@ -315,7 +404,18 @@ export function formatMemoryRetrievalForPrompt(
     "## MEMORY GRAPH (living memory — ranked by influence, not recency alone)",
     "Statuses: ACTIVE = primary influence, SUPPORTING = secondary, archived/superseded = ignored.",
     "",
-    `Primary initiative: ${ctx.primaryInitiative || "none"}`,
+    `Primary focus (evolved): ${ctx.primaryInitiative || "none"}`,
+    ...(ctx.priorDirections.length
+      ? [`Superseded directions (DO NOT present as current): ${ctx.priorDirections.slice(0, 3).join("; ")}`]
+      : []),
+    ...(ctx.coreValues.length
+      ? [
+          "Core values (persist across pivots):",
+          ...ctx.coreValues.slice(0, 5).map(
+            (v) => `- "${v.text}" (evidence ${v.evidenceCount}×, influence ${Math.round(v.influence * 100)}%)`
+          ),
+        ]
+      : []),
     `Active goals: ${ctx.goals.join("; ") || "none"}`,
     `Identity signals: ${ctx.identitySignals.join("; ") || "none"}`,
     "",
@@ -327,17 +427,18 @@ export function formatMemoryRetrievalForPrompt(
       ? [`Recently emerging: ${ctx.recentEmergingAreas.join(", ")}`]
       : []),
     "",
-    "Execution patterns (ranked by mentions × confidence):",
+    "Execution patterns (ranked by influence × evidence):",
     ...ctx.patterns.map(
       (p) =>
-        `- ${p.pattern}: ${p.mentions} mentions, ${Math.round(p.confidence * 100)}% conf${p.behavioralImpact ? ` — ${p.behavioralImpact}` : ""}`
+        `- ${p.pattern}: evidence ${p.mentions}×, influence ${Math.round(p.rankScore * 100)}%${p.behavioralImpact ? ` — ${p.behavioralImpact}` : ""}`
     ),
     "",
-    "Thoughts, beliefs, relationship notes:",
-    ...ctx.mentorMemories.slice(0, 8).map(
-      (m) =>
-        `- [${m.memoryType}] "${m.text}" (${Math.round((m.influenceScore ?? m.effectiveConfidence) * 100)}% influence, ${m.mentionCount} mentions)`
-    ),
+    "Mentor memories (structured — also mirrored to vector layer):",
+    ...ctx.mentorMemories.slice(0, 8).map((m) => {
+      const ev = m.evidenceCount ?? m.mentionCount;
+      const inf = Math.round((m.influenceScore ?? m.effectiveConfidence) * 100);
+      return `- [${m.memoryType}] "${m.text}" (evidence ${ev}×, influence ${inf}%)`;
+    }),
     ...(ctx.reflectionBlockers.length
       ? ["", "Recent reflection blockers:", ...ctx.reflectionBlockers.map((b) => `- ${b}`)]
       : []),

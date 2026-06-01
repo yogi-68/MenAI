@@ -68,9 +68,16 @@ export function computeInfluenceScore(input: {
   const days = daysSince(input.lastMentionedAt);
   const halfLife = DECAY_HALF_LIFE_DAYS[input.memoryType] ?? 90;
   const recencyFactor = Math.pow(0.5, days / halfLife);
-  const mentionFactor = Math.min(1, 0.65 + Math.min(input.mentionCount, 12) * 0.03);
+  const mentionFactor = Math.min(1, 0.55 + Math.min(input.mentionCount, 20) * 0.022);
+  const evidenceBoost =
+    input.memoryType === "core_value"
+      ? Math.min(0.12, (input.mentionCount - 1) * 0.015)
+      : 0;
 
-  return Math.max(0, Math.min(0.98, input.confidence * recencyFactor * mentionFactor));
+  return Math.max(
+    0,
+    Math.min(0.98, input.confidence * recencyFactor * mentionFactor + evidenceBoost)
+  );
 }
 
 /** Backward-compatible alias used across the codebase. */

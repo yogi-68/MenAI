@@ -5,6 +5,7 @@ import {
   patternStatusFromInfluence,
   daysSince,
 } from "@/lib/mentor/memory-lifecycle";
+import { mirrorPatternToVector } from "@/lib/mentor/memory-vector-bridge";
 
 export interface WeaknessProfile {
   pattern: string;
@@ -118,6 +119,7 @@ export async function recordPatternMention(
       .from("execution_patterns")
       .update({
         occurrences: mentions,
+        evidence_count: mentions,
         confidence,
         influence_score: influence,
         status,
@@ -126,6 +128,14 @@ export async function recordPatternMention(
         source,
       })
       .eq("id", existing.id);
+
+    mirrorPatternToVector({
+      userId,
+      pattern,
+      evidenceCount: mentions,
+      influenceScore: influence,
+      behavioralImpact,
+    });
     return;
   }
 
@@ -146,8 +156,17 @@ export async function recordPatternMention(
     confidence,
     influence_score: influence,
     occurrences: 1,
+    evidence_count: 1,
     last_mentioned_at: now,
     status: "active",
+  });
+
+  mirrorPatternToVector({
+    userId,
+    pattern,
+    evidenceCount: 1,
+    influenceScore: influence,
+    behavioralImpact,
   });
 }
 

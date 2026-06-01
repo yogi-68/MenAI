@@ -36,6 +36,7 @@ export interface EvidenceBundle {
     effectiveConfidence: number;
     influenceScore: number;
     mentionCount: number;
+    evidenceCount: number;
     lastMentionedAt: string | null;
   }>;
   completedTasks7d: number;
@@ -133,8 +134,8 @@ export function formatEvidenceBundleForPrompt(bundle: EvidenceBundle): string {
     `Active initiatives (${bundle.initiatives.length}): ${bundle.initiatives.map((i) => `${i.title} [${i.domain}]`).join("; ") || "none"}`,
     `Current focus: ${bundle.focusTitle || "unset"}`,
     `Identity signals: ${bundle.identitySignals.map((s) => s.long_term_direction || s.description).join("; ") || "none"}`,
-    `Execution patterns (observed): ${bundle.patterns.map((p) => `${p.pattern} (${p.occurrences ?? 1} mentions)`).join("; ") || "none"}`,
-    `Thoughts & beliefs: ${bundle.mentorMemories.map((m) => `[${m.memoryType}] ${m.text}`).join("; ") || "none"}`,
+    `Execution patterns: ${bundle.patterns.map((p) => `${p.pattern} (${p.occurrences ?? 1}× evidence)`).join("; ") || "none"}`,
+    `Thoughts & beliefs: ${bundle.mentorMemories.map((m) => `[${m.memoryType}] ${m.text} (evidence ${m.evidenceCount ?? m.mentionCount}×, influence ${Math.round(m.influenceScore * 100)}%)`).join("; ") || "none"}`,
     `Tasks completed (7d): ${bundle.completedTasks7d}`,
     `Reflections (7d): ${bundle.reflections7d}`,
     `Reflection blockers: ${bundle.reflectionBlocks.join("; ") || "none"}`,

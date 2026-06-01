@@ -48,6 +48,9 @@ export function detectDirectionPivot(message: string): DirectionPivot {
   if (/\b(quit|stopped|gave up|abandoned|that)\b/i.test(text)) {
     if (/\b(finance agency|finance|agency|business)\b/i.test(lower)) {
       if (!abandonedTopics.includes("finance agency")) abandonedTopics.push("finance agency");
+      if (/\b(building )?business/.test(lower) && !abandonedTopics.includes("business")) {
+        abandonedTopics.push("business");
+      }
     }
     if (abandonedTopics.length === 0) abandonedTopics.push("previous direction");
   }
