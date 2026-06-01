@@ -28,6 +28,7 @@ import {
   loadWeaknessProfiles,
 } from "@/lib/mentor/weakness-engine";
 import { formatMentorMemoriesForPrompt, loadMentorMemories } from "@/lib/mentor/mentor-memory";
+import { loadMemoryRetrievalContext } from "@/lib/mentor/memory-retrieval";
 import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
 import {
   buildPlanContextSnapshot,
@@ -140,6 +141,7 @@ export interface PlanUserContext {
   initiativeContextBlocks: string[];
   lifeAreaWeightPlan: string;
   mentorMemoryBlock: string;
+  memoryPlanningConstraints: string[];
 }
 
 function buildDomainScopedContextNotes(
@@ -475,15 +477,21 @@ export async function fetchPlanUserContext(
     profileRes.data?.current_focus_until ?? primaryInit?.target_date ?? null;
 
   const patternGuidance = buildPatternGuidanceLines(patterns);
-  const [lifeAreaWeights, weaknessProfiles, mentorMemories] = await Promise.all([
+  const [lifeAreaWeights, weaknessProfiles, mentorMemories, memoryRetrieval] = await Promise.all([
     computeLifeAreaWeights(supabase, userId),
     loadWeaknessProfiles(supabase, userId),
     loadMentorMemories(supabase, userId, 8),
+    loadMemoryRetrievalContext(supabase, userId),
   ]);
   const weaknessGuidance = formatWeaknessProfilesForPrompt(weaknessProfiles);
-  const combinedPatternGuidance = [...weaknessGuidance, ...patternGuidance];
+  const combinedPatternGuidance = [
+    ...weaknessGuidance,
+    ...patternGuidance,
+    ...memoryRetrieval.activePlanningConstraints,
+  ];
   const lifeAreaWeightPlan = formatLifeAreaPlanStructure(lifeAreaWeights);
   const mentorMemoryBlock = formatMentorMemoriesForPrompt(mentorMemories);
+  const memoryPlanningConstraints = memoryRetrieval.activePlanningConstraints;
 
   const balanceRows = balanceTasks.map((t) => ({
     life_area: (t.initiatives as { life_area?: string } | null)?.life_area || "personal",
@@ -752,6 +760,7 @@ export async function fetchPlanUserContext(
     initiativeContextBlocks,
     lifeAreaWeightPlan,
     mentorMemoryBlock,
+    memoryPlanningConstraints,
   };
 }
 
@@ -850,6 +859,7 @@ ${listOrFallback(ctx.opportunities, "None logged — consider asking if anything
 Execution patterns → task design (MUST follow — counter weaknesses with action, not more research):
 ${listOrFallback(ctx.patternGuidance, "No patterns detected yet")}
 - If overthinking is listed: NEVER assign "research competitors" — assign "talk to 1 user" or "send 1 outreach"
+${ctx.memoryPlanningConstraints.length > 0 ? `\nMEMORY-DRIVEN PLAN CONSTRAINTS (mandatory — from reflections and patterns):\n${ctx.memoryPlanningConstraints.map((c) => `- ${c}`).join("\n")}\n- Fragmented/reactive days: 1 critical outcome + 2 interruptible tasks max` : ""}
 
 Daily reflections (use for context — explains low execution):
 ${listOrFallback(ctx.recentReflections, "None logged yet")}

@@ -453,4 +453,5 @@ export interface PipelineContext {
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   conversationId: string;
   modelConfig: ModelConfig;
+  memoryRetrievalBlock?: string;
 }

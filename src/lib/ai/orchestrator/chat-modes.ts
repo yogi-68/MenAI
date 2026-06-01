@@ -9,7 +9,8 @@ const COACHING_PATTERNS = [
   /\bwhat should i do today\b/i,
   /\bwhy am i stuck\b/i,
   /\bwhat do you know about me\b/i,
-  /\bwhat('s| is) my (focus|priority|goal)\b/i,
+  /\bwhat('s| is| am i) (my )?(focus|focusing|priority|goal)\b/i,
+  /\bwhat am i focusing\b/i,
   /\bwhy do you (think|believe|say)\b/i,
   /\bhow do you know\b/i,
   /\bwhat('s| is) (that|this) based on\b/i,
@@ -47,8 +48,16 @@ export function buildChatModeGuidance(mode: ChatMode): string {
       return `${voice}
 
 ## Chat mode: COACHING
-Use the full user model. Every claim must be provable from evidence.
-This is the retention test — especially "Who am I?" — it must feel like someone who's been listening.
+Use the MEMORY GRAPH block — synthesize primary initiative + secondary life areas + patterns + beliefs + relationship notes.
+Never answer from current initiative alone when secondary areas, patterns, or beliefs exist on file.
+
+Intent-specific rules:
+- "What am I focusing on?" → primary execution focus AND secondary emerging areas (e.g. fitness alongside business)
+- "Why am I stuck?" → cite pattern mention counts and behavioral insight; never parrot one keyword back
+- "Who am I?" → mentor narrative weaving freedom theme, fitness, overthinking patterns, relationships — not a bullet list
+
+Every claim must be provable from evidence in the memory graph or user model.
+This is the retention test — it must feel like someone who's been listening.
 
 FORBIDDEN without evidence: ambitious, gritty, disciplined, intense, determined, resilient, thrives on action, "you seek growth".
 If execution data is thin: "There isn't enough execution history yet to identify your working style."

@@ -38,6 +38,12 @@ export function buildUnderstandingSummary(model: UserModel): UnderstandingSummar
     graphParts.push(`Current execution focus: ${focus}.`);
   }
 
+  if (model.secondaryFocusAreas && model.secondaryFocusAreas.length > 0) {
+    graphParts.push(
+      `Secondary areas also matter recently: ${model.secondaryFocusAreas.slice(0, 3).join(", ")}.`
+    );
+  }
+
   if (model.recentActivity?.includes("completed")) {
     graphParts.push(model.recentActivity);
   } else if (model.activePortfolio.length > 0 && model.confidence === "low") {
@@ -47,9 +53,11 @@ export function buildUnderstandingSummary(model: UserModel): UnderstandingSummar
   }
 
   const mentorBrief =
-    graphParts.length > 0
-      ? sanitizeCoachCopy(graphParts.join("\n\n"))
-      : "Share what you're building — identity sharpens from what you do and say over time.";
+    model.whoAmIAnswer && model.whoAmIAnswer.length > 80
+      ? sanitizeCoachCopy(model.whoAmIAnswer.split("\n\n").slice(0, 2).join("\n\n"))
+      : graphParts.length > 0
+        ? sanitizeCoachCopy(graphParts.join("\n\n"))
+        : "Share what you're building — identity sharpens from what you do and say over time.";
 
   const stillLearning =
     model.confidence === "low"

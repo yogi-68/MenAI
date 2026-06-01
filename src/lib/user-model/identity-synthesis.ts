@@ -7,6 +7,10 @@ import {
 } from "@/lib/user-model/identity-dimensions";
 import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
 import { buildMemoryGraphIdentityAnswer } from "@/lib/user-model/memory-graph-identity";
+import {
+  buildMentorIdentitySynthesis,
+  loadMemoryRetrievalContext,
+} from "@/lib/mentor/memory-retrieval";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { rewriteRoboticPhrase } from "@/lib/user-model/voice-guide";
 
@@ -90,7 +94,8 @@ export function computeBaselineCoverage(bundle: EvidenceBundle): IdentityCoverag
 
 export function buildEvidenceBasedWhoAmI(
   bundle: EvidenceBundle,
-  coverage: IdentityCoverageMap
+  coverage: IdentityCoverageMap,
+  retrievalCtx?: Awaited<ReturnType<typeof loadMemoryRetrievalContext>>
 ): WhoAmIResult {
   const statements: WhoAmIStatement[] = [];
   const evidenceLog: string[] = [];
@@ -262,10 +267,20 @@ export function buildEvidenceBasedWhoAmI(
   }
 
   const memoryGraph = buildMemoryGraphIdentityAnswer(bundle);
+  const mentorSynthesis = retrievalCtx
+    ? buildMentorIdentitySynthesis(retrievalCtx, bundle)
+    : null;
 
   for (const es of memoryGraph.evidenceStatements) {
     evidenceLog.push(...es.evidence);
     statements.push(stmt("verified", es.text, es.evidence));
+  }
+
+  if (mentorSynthesis) {
+    evidenceLog.push("Mentor synthesis from full memory graph");
+    statements.push(
+      stmt("verified", mentorSynthesis, ["memory graph: goals, patterns, beliefs, life areas"])
+    );
   }
 
   if (memoryGraph.paragraphs.length === 0) {
@@ -282,7 +297,17 @@ export function buildEvidenceBasedWhoAmI(
 
   const verifiedOnly = statements.filter((s) => s.tag === "verified" && s.evidence.length > 0);
   const rawAnswer =
-    memoryGraph.evidenceStatements.length > 0
+    mentorSynthesis
+      ? [
+          memoryGraph.opening,
+          mentorSynthesis,
+          ...memoryGraph.evidenceStatements
+            .filter((es) => !mentorSynthesis.includes(es.text.slice(0, 40)))
+            .slice(0, 2)
+            .map((s) => s.text),
+          `What I'm still learning is ${memoryGraph.stillLearning}`,
+        ].join("\n\n")
+      : memoryGraph.evidenceStatements.length > 0
       ? [
           memoryGraph.opening,
           ...memoryGraph.evidenceStatements.map((s) => s.text),

@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import {
+  effectiveConfidence,
+  runDailyMemoryLifecycle,
+} from "@/lib/mentor/memory-lifecycle";
 
-const MS_PER_DAY = 86400000;
+export { effectiveConfidence } from "@/lib/mentor/memory-lifecycle";
 
 export interface DirectionPivot {
   isPivot: boolean;
@@ -27,6 +32,7 @@ const TOPIC_PATTERNS: Array<{ re: RegExp; topic: string }> = [
 /** Detect explicit direction shifts — "I quit that, preparing for UPSC". */
 export function detectDirectionPivot(message: string): DirectionPivot {
   const text = message.trim();
+  const lower = text.toLowerCase();
   const isPivot = PIVOT_SIGNALS.some((re) => re.test(text));
   if (!isPivot) {
     return { isPivot: false, newDirection: null, abandonedTopics: [], reason: null };
@@ -39,8 +45,11 @@ export function detectDirectionPivot(message: string): DirectionPivot {
     null;
 
   const abandonedTopics = topics.filter((t) => t !== newDirection);
-  if (/\b(quit|stopped|gave up|abandoned|that)\b/i.test(text) && abandonedTopics.length === 0) {
-    abandonedTopics.push("previous direction");
+  if (/\b(quit|stopped|gave up|abandoned|that)\b/i.test(text)) {
+    if (/\b(finance agency|finance|agency|business)\b/i.test(lower)) {
+      if (!abandonedTopics.includes("finance agency")) abandonedTopics.push("finance agency");
+    }
+    if (abandonedTopics.length === 0) abandonedTopics.push("previous direction");
   }
 
   return {
@@ -49,19 +58,6 @@ export function detectDirectionPivot(message: string): DirectionPivot {
     abandonedTopics,
     reason: "User signaled a direction change",
   };
-}
-
-/** Effective confidence after time decay — old memories lose influence. */
-export function effectiveConfidence(
-  base: number,
-  lastMentionedAt: string | Date | null,
-  mentionCount: number
-): number {
-  if (!lastMentionedAt) return base * 0.85;
-  const days = Math.floor((Date.now() - new Date(lastMentionedAt).getTime()) / MS_PER_DAY);
-  const decay = Math.floor(days / 30) * 0.08;
-  const mentionBoost = Math.min(0.15, (mentionCount - 1) * 0.02);
-  return Math.max(0.12, Math.min(0.98, base + mentionBoost - decay));
 }
 
 /** Archive memories matching abandoned topics after a pivot. */
@@ -74,17 +70,24 @@ export async function archiveMemoriesForPivot(
 
   const { data: memories } = await supabase
     .from("mentor_memories")
-    .select("id, text")
+    .select("id, text, memory_type")
     .eq("user_id", userId)
-    .eq("status", "active");
+    .in("status", ["active", "supporting"]);
 
   for (const mem of memories || []) {
     const text = mem.text.toLowerCase();
+    const isDirection =
+      mem.memory_type === "direction" ||
+      /\b(building|preparing|launching|agency|upsc|startup)\b/i.test(text);
     const shouldArchive =
       pivot.abandonedTopics.some((topic) => text.includes(topic)) ||
       (pivot.abandonedTopics.includes("previous direction") &&
         /\b(agency|startup|saas|finance|business)\b/i.test(text) &&
-        pivot.newDirection === "upsc");
+        pivot.newDirection === "upsc") ||
+      (isDirection &&
+        pivot.newDirection &&
+        !text.includes(pivot.newDirection.replace("_", " ")) &&
+        pivot.abandonedTopics.some((t) => text.includes(t.replace("_", " "))));
 
     if (shouldArchive) {
       await supabase
@@ -94,6 +97,7 @@ export async function archiveMemoriesForPivot(
           archived_at: new Date().toISOString(),
           archived_reason: pivot.reason,
           confidence: 0.2,
+          influence_score: 0,
         })
         .eq("id", mem.id);
     }
@@ -126,87 +130,149 @@ export async function archiveMemoriesForPivot(
       status: "active",
       source: "direction_pivot",
     });
-  }
-}
 
-/** Age stale memories — decay confidence, archive when irrelevant. */
-export async function ageStaleMemories(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<void> {
-  const cutoff90 = new Date(Date.now() - 90 * MS_PER_DAY).toISOString();
-
-  const { data: memories } = await supabase
-    .from("mentor_memories")
-    .select("id, confidence, mention_count, last_mentioned_at, status")
-    .eq("user_id", userId)
-    .eq("status", "active");
-
-  for (const mem of memories || []) {
-    const effective = effectiveConfidence(
-      mem.confidence ?? 0.8,
-      mem.last_mentioned_at,
-      mem.mention_count ?? 1
-    );
-    const stale = mem.last_mentioned_at && mem.last_mentioned_at < cutoff90;
-
-    if (stale && effective < 0.35) {
-      await supabase
-        .from("mentor_memories")
-        .update({
-          status: "archived",
-          archived_at: new Date().toISOString(),
-          archived_reason: "Stale — not mentioned in 90+ days",
-          confidence: effective,
-        })
-        .eq("id", mem.id);
-    } else if (Math.abs(effective - (mem.confidence ?? 0.8)) > 0.05) {
-      await supabase
-        .from("mentor_memories")
-        .update({ confidence: effective })
-        .eq("id", mem.id);
-    }
+    await supabase.from("mentor_memories").insert({
+      user_id: userId,
+      memory_type: "direction",
+      text: `Now focusing on: ${pivot.newDirection}`,
+      confidence: 0.92,
+      influence_score: 0.88,
+      source: "direction_pivot",
+      mention_count: 1,
+      status: "active",
+    });
   }
 
-  const cutoff60 = new Date(Date.now() - 60 * MS_PER_DAY).toISOString();
   const { data: patterns } = await supabase
     .from("execution_patterns")
-    .select("id, confidence, last_detected, occurrences")
+    .select("id, pattern, behavioral_impact")
+    .eq("user_id", userId)
+    .in("status", ["active", "supporting"]);
+
+  for (const p of patterns || []) {
+    const corpus = `${p.pattern} ${p.behavioral_impact || ""}`.toLowerCase();
+    const hit = pivot.abandonedTopics.some((t) => corpus.includes(t.replace("_", " ")));
+    if (
+      hit ||
+      (pivot.newDirection === "upsc" &&
+        /\b(business|agency|client|finance|startup)\b/.test(corpus))
+    ) {
+      await supabase
+        .from("execution_patterns")
+        .update({
+          status: "superseded",
+          archived_at: new Date().toISOString(),
+          influence_score: 0,
+        })
+        .eq("id", p.id);
+    }
+  }
+
+  await applyPivotToInitiativesAndGoals(supabase, userId, pivot);
+}
+
+/** Abandon stale initiatives and seed new direction after explicit pivot. */
+async function applyPivotToInitiativesAndGoals(
+  supabase: SupabaseClient,
+  userId: string,
+  pivot: DirectionPivot
+): Promise<void> {
+  const { data: initiatives } = await supabase
+    .from("initiatives")
+    .select("id, title, life_area")
     .eq("user_id", userId)
     .eq("status", "active");
 
-  for (const p of patterns || []) {
-    const last = p.last_detected;
-    if (last && last < cutoff60 && (p.occurrences ?? 0) < 3) {
-      const decayed = Math.max(0.25, (p.confidence ?? 0.7) - 0.15);
+  let abandonedFocusId: string | null = null;
+
+  for (const init of initiatives || []) {
+    const corpus = init.title.toLowerCase();
+    const shouldAbandon =
+      pivot.abandonedTopics.some((t) => corpus.includes(t.replace("_", " "))) ||
+      (pivot.abandonedTopics.includes("finance agency") &&
+        /\b(agency|finance|business)\b/.test(corpus)) ||
+      (pivot.newDirection === "upsc" && /\b(agency|finance|business|client)\b/.test(corpus));
+
+    if (shouldAbandon) {
+      abandonedFocusId = init.id;
       await supabase
-        .from("execution_patterns")
-        .update({ confidence: decayed })
-        .eq("id", p.id);
-      if (decayed < 0.3) {
-        await supabase
-          .from("execution_patterns")
-          .update({
-            status: "archived",
-            archived_at: new Date().toISOString(),
-          })
-          .eq("id", p.id);
-      }
+        .from("initiatives")
+        .update({ status: "abandoned", updated_at: new Date().toISOString() })
+        .eq("id", init.id);
     }
   }
+
+  if (pivot.newDirection === "upsc") {
+    const { data: existingGoal } = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", userId)
+      .ilike("title", "%upsc%")
+      .maybeSingle();
+
+    if (!existingGoal) {
+      await supabase.from("goals").insert({
+        user_id: userId,
+        title: "Prepare for UPSC",
+        category: "learning",
+        priority: "high",
+        status: "active",
+        source: "direction_pivot",
+      });
+    }
+
+    await supabase.from("identity_signals").insert({
+      user_id: userId,
+      type: "direction",
+      description: "Preparing for UPSC",
+      long_term_direction: "UPSC exam preparation",
+      confidence: 0.95,
+      status: "active",
+      source: "direction_pivot",
+    });
+  }
+
+  const profileUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+  if (abandonedFocusId) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("current_focus_initiative_id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profile?.current_focus_initiative_id === abandonedFocusId) {
+      profileUpdate.current_focus_initiative_id = null;
+      profileUpdate.current_focus_until = null;
+    }
+  }
+
+  await supabase.from("profiles").update(profileUpdate).eq("id", userId);
 }
 
-/** Run aging + pivot handling on each memory write path. */
+/** Run aging + pivot handling + full daily lifecycle on each memory write path. */
 export async function runMemoryMaintenance(
   supabase: SupabaseClient,
   userId: string,
   message?: string
-): Promise<void> {
+): Promise<{ pivoted: boolean }> {
+  let pivoted = false;
   if (message) {
     const pivot = detectDirectionPivot(message);
     if (pivot.isPivot) {
       await archiveMemoriesForPivot(supabase, userId, pivot);
+      pivoted = true;
+      scheduleUserModelRefresh(supabase, userId);
     }
   }
-  await ageStaleMemories(supabase, userId);
+  await runDailyMemoryLifecycle(supabase, userId);
+  return { pivoted };
+}
+
+/** @deprecated Use runDailyMemoryLifecycle — kept for callers that only aged memories. */
+export async function ageStaleMemories(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<void> {
+  await runDailyMemoryLifecycle(supabase, userId);
 }

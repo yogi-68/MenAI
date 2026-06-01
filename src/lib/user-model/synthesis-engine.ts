@@ -23,6 +23,10 @@ import {
   buildEvidenceBasedWhoAmI,
   computeBaselineCoverage,
 } from "@/lib/user-model/identity-synthesis";
+import {
+  formatMemoryGraphSummary,
+  loadMemoryRetrievalContext,
+} from "@/lib/mentor/memory-retrieval";
 import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { loadIdentityProfile } from "@/lib/plans/identity-profile-store";
@@ -72,13 +76,19 @@ export async function synthesizeUserModel(
 
     const identityProfile = await loadIdentityProfile(supabase, userId);
     const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
+    const retrievalCtx = await loadMemoryRetrievalContext(supabase, userId, bundle);
     const coverage = identityProfile.lastCoverage ?? computeBaselineCoverage(bundle);
-    const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage);
+    const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage, retrievalCtx);
     empty.whoAmIAnswer = sanitizeCoachCopy(whoAmI.answer);
     empty.whoAmIStatements = whoAmI.statements;
     empty.evidence = whoAmI.evidence;
     empty.identityCoverage = coverage;
     empty.overallIdentityCoverage = averageCoverage(coverage);
+    empty.memoryGraphSummary = formatMemoryGraphSummary(retrievalCtx);
+    empty.secondaryFocusAreas = [
+      ...retrievalCtx.recentEmergingAreas,
+      ...retrievalCtx.secondaryLifeAreas.map((a) => a.label),
+    ].filter((v, i, arr) => arr.indexOf(v) === i);
 
     await supabase
       .from("profiles")
@@ -247,12 +257,18 @@ export async function synthesizeUserModel(
 
   const identityProfile = await loadIdentityProfile(supabase, userId);
   const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
+  const retrievalCtx = await loadMemoryRetrievalContext(supabase, userId, bundle);
   const coverage = identityProfile.lastCoverage ?? computeBaselineCoverage(bundle);
-  const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage);
+  const whoAmI = buildEvidenceBasedWhoAmI(bundle, coverage, retrievalCtx);
 
   model.whoAmIAnswer = sanitizeCoachCopy(whoAmI.answer);
   model.whoAmIStatements = whoAmI.statements;
   model.evidence = whoAmI.evidence;
+  model.memoryGraphSummary = formatMemoryGraphSummary(retrievalCtx);
+  model.secondaryFocusAreas = [
+    ...retrievalCtx.recentEmergingAreas,
+    ...retrievalCtx.secondaryLifeAreas.map((a) => a.label),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
   model.identityCoverage = coverage;
   model.overallIdentityCoverage = averageCoverage(coverage);
 

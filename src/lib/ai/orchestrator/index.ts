@@ -31,6 +31,10 @@ import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
+import {
+  formatMemoryRetrievalForPrompt,
+  loadMemoryRetrievalContext,
+} from "@/lib/mentor/memory-retrieval";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
 import { getUserModel } from "@/lib/user-model/loader";
@@ -196,7 +200,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [] as string[], longTerm: [] as string[], episodic: [] as string[], emotional: [] as string[], formatted: "" };
 
-  const [historyResult, memory, profileResult, cognitiveState, userModel] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState, initialUserModel] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -212,6 +216,14 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     buildCognitiveState(input.userId),
     getUserModel(serviceClient, input.userId),
   ]);
+
+  const mentorSignal = await ingestChatMentorSignal(serviceClient, input.userId, input.message);
+  const userModel = mentorSignal.pivoted
+    ? await getUserModel(serviceClient, input.userId, { refresh: true })
+    : initialUserModel;
+
+  const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
+  const memoryRetrievalBlock = formatMemoryRetrievalForPrompt(retrievalCtx, input.message);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
     role: m.role as "user" | "assistant",
@@ -275,6 +287,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
     modelConfig,
+    memoryRetrievalBlock,
   };
 
   // ===== STEP 8: Build Prompt & Call LLM =====
@@ -383,8 +396,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     metadata: { conversation_id: conversationId, state },
   }).catch(() => {});
 
-  // Mentor memory + weakness tracking (always — even for short messages with beliefs)
-  ingestChatMentorSignal(serviceClient, input.userId, input.message).catch(() => {});
+  // Mentor memory + weakness tracking runs before prompt — pivot must apply before retrieval
 
   // Persist extracted life data (after extraction completes)
   extractedData.then((data) => {
@@ -617,7 +629,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const skipMemory = shouldSkipMemory(input.message, emotion);
   const emptyMemory = { shortTerm: [], longTerm: [], episodic: [], emotional: [], formatted: "" };
 
-  const [historyResult, memory, profileResult, cognitiveState, userModel] = await Promise.all([
+  const [historyResult, memory, profileResult, cognitiveState, initialUserModel] = await Promise.all([
     serviceClient
       .from("messages")
       .select("role, content")
@@ -633,6 +645,14 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     buildCognitiveState(input.userId),
     getUserModel(serviceClient, input.userId),
   ]);
+
+  const mentorSignal = await ingestChatMentorSignal(serviceClient, input.userId, input.message);
+  const userModel = mentorSignal.pivoted
+    ? await getUserModel(serviceClient, input.userId, { refresh: true })
+    : initialUserModel;
+
+  const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
+  const memoryRetrievalBlock = formatMemoryRetrievalForPrompt(retrievalCtx, input.message);
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
     role: m.role as "user" | "assistant",
@@ -688,6 +708,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     conversationHistory: conversationHistory.slice(0, -1),
     conversationId,
     modelConfig,
+    memoryRetrievalBlock,
   };
 
   const promptMessages = buildPrompt(ctx);
@@ -797,8 +818,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           }).catch(() => {});
         }
 
-        // Mentor memory + weakness tracking
-        ingestChatMentorSignal(serviceClient, input.userId, input.message).catch(() => {});
+        // Mentor signals already ingested before prompt build
 
         // Extract and persist life data (background — fires after stream)
         const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));

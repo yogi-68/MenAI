@@ -84,6 +84,10 @@ export interface UserModel {
     completedTasks7d: number;
     reflections7d: number;
   };
+
+  /** Ranked memory graph summary for chat retrieval */
+  memoryGraphSummary?: string;
+  secondaryFocusAreas?: string[];
 }
 
 export interface InitiativeRow {

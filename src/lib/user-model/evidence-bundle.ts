@@ -34,6 +34,7 @@ export interface EvidenceBundle {
     text: string;
     confidence: number;
     effectiveConfidence: number;
+    influenceScore: number;
     mentionCount: number;
     lastMentionedAt: string | null;
   }>;
@@ -66,10 +67,10 @@ export async function buildEvidenceBundle(
       .maybeSingle(),
     supabase
       .from("execution_patterns")
-      .select("pattern, behavioral_impact, confidence, occurrences")
+      .select("pattern, behavioral_impact, confidence, occurrences, influence_score")
       .eq("user_id", userId)
-      .eq("status", "active")
-      .order("occurrences", { ascending: false })
+      .in("status", ["active", "supporting"])
+      .order("influence_score", { ascending: false })
       .limit(6),
     loadMentorMemories(supabase, userId, 10),
     supabase

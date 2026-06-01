@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { touchLifeAreaMention } from "@/lib/mentor/memory-lifecycle";
 
 export type LifeAreaKey =
   | "business"
@@ -126,6 +127,7 @@ export async function bumpLifeAreaWeight(
   current[area] = (current[area] ?? 0) + delta;
   const normalized = normalizeWeights(current as unknown as Record<string, number>);
   await supabase.from("profiles").update({ life_area_weights: normalized }).eq("id", userId);
+  await touchLifeAreaMention(supabase, userId, area);
   return normalized;
 }
 

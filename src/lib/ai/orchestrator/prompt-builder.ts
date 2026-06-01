@@ -297,6 +297,10 @@ Instructed behavior: ${styleText}`);
 Remember: your response should create an emotional SHIFT. The user should feel DIFFERENT — clearer, more grounded, more accountable, or more at peace — after reading your response.`);
 
   // ===== USER MODEL (single source of truth — overrides fragmented table reads) =====
+  if (ctx.memoryRetrievalBlock) {
+    parts.push(ctx.memoryRetrievalBlock);
+  }
+
   if (ctx.userModel) {
     parts.push(formatUserModelForPrompt(ctx.userModel));
     const challenges = detectCoachingChallenges(ctx.userModel);

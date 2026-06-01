@@ -14,6 +14,15 @@ export function formatUserModelForPrompt(model: UserModel): string {
     `Confidence in this model: ${model.confidence}`,
   ];
 
+  if (model.memoryGraphSummary) {
+    sections.push(`Memory graph (retrieval): ${model.memoryGraphSummary}`);
+  }
+  if (model.secondaryFocusAreas && model.secondaryFocusAreas.length > 0) {
+    sections.push(
+      `Secondary focus areas (MUST mention when user asks about focus or identity): ${model.secondaryFocusAreas.join(", ")}`
+    );
+  }
+
   if (model.whoAmIAnswer) {
     sections.push(`Who am I (evidence-based):\n${model.whoAmIAnswer}`);
   }
@@ -71,7 +80,8 @@ export function formatUserModelForPrompt(model: UserModel): string {
     "",
     COACH_VOICE_PROMPT,
     "",
-    "FOCUS-FIRST: Today's plan must prioritize CURRENT FOCUS initiative (~80%+ of tasks). Long-term direction informs why — never generates generic maintenance tasks unless that IS the focus.",
+    "FOCUS-FIRST: When user asks what they're focusing on, answer with PRIMARY initiative AND any secondary life areas from memory graph (fitness, learning, etc.). Never single-domain if multi-area data exists.",
+    "PATTERN SYNTHESIS: When user asks why they're stuck, cite pattern mention counts and behavioral insight — never parrot one keyword.",
     "Never invent workshops, certifications, generic finance tracking, or outreach unless explicitly in initiative context.",
     "When the user asks 'who am I', synthesize from full memory graph — onboarding, goals, chat, patterns — NOT the current initiative title alone.",
     "When the user asks about their goal, speak to momentum and the next 30 days — not robotic 'Your goal is...'",
