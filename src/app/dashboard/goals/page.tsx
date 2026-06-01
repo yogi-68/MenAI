@@ -9,13 +9,16 @@ import {
   Plus,
   CheckCircle2,
   Circle,
-  AlertTriangle,
   Trash2,
   Zap,
   Flag,
   Sparkles,
   MessageSquare,
   X,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
 import { LIFE_AREAS, lifeAreaLabel } from "@/lib/plans/life-areas";
@@ -91,6 +94,7 @@ export default function GoalsPage() {
     title: string;
     review: { summary: string; biggestWin: string; keyLearning: string; timelineEntry: string; suggestedNext?: string };
   } | null>(null);
+  const [guideOpen, setGuideOpen] = useState(true);
 
   // Fetch goals
   const { data: goalsData, isLoading: goalsLoading } = useQuery({
@@ -336,37 +340,118 @@ export default function GoalsPage() {
   return (
     <div className="page-shell">
       {/* Header */}
-      <div className="animate-fade-in" style={{ marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-        <div>
-          <h1 style={{ fontSize: "1.8rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
-            <Target size={28} style={{ color: "var(--accent-primary)" }} />
+      <div className="goals-page-header animate-fade-in">
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: "clamp(1.35rem, 4vw, 1.8rem)", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <Target size={28} style={{ color: "var(--accent-primary)", flexShrink: 0 }} />
             Direction & Initiatives
           </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem" }}>
-            Long-term direction is read-only context. Daily tasks come from <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)" }}>Today&apos;s Plan</Link> via active initiatives.
+          <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.55, maxWidth: "52ch" }}>
+            Set what matters long-term, then run 1–3 active initiatives. Daily tasks are generated on{" "}
+            <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)" }}>Today&apos;s Plan</Link>.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        <div className="goals-page-actions">
           <button
             onClick={() => setShowAddInitiative(true)}
             className="btn-primary"
-            style={{ padding: "10px 16px", fontSize: "0.85rem", opacity: activeInitiativeCount >= 3 ? 0.5 : 1 }}
+            style={{ padding: "10px 16px", fontSize: "0.85rem", opacity: activeInitiativeCount >= 3 ? 0.5 : 1, justifyContent: "center" }}
             disabled={activeInitiativeCount >= 3}
             title={activeInitiativeCount >= 3 ? "Maximum 3 active initiatives" : undefined}
           >
             <Zap size={16} /> Add initiative
           </button>
-          <button onClick={() => setShowAddOpportunity(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
+          <button onClick={() => setShowAddOpportunity(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", justifyContent: "center" }}>
             <Sparkles size={16} /> Opportunity
           </button>
-          <button onClick={() => setShowAddGoal(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem" }}>
-            <Plus size={16} /> Long-term direction
+          <button onClick={() => setShowAddGoal(true)} className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", justifyContent: "center" }}>
+            <Plus size={16} /> Direction
           </button>
-          <Link href="/dashboard/chat" className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <MessageSquare size={16} /> Ask AI to set up
+          <Link href="/dashboard/chat" className="btn-secondary" style={{ padding: "10px 16px", fontSize: "0.85rem", textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <MessageSquare size={16} /> Ask AI
           </Link>
         </div>
       </div>
+
+      {/* How this page works */}
+      <section className="goals-guide animate-fade-in">
+        <button
+          type="button"
+          onClick={() => setGuideOpen((o) => !o)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            width: "100%",
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            color: "var(--text-primary)",
+            textAlign: "left",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>How this page works</div>
+            <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: "4px 0 0", lineHeight: 1.5 }}>
+              Three layers — direction, initiatives, opportunities — feed your daily plan.
+            </p>
+          </div>
+          {guideOpen ? <ChevronUp size={18} color="var(--text-muted)" /> : <ChevronDown size={18} color="var(--text-muted)" />}
+        </button>
+        {guideOpen && (
+          <>
+            <div className="goals-guide-steps">
+              <div className="goals-guide-step">
+                <div style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: 6 }}>
+                  1 · Years
+                </div>
+                <div style={{ fontWeight: 600, fontSize: "0.88rem", marginBottom: 4 }}>Long-term direction</div>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                  Who you&apos;re becoming — financial freedom, health, legacy. Context for AI; never becomes daily tasks.
+                </p>
+              </div>
+              <div className="goals-guide-step">
+                <div style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--accent-primary)", marginBottom: 6 }}>
+                  2 · Weeks–months
+                </div>
+                <div style={{ fontWeight: 600, fontSize: "0.88rem", marginBottom: 4 }}>Active initiatives</div>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                  Concrete projects with deadlines (max 3). Milestones here drive tasks on Today&apos;s Plan. Set one as current focus.
+                </p>
+              </div>
+              <div className="goals-guide-step">
+                <div style={{ fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: 6 }}>
+                  3 · This week
+                </div>
+                <div style={{ fontWeight: 600, fontSize: "0.88rem", marginBottom: 4 }}>Opportunities</div>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                  Urgent wins — interview invite, client lead, deadline — that can jump ahead of routine plan items.
+                </p>
+              </div>
+            </div>
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(59,130,246,0.15)", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                Typical flow: add direction → create initiative with deadline → open Today&apos;s Plan each morning.
+              </span>
+              <Link
+                href="/dashboard/plans"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: "0.82rem",
+                  fontWeight: 500,
+                  color: "var(--accent-primary)",
+                  textDecoration: "none",
+                }}
+              >
+                <Calendar size={14} /> Go to Today&apos;s Plan <ArrowRight size={14} />
+              </Link>
+            </div>
+          </>
+        )}
+      </section>
 
       {/* Long-term direction — read-only context, never tasks */}
       <section style={{ marginBottom: "32px" }}>
@@ -460,8 +545,9 @@ export default function GoalsPage() {
               const currentMilestone = milestones.find((m) => m.status === "in_progress");
               const abstractMilestones = milestones.filter((m) => isAbstractMilestone(m.title));
               const completedToward = completedTasksByInitiative.get(init.id) ?? 0;
+              const linkedTaskCount = taskCountByInitiative.get(init.id) ?? 0;
               return (
-              <div key={init.id} className="glass-card" style={{ padding: "16px 18px", cursor: "default", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div key={init.id} className="glass-card initiative-card" style={{ padding: "16px 18px", cursor: "default", display: "flex", alignItems: "flex-start", gap: "12px" }}>
                 <Flag size={16} style={{ color: healthColor(health.health), marginTop: "3px", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: "0.95rem", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -481,6 +567,15 @@ export default function GoalsPage() {
                   </div>
                   {init.description && (
                     <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>{init.description}</p>
+                  )}
+                  {linkedTaskCount === 0 && (
+                    <div className="initiative-no-tasks-hint">
+                      No tasks linked yet. Open{" "}
+                      <Link href="/dashboard/plans" style={{ color: "var(--accent-primary)", fontWeight: 500 }}>
+                        Today&apos;s Plan
+                      </Link>{" "}
+                      to generate daily actions from this initiative&apos;s milestones. If you&apos;ve pivoted away, mark complete or remove the initiative.
+                    </div>
                   )}
                   {abstractMilestones.length > 0 && (
                     <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: "var(--radius-md)", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
@@ -538,47 +633,64 @@ export default function GoalsPage() {
                       ))}
                     </ul>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setCurrentFocus.mutate({ initiativeId: init.id, until: init.target_date || undefined })}
-                    style={{
-                      marginTop: "10px",
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                      borderRadius: "999px",
-                      border: "1px solid var(--border-color)",
-                      background: "var(--bg-glass)",
-                      color: "var(--accent-primary)",
-                      cursor: "pointer",
-                      marginRight: "8px",
-                    }}
-                  >
-                    Set as current focus
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (confirm(`Mark "${init.title}" complete? This archives the initiative and generates a review.`)) {
-                        completeInitiative.mutate(init.id);
-                      }
-                    }}
-                    style={{
-                      marginTop: "10px",
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                      borderRadius: "999px",
-                      border: "1px solid var(--border-color)",
-                      background: "var(--bg-glass)",
-                      color: "var(--text-secondary)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Mark complete
-                  </button>
+                  <div className="initiative-card-actions">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentFocus.mutate({ initiativeId: init.id, until: init.target_date || undefined })}
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-glass)",
+                        color: "var(--accent-primary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Set as current focus
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Mark "${init.title}" complete? This archives the initiative and generates a review.`)) {
+                          completeInitiative.mutate(init.id);
+                        }
+                      }}
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-glass)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Mark complete
+                    </button>
+                    <Link
+                      href="/dashboard/plans"
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border-color)",
+                        background: "var(--bg-glass)",
+                        color: "var(--text-secondary)",
+                        textDecoration: "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      <Calendar size={12} /> Today&apos;s Plan
+                    </Link>
+                  </div>
                 </div>
                 <button
                   onClick={() => deleteInitiative.mutate(init.id)}
-                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5 }}
+                  className="initiative-card-delete"
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px", opacity: 0.5, flexShrink: 0 }}
                   title="Remove initiative"
                 >
                   <Trash2 size={14} />
@@ -596,11 +708,8 @@ export default function GoalsPage() {
           <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Opportunities</h2>
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>can outweigh routine tasks</span>
         </div>
-        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.55 }}>
-          Time-sensitive events that deserve priority over routine plans.
-        </p>
-        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.55 }}>
-          Examples: interview invitation · client lead · scholarship deadline · sales opportunity
+        <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.55 }}>
+          Time-sensitive events that deserve priority over routine plans — interview invite, client lead, scholarship deadline, sales opportunity.
         </p>
         {opportunitiesLoading ? (
           <div className="skeleton" style={{ height: "72px" }} />
@@ -646,7 +755,7 @@ export default function GoalsPage() {
               value={newGoal.description} onChange={(e) => setNewGoal({ ...newGoal, description: e.target.value })}
               style={{ resize: "vertical" }}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div className="form-row-2">
               <select
                 className="input-field" value={newGoal.category}
                 onChange={(e) => setNewGoal({ ...newGoal, category: e.target.value })}
@@ -757,7 +866,7 @@ export default function GoalsPage() {
               onChange={(e) => setNewOpportunity({ ...newOpportunity, description: e.target.value })}
               style={{ resize: "vertical" }}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div className="form-row-2">
               <select className="input-field" value={newOpportunity.lifeArea} onChange={(e) => setNewOpportunity({ ...newOpportunity, lifeArea: e.target.value })}>
                 {LIFE_AREAS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
@@ -808,12 +917,12 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
       position: "fixed", inset: 0, zIndex: 100,
       display: "flex", alignItems: "center", justifyContent: "center",
       background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+      padding: "16px",
     }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="glass-card animate-slide-up"
-        style={{ width: "100%", maxWidth: 460, padding: "28px", cursor: "default" }}
+        className="glass-card animate-slide-up modal-panel modal-sheet"
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>

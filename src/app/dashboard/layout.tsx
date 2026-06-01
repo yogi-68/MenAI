@@ -91,18 +91,22 @@ export default function DashboardLayout({
     router.push("/");
   };
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.classList.toggle("dashboard-nav-open", mobileMenuOpen);
+    return () => document.body.classList.remove("dashboard-nav-open");
+  }, [mobileMenuOpen]);
+
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       {/* ===== AMBIENT BACKGROUND ===== */}
       <div className="ambient-bg" />
 
       {/* ===== SIDEBAR ===== */}
-      <aside
-        className={`sidebar ${mobileMenuOpen ? "open" : ""}`}
-        style={{
-          transform: mobileMenuOpen ? "translateX(0)" : undefined,
-        }}
-      >
+      <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
         {/* Logo Area */}
         <div
           style={{
@@ -139,15 +143,10 @@ export default function DashboardLayout({
 
           {/* Mobile close */}
           <button
+            type="button"
             onClick={() => setMobileMenuOpen(false)}
-            style={{
-              display: "none",
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-            }}
-            className="mobile-only"
+            className="sidebar-close-btn"
+            aria-label="Close menu"
           >
             <X size={20} />
           </button>
@@ -274,40 +273,22 @@ export default function DashboardLayout({
       </aside>
 
       {/* ===== MAIN CONTENT ===== */}
-      <main
-        style={{
-          flex: 1,
-          marginLeft: "260px", /* matches sidebar width */
-          minHeight: "100vh",
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
+      <main className="dashboard-main">
         {/* Mobile Header */}
         <div
-          style={{
-            display: "none",
-            position: "sticky",
-            top: 0,
-            zIndex: 30,
-            padding: "16px",
-            background: "var(--bg-secondary)",
-            backdropFilter: "blur(12px)",
-            borderBottom: "1px solid var(--border-color)",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-          className={`mobile-header ${pathname.startsWith("/dashboard/chat") ? "mobile-header-hidden" : ""}`}
+          className={`dashboard-mobile-header ${pathname.startsWith("/dashboard/chat") ? "mobile-header-hidden" : ""}`}
         >
           <button
+            type="button"
             onClick={() => setMobileMenuOpen(true)}
             style={{
               background: "none",
               border: "none",
               color: "var(--text-primary)",
               cursor: "pointer",
+              padding: 4,
             }}
+            aria-label="Open menu"
           >
             <Menu size={24} />
           </button>
@@ -320,36 +301,14 @@ export default function DashboardLayout({
         </div>
       </main>
 
-      {/* Mobile overlay */}
       {mobileMenuOpen && (
-        <div
+        <button
+          type="button"
+          className="sidebar-overlay"
           onClick={() => setMobileMenuOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(4px)",
-            zIndex: 35,
-          }}
+          aria-label="Close menu"
         />
       )}
-
-      <style jsx global>{`
-        @media (max-width: 768px) {
-          .sidebar {
-            z-index: 40 !important;
-          }
-          main {
-            margin-left: 0 !important;
-          }
-          .mobile-header {
-            display: flex !important;
-          }
-          .mobile-only {
-            display: block !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
