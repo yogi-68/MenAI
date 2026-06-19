@@ -38,8 +38,8 @@
   /* Smooth radii */
   --radius-sm: 8px;
   --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
   --radius-full: 9999px;
   
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -298,7 +298,9 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar {
   width: 260px;
   height: 100vh;
-  background: var(--bg-secondary);
+  background: var(--bg-card);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid var(--border-color);
   padding: 24px 16px;
   display: flex;
@@ -329,8 +331,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .sidebar-link.active {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: var(--shadow-md);
 }
 
 /* ===== AMBIENT BACKGROUND ===== */

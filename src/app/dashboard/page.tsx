@@ -141,10 +141,10 @@ export default function DashboardOverview() {
   return (
     <div className="page-shell">
       <header className="animate-fade-in" style={{ marginBottom: "40px" }}>
-        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        <p style={{ color: "var(--accent-primary)", fontSize: "0.75rem", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700 }}>
           Your briefing
         </p>
-        <h1 suppressHydrationWarning style={{ fontSize: "clamp(1.75rem, 4vw, 2.25rem)", fontWeight: 400, letterSpacing: "-0.03em" }}>
+        <h1 suppressHydrationWarning style={{ fontSize: "clamp(2rem, 5vw, 3rem)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1 }}>
           {isLoading ? `${user?.full_name?.split(" ")[0] || "there"}.` : data?.greeting}
         </h1>
         {!isLoading && data?.personalBriefing && data.hasInitiatives && (

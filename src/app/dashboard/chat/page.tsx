@@ -105,15 +105,7 @@ export default function ChatPage() {
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (convsLoading || !isRealConversationId(currentConversationId)) return;
-    if (clearedStaleIdsRef.current.has(currentConversationId)) return;
-    const exists = conversations.some((c) => c.id === currentConversationId);
-    if (!exists) {
-      clearedStaleIdsRef.current.add(currentConversationId);
-      handleMissingConversation(currentConversationId);
-    }
-  }, [conversations, convsLoading, currentConversationId, handleMissingConversation]);
+
 
   const throttledScroll = useCallback(() => {
     const now = Date.now();
