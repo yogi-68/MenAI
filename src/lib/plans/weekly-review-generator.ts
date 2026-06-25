@@ -1,6 +1,6 @@
 import { getOpenAI } from "@/lib/ai/openai";
 import { DEEP_MODEL } from "@/lib/ai/models";
-import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+import { computeGoalHealth } from "@/lib/plans/goal-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
 import { lifeAreaLabel } from "@/lib/plans/life-areas";
@@ -146,24 +146,26 @@ export async function generateWeeklyReview(
     computeMomentumScore(supabase, userId),
     supabase
       .from("tasks")
-      .select("status, completed_at, due_date, title, auto_generated, initiatives(title, life_area)")
+      .select("status, completed_at, due_date, title, auto_generated, goals(title, life_area)")
       .eq("user_id", userId)
       .gte("due_date", weekStart)
       .lte("due_date", weekEnd),
     supabase
-      .from("initiatives")
+      .from("goals")
       .select("id, title, description, life_area, target_date, last_action_at, progress, status")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .in("status", ["active", "completed"]),
     supabase
-      .from("initiative_milestones")
-      .select("title, status, completed_at, sort_order, initiative_id, initiatives(title, life_area)")
+      .from("goal_milestones")
+      .select("title, status, completed_at, sort_order, goal_id, goals(title, life_area)")
       .eq("user_id", userId)
       .order("sort_order", { ascending: true }),
     supabase
       .from("goals")
       .select("title, description, category, status")
       .eq("user_id", userId)
+      .eq("goal_kind", "direction")
       .eq("status", "active")
       .limit(8),
     supabase
@@ -186,7 +188,7 @@ export async function generateWeeklyReview(
       .limit(6),
     supabase
       .from("profiles")
-      .select("current_focus_initiative_id, current_focus_until, vision")
+      .select("current_focus_goal_id, current_focus_until, vision")
       .eq("id", userId)
       .maybeSingle(),
     supabase
@@ -224,7 +226,7 @@ export async function generateWeeklyReview(
   const completedTasks = tasks.filter((t) => t.status === "completed");
   const missedTasks = tasks.filter((t) => t.status !== "completed" && t.status !== "in_progress");
 
-  const focusInitiative = initiatives.find((i) => i.id === profile?.current_focus_initiative_id);
+  const focusInitiative = initiatives.find((i) => i.id === profile?.current_focus_goal_id);
 
   const milestonesCompletedThisWeek = milestones.filter(
     (m) => m.status === "completed" && m.completed_at && m.completed_at.slice(0, 10) >= weekStart && m.completed_at.slice(0, 10) <= weekEnd
@@ -235,26 +237,26 @@ export async function generateWeeklyReview(
   );
 
   const initiativeLines = initiatives.map((i) => {
-    const h = computeInitiativeHealth({
+    const h = computeGoalHealth({
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
       progress: i.progress,
     });
     const ms = milestones
-      .filter((m) => m.initiative_id === i.id)
+      .filter((m) => m.goal_id === i.id)
       .map((m) => `${m.title} (${m.status})`)
       .join("; ");
     return `- ${i.title} [${lifeAreaLabel(i.life_area)}]: ${h.label}. Target: ${i.target_date || "none"}. Milestones: ${ms || "none"}`;
   });
 
   const completedTaskLines = completedTasks.map((t) => {
-    const init = (t.initiatives as { title?: string; life_area?: string } | null)?.title;
+    const init = (t.goals as { title?: string; life_area?: string } | null)?.title;
     return `- ${t.title}${init ? ` (${init})` : ""}`;
   });
 
   const missedTaskLines = missedTasks.slice(0, 8).map((t) => {
-    const init = (t.initiatives as { title?: string } | null)?.title;
+    const init = (t.goals as { title?: string } | null)?.title;
     return `- ${t.title}${init ? ` (${init})` : ""}`;
   });
 
@@ -297,9 +299,9 @@ export async function generateWeeklyReview(
     completedTasks.length > 0 || reflections.length > 0;
 
   const verifiedMilestones = milestonesCompletedThisWeek.filter((m) => {
-    const init = initiatives.find((i) => i.id === m.initiative_id);
+    const init = initiatives.find((i) => i.id === m.goal_id);
     const initTasks = completedTasks.filter(
-      (t) => (t.initiatives as { title?: string } | null)?.title === init?.title
+      (t) => (t.goals as { title?: string } | null)?.title === init?.title
     );
     return initTasks.length > 0;
   });

@@ -66,7 +66,7 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
       db.from("ai_suggestions").select("status").gte("created_at", sinceIso),
       db
         .from("tasks")
-        .select("status, due_date, initiatives(life_area)")
+        .select("status, due_date, goals(life_area)")
         .gte("due_date", sinceDate),
       db.from("daily_plans").select("plan_date").gte("plan_date", sinceDate),
       db.from("daily_reflections").select("reflection_date").gte("reflection_date", sinceDate),
@@ -93,7 +93,7 @@ export async function fetchLaunchMetrics(days = 30): Promise<LaunchMetricsSnapsh
 
   const domainMap = new Map<string, { completed: number; planned: number }>();
   for (const t of tasksRes.data || []) {
-    const area = (t.initiatives as { life_area?: string } | null)?.life_area || "personal";
+    const area = (t.goals as { life_area?: string } | null)?.life_area || "personal";
     const cur = domainMap.get(area) || { completed: 0, planned: 0 };
     cur.planned += 1;
     if (t.status === "completed") cur.completed += 1;

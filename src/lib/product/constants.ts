@@ -1,7 +1,7 @@
 /** Product-wide constants — single source of truth for architecture decisions. */
 
-/** Max concurrent active initiatives (more = noise). */
-export const MAX_ACTIVE_INITIATIVES = 3;
+/** Max concurrent active execution goals (more = noise). */
+export const MAX_ACTIVE_GOALS = 3;
 
 /** Max AI touchpoints per day: morning plan, afternoon check, night reflection. */
 export const DAILY_AI_TOUCHPOINTS = ["morning", "afternoon", "night"] as const;

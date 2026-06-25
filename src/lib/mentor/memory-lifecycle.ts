@@ -43,6 +43,8 @@ export function daysSince(date: string | Date | null | undefined): number {
   return Math.floor((Date.now() - new Date(date).getTime()) / MS_PER_DAY);
 }
 
+const PERMANENT_INFLUENCE_FLOOR = 0.55;
+
 /** influence = confidence × recency × mention_boost */
 export function computeInfluenceScore(input: {
   confidence: number;
@@ -51,33 +53,40 @@ export function computeInfluenceScore(input: {
   memoryType: string;
   status?: string;
   expiresAt?: string | null;
+  isPermanent?: boolean;
 }): number {
   if (
-    input.status === "expired" ||
-    input.status === "deleted" ||
-    input.status === "superseded" ||
-    input.status === "archived"
+    !input.isPermanent &&
+    (input.status === "expired" ||
+      input.status === "deleted" ||
+      input.status === "superseded" ||
+      input.status === "archived")
   ) {
     return 0;
   }
 
-  if (input.expiresAt && new Date(input.expiresAt) < new Date()) {
+  if (!input.isPermanent && input.expiresAt && new Date(input.expiresAt) < new Date()) {
     return 0;
   }
 
   const days = daysSince(input.lastMentionedAt);
   const halfLife = DECAY_HALF_LIFE_DAYS[input.memoryType] ?? 90;
-  const recencyFactor = Math.pow(0.5, days / halfLife);
+  const recencyFactor = input.isPermanent
+    ? 1
+    : Math.pow(0.5, days / halfLife);
   const mentionFactor = Math.min(1, 0.55 + Math.min(input.mentionCount, 20) * 0.022);
   const evidenceBoost =
     input.memoryType === "core_value"
       ? Math.min(0.12, (input.mentionCount - 1) * 0.015)
       : 0;
 
-  return Math.max(
-    0,
-    Math.min(0.98, input.confidence * recencyFactor * mentionFactor + evidenceBoost)
-  );
+  const raw = Math.min(0.98, input.confidence * recencyFactor * mentionFactor + evidenceBoost);
+
+  if (input.isPermanent) {
+    return Math.max(PERMANENT_INFLUENCE_FLOOR, raw);
+  }
+
+  return Math.max(0, raw);
 }
 
 /** Backward-compatible alias used across the codebase. */
@@ -98,8 +107,10 @@ export function effectiveConfidence(
 export function statusFromInfluence(
   influence: number,
   daysSinceMention: number,
-  memoryType: string
+  memoryType: string,
+  isPermanent = false
 ): MemoryStatus {
+  if (isPermanent) return "active";
   if (influence <= 0) return "expired";
   if (influence < INFLUENCE_DELETE && daysSinceMention > 45) return "deleted";
   if (influence < INFLUENCE_ARCHIVE && daysSinceMention > 60) return "archived";
@@ -240,6 +251,7 @@ interface MentorMemoryRow {
   status: string;
   expires_at: string | null;
   influence_score: number | null;
+  is_permanent?: boolean;
 }
 
 /** Expire time-sensitive memories past expires_at. */
@@ -252,6 +264,7 @@ export async function expireTemporaryMemories(
     .from("mentor_memories")
     .select("id")
     .eq("user_id", userId)
+    .eq("is_permanent", false)
     .in("status", ["active", "supporting"])
     .not("expires_at", "is", null)
     .lt("expires_at", now);
@@ -280,12 +293,13 @@ export async function rescoreMemories(
   const { data: memories } = await supabase
     .from("mentor_memories")
     .select(
-      "id, text, memory_type, confidence, mention_count, last_mentioned_at, status, expires_at, influence_score"
+      "id, text, memory_type, confidence, mention_count, last_mentioned_at, status, expires_at, influence_score, is_permanent"
     )
     .eq("user_id", userId)
     .in("status", ["active", "supporting"]);
 
   for (const mem of (memories || []) as MentorMemoryRow[]) {
+    const isPermanent = mem.is_permanent === true;
     const days = daysSince(mem.last_mentioned_at);
     const influence = computeInfluenceScore({
       confidence: mem.confidence ?? 0.8,
@@ -294,13 +308,13 @@ export async function rescoreMemories(
       memoryType: mem.memory_type,
       status: mem.status,
       expiresAt: mem.expires_at,
+      isPermanent,
     });
 
-    const newStatus = statusFromInfluence(influence, days, mem.memory_type);
-    const decayedConfidence = Math.max(
-      0.1,
-      (mem.confidence ?? 0.8) - Math.floor(days / 30) * 0.04
-    );
+    const newStatus = statusFromInfluence(influence, days, mem.memory_type, isPermanent);
+    const decayedConfidence = isPermanent
+      ? mem.confidence ?? 0.8
+      : Math.max(0.1, (mem.confidence ?? 0.8) - Math.floor(days / 30) * 0.04);
 
     const updates: Record<string, unknown> = {
       influence_score: influence,

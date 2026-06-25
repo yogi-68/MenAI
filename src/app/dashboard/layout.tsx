@@ -12,21 +12,20 @@ import {
   LogOut,
   Menu,
   X,
-  Plus,
   Calendar,
-  FileText,
-  Target,
-  Activity,
   History,
+  BarChart3,
+  Activity,
 } from "lucide-react";
+import { ClaySidebarLink, PageTransition } from "@/components/ui";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
-  { href: "/dashboard/goals", icon: Target, label: "Initiatives" },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
-  { href: "/dashboard/reports", icon: FileText, label: "Reports" },
+  { href: "/dashboard/reviews/weekly", icon: BarChart3, label: "Weekly Review" },
+  { href: "/dashboard/reviews/monthly", icon: BarChart3, label: "Monthly Review" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -45,7 +44,6 @@ export default function DashboardLayout({
   const supabase = createClient();
   const userLoadedRef = useRef(false);
 
-
   useEffect(() => {
     if (userLoadedRef.current) return;
     userLoadedRef.current = true;
@@ -57,7 +55,6 @@ export default function DashboardLayout({
         return;
       }
 
-      // Ensure profile exists in database
       await fetch("/api/auth/bootstrap", { method: "POST" });
 
       const { data: profile } = await supabase
@@ -66,7 +63,7 @@ export default function DashboardLayout({
         .eq("id", authUser.id)
         .maybeSingle();
 
-      const nextUser = {
+      setUser({
         id: authUser.id,
         full_name:
           profile?.full_name ||
@@ -77,9 +74,7 @@ export default function DashboardLayout({
           profile?.avatar_url || authUser.user_metadata?.avatar_url || "",
         role: profile?.role || "user",
         onboarding_completed: profile?.onboarding_completed || false,
-      };
-
-      setUser(nextUser);
+      });
     };
 
     fetchUser();
@@ -102,12 +97,9 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* ===== AMBIENT BACKGROUND ===== */}
       <div className="ambient-bg" />
 
-      {/* ===== SIDEBAR ===== */}
       <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
-        {/* Logo Area */}
         <div
           style={{
             display: "flex",
@@ -117,31 +109,18 @@ export default function DashboardLayout({
             paddingLeft: "8px",
           }}
         >
-          <Link
-            href="/dashboard"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              textDecoration: "none",
-            }}
-          >
-            <div>
-              <span
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: 500,
-                  color: "var(--text-primary)",
-                  display: "block",
-                  lineHeight: 1.2,
-                  letterSpacing: "-0.02em"
-                }}
-              >
-                MenAI
-              </span>
-            </div>
+          <Link href="/dashboard" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+            <span
+              style={{
+                fontSize: "1.2rem",
+                fontWeight: 500,
+                color: "var(--text-primary)",
+                letterSpacing: "-0.02em",
+              }}
+            >
+              MenAI
+            </span>
           </Link>
-
-          {/* Mobile close */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(false)}
@@ -152,88 +131,46 @@ export default function DashboardLayout({
           </button>
         </div>
 
-        {/* New Chat Button */}
-          <Link
-            href="/dashboard/chat"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "10px",
-              borderRadius: "var(--radius-md)",
-              background: "var(--bg-glass)",
-              border: "1px solid var(--border-color)",
-              color: "var(--text-primary)",
-              textDecoration: "none",
-              fontWeight: 500,
-              fontSize: "0.9rem",
-              marginBottom: "32px",
-              transition: "all 0.3s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--bg-glass-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "var(--bg-glass)";
-            }}
-          >
-          <Plus size={16} />
-          New Thread
-        </Link>
-
-        {/* Nav Items — Primary */}
         <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
           {primaryNav.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href));
             return (
-              <Link
+              <ClaySidebarLink
                 key={item.href}
                 href={item.href}
-                className={`sidebar-link ${isActive ? "active" : ""}`}
+                icon={item.icon}
+                label={item.label}
+                active={isActive}
                 onClick={() => setMobileMenuOpen(false)}
-              >
-                <item.icon size={18} strokeWidth={isActive ? 2 : 1.5} />
-                {item.label}
-              </Link>
+              />
             );
           })}
           {user?.role === "admin" && (
-            <Link
+            <ClaySidebarLink
               href={adminNav.href}
-              className={`sidebar-link ${pathname.startsWith(adminNav.href) ? "active" : ""}`}
+              icon={adminNav.icon}
+              label={adminNav.label}
+              active={pathname.startsWith(adminNav.href)}
               onClick={() => setMobileMenuOpen(false)}
-              style={{ marginTop: "8px", borderTop: "1px solid var(--border-color)", paddingTop: "14px" }}
-            >
-              <adminNav.icon size={18} strokeWidth={pathname.startsWith(adminNav.href) ? 2 : 1.5} />
-              {adminNav.label}
-            </Link>
+            />
           )}
         </nav>
 
-        {/* User Info (Minimal) */}
         <div style={{ paddingTop: "16px", marginTop: "16px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              padding: "8px",
-            }}
-          >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "8px" }}>
             <div
+              className="clay-card-inset"
               style={{
                 width: 32,
                 height: 32,
                 borderRadius: "50%",
-                background: "var(--bg-glass)",
-                border: "1px solid var(--border-color)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "0.85rem",
                 fontWeight: 500,
-                color: "var(--text-primary)",
                 flexShrink: 0,
               }}
             >
@@ -261,8 +198,6 @@ export default function DashboardLayout({
                 color: "var(--text-muted)",
                 cursor: "pointer",
                 padding: "6px",
-                borderRadius: "var(--radius-sm)",
-                transition: "color 0.2s",
               }}
               title="Log out"
             >
@@ -272,22 +207,14 @@ export default function DashboardLayout({
         </div>
       </aside>
 
-      {/* ===== MAIN CONTENT ===== */}
       <main className="dashboard-main">
-        {/* Mobile Header */}
         <div
           className={`dashboard-mobile-header ${pathname.startsWith("/dashboard/chat") ? "mobile-header-hidden" : ""}`}
         >
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-primary)",
-              cursor: "pointer",
-              padding: 4,
-            }}
+            style={{ background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", padding: 4 }}
             aria-label="Open menu"
           >
             <Menu size={24} />
@@ -296,8 +223,16 @@ export default function DashboardLayout({
           <div style={{ width: 24 }} />
         </div>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: pathname.startsWith("/dashboard/chat") ? "hidden" : undefined }}>
-          {children}
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            overflow: pathname.startsWith("/dashboard/chat") ? "hidden" : undefined,
+          }}
+        >
+          <PageTransition>{children}</PageTransition>
         </div>
       </main>
 

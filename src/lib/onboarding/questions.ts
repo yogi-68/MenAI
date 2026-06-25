@@ -1,6 +1,6 @@
 /**
- * MenAI onboarding — builds an execution system, not a profile.
- * Output: direction → initiative → deadline → pattern → coaching → check-ins → success criteria
+ * MenAI onboarding — minimal execution setup.
+ * Output: concrete goal → deadline → blocker → success criteria
  */
 
 export interface OnboardingQuestion {
@@ -19,48 +19,11 @@ export interface OnboardingQuestion {
 }
 
 export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
-  Q1: {
-    id: "Q1",
-    type: "multiple_choice",
-    prompt: "What matters most to you right now?",
-    subtitle: "Select all that apply — stored as long-term direction (AI context, not daily clutter).",
-    allowMultiple: true,
-    options: [
-      { value: "business", label: "Business" },
-      { value: "career", label: "Career" },
-      { value: "finance", label: "Finance" },
-      { value: "fitness", label: "Fitness" },
-      { value: "health", label: "Health" },
-      { value: "study", label: "Learning" },
-      { value: "relationships", label: "Relationships" },
-      { value: "family", label: "Family" },
-      { value: "creativity", label: "Creativity" },
-      { value: "other", label: "Other" },
-    ],
-  },
-  Q1B: {
-    id: "Q1B",
-    type: "text",
-    prompt: "What are you building?",
-    subtitle: "Examples: AI SaaS · Agency · Marketplace · Content business",
-  },
   Q2: {
     id: "Q2",
     type: "text",
     prompt: "What are you actively trying to achieve in the next 30–90 days?",
-    subtitle: "A concrete initiative — e.g. Launch MenAI Beta, Get 5 clients, Lose 5 kg. Not a vision like 'excel in life'.",
-  },
-  Q2STAGE: {
-    id: "Q2STAGE",
-    type: "forced_choice",
-    prompt: "What stage are you in?",
-    subtitle: "So milestones match where you actually are — not generic templates.",
-    options: [
-      { value: "exploring", label: "Just exploring" },
-      { value: "first_client", label: "Looking for first client" },
-      { value: "has_clients", label: "Already have clients" },
-      { value: "scaling", label: "Scaling" },
-    ],
+    subtitle: "A concrete goal — e.g. Launch MenAI Beta, Get 5 clients, Lose 5 kg. Not a vision like 'excel in life'.",
   },
   Q3: {
     id: "Q3",
@@ -90,27 +53,6 @@ export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
     allowOther: true,
     otherPrompt: "What else tends to get in the way?",
   },
-  Q5: {
-    id: "Q5",
-    type: "forced_choice",
-    prompt: "How should guidance feel?",
-    options: [
-      { value: "supportive", label: "Supportive" },
-      { value: "balanced", label: "Balanced" },
-      { value: "direct", label: "Direct" },
-    ],
-  },
-  Q6: {
-    id: "Q6",
-    type: "forced_choice",
-    prompt: "When should check-ins happen?",
-    options: [
-      { value: "morning", label: "Morning" },
-      { value: "morning_night", label: "Morning + night" },
-      { value: "full_day", label: "Morning + afternoon + night" },
-      { value: "on_open", label: "Only when I open the app" },
-    ],
-  },
   Q7: {
     id: "Q7",
     type: "text",
@@ -124,23 +66,9 @@ export type OnboardingResponseMap = Record<
   { response?: string | null; responseData?: { selected?: string | string[] } }
 >;
 
-import { initiativeNeedsStage } from "@/lib/initiatives/concreteness-gate";
-
-/** Dynamic flow — Q1B when Business; Q2STAGE when business/finance initiative */
-export function buildQuestionFlow(responses: OnboardingResponseMap = {}): string[] {
-  const q1 = responses.Q1?.responseData?.selected;
-  const areas = Array.isArray(q1) ? q1 : q1 ? [q1] : [];
-  const q2Text = responses.Q2?.response || "";
-  const flow: string[] = ["Q1"];
-  if (areas.includes("business")) flow.push("Q1B");
-  flow.push("Q2");
-  const needsStage =
-    areas.includes("business") ||
-    areas.includes("finance") ||
-    initiativeNeedsStage(q2Text, areas.includes("business") ? "business" : null);
-  if (needsStage && q2Text.trim().length > 0) flow.push("Q2STAGE");
-  flow.push("Q3", "Q4", "Q5", "Q6", "Q7");
-  return flow;
+/** Minimal flow — name comes from profile; goal, deadline, blocker, success criteria */
+export function buildQuestionFlow(_responses: OnboardingResponseMap = {}): string[] {
+  return ["Q2", "Q3", "Q4", "Q7"];
 }
 
 export const QUESTION_ORDER = buildQuestionFlow();
@@ -172,7 +100,7 @@ export function isValidQuestionId(id: string): boolean {
   return id in ONBOARDING_QUESTIONS;
 }
 
-/** Map onboarding direction pick → goal category + initiative life area */
+/** Map life-area hints → goal category (used when inferring from goal text) */
 export const DIRECTION_AREA_MAP: Record<
   string,
   { goalCategory: string; lifeArea: string; label: string }
@@ -233,10 +161,4 @@ export const OBSTACLE_PATTERN_MAP: Record<
     trigger: "Fear of failure or judgment",
     behavioralImpact: "High-value tasks get skipped",
   },
-};
-
-export const COACHING_STYLE_MAP: Record<string, string> = {
-  supportive: "gentle",
-  balanced: "balanced",
-  direct: "direct",
 };

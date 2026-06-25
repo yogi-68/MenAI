@@ -13,12 +13,12 @@ export async function GET(req: NextRequest) {
   const initiativeId = new URL(req.url).searchParams.get("initiativeId");
 
   let query = supabase
-    .from("initiative_milestones")
+    .from("goal_milestones")
     .select("*")
     .eq("user_id", user.id)
     .order("sort_order", { ascending: true });
 
-  if (initiativeId) query = query.eq("initiative_id", initiativeId);
+  if (initiativeId) query = query.eq("goal_id", initiativeId);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -43,27 +43,27 @@ export async function PATCH(req: NextRequest) {
   if (status === "completed") updates.completed_at = new Date().toISOString();
 
   const { data: milestone, error } = await supabase
-    .from("initiative_milestones")
+    .from("goal_milestones")
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("initiative_id")
+    .select("goal_id")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (status === "completed" && milestone?.initiative_id) {
+  if (status === "completed" && milestone?.goal_id) {
     const { data: siblings } = await supabase
-      .from("initiative_milestones")
+      .from("goal_milestones")
       .select("id, sort_order")
-      .eq("initiative_id", milestone.initiative_id)
+      .eq("goal_id", milestone.goal_id)
       .eq("status", "pending")
       .order("sort_order", { ascending: true })
       .limit(1);
 
     if (siblings?.[0]) {
       await supabase
-        .from("initiative_milestones")
+        .from("goal_milestones")
         .update({ status: "in_progress" })
         .eq("id", siblings[0].id);
     }
@@ -88,10 +88,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { data: initiative } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id, title, description, life_area")
     .eq("id", initiativeId)
     .eq("user_id", user.id)
+    .eq("goal_kind", "execution")
     .single();
 
   if (!initiative) {

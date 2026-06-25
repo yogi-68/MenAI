@@ -1,4 +1,4 @@
-import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+import { computeGoalHealth } from "@/lib/plans/goal-health";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { trackProductEvent } from "@/lib/analytics/track-event";
@@ -44,9 +44,10 @@ export async function computeMomentumScore(
         .gte("due_date", since14)
         .not("due_date", "is", null),
       supabase
-        .from("initiatives")
+        .from("goals")
         .select("title, status, target_date, last_action_at, progress")
         .eq("user_id", userId)
+        .eq("goal_kind", "execution")
         .eq("status", "active"),
       supabase
         .from("daily_reflections")
@@ -85,7 +86,7 @@ export async function computeMomentumScore(
       initiatives.reduce((s, i) => s + (i.progress || 0), 0) / initiatives.length
     );
     for (const i of initiatives) {
-      const health = computeInitiativeHealth({
+      const health = computeGoalHealth({
         status: i.status,
         targetDate: i.target_date,
         lastActionAt: i.last_action_at,

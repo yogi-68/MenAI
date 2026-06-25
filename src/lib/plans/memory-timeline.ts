@@ -6,7 +6,19 @@ export interface TimelineEvent {
   dayLabel: string;
   headline: string;
   subline?: string;
-  category: "initiative" | "milestone" | "completion" | "execution" | "reflection" | "decision";
+  category:
+    | "goal_created"
+    | "milestone"
+    | "completion"
+    | "execution"
+    | "reflection"
+    | "decision"
+    | "habit"
+    | "weekly_win"
+    | "monthly_win"
+    | "failure"
+    | "course_correction"
+    | "achievement";
 }
 
 export async function buildMemoryTimeline(
@@ -18,22 +30,23 @@ export async function buildMemoryTimeline(
   since.setMonth(since.getMonth() - 18);
   const sinceIso = since.toISOString();
 
-  const [initiativesRes, milestonesRes, tasksRes, reflectionsRes] = await Promise.all([
+  const [initiativesRes, milestonesRes, tasksRes, reflectionsRes, reviewsRes, memoriesRes] = await Promise.all([
     supabase
-      .from("initiatives")
+      .from("goals")
       .select("id, title, created_at, status, completed_at, completion_review, life_area, target_date")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .order("created_at", { ascending: true }),
     supabase
-      .from("initiative_milestones")
-      .select("title, status, completed_at, created_at, initiatives(title, created_at)")
+      .from("goal_milestones")
+      .select("title, status, completed_at, created_at, goals(title, created_at)")
       .eq("user_id", userId)
       .eq("status", "completed")
       .not("completed_at", "is", null)
       .order("completed_at", { ascending: true }),
     supabase
       .from("tasks")
-      .select("title, completed_at, auto_generated")
+      .select("title, completed_at, auto_generated, recurrence")
       .eq("user_id", userId)
       .eq("status", "completed")
       .gte("completed_at", sinceIso)
@@ -46,11 +59,33 @@ export async function buildMemoryTimeline(
       .gte("reflection_date", sinceIso.split("T")[0])
       .order("reflection_date", { ascending: true })
       .limit(40),
+    supabase
+      .from("weekly_reviews")
+      .select("week_start, content, created_at")
+      .eq("user_id", userId)
+      .order("week_start", { ascending: true })
+      .limit(20),
+    supabase
+      .from("mentor_memories")
+      .select("text, memory_class, created_at, is_permanent")
+      .eq("user_id", userId)
+      .eq("is_permanent", true)
+      .order("created_at", { ascending: true })
+      .limit(30),
   ]);
 
   const events: TimelineEvent[] = [];
 
   for (const i of initiativesRes.data || []) {
+    events.push({
+      sortKey: i.created_at,
+      month: monthLabel(i.created_at),
+      dayLabel: dayLabel(i.created_at),
+      headline: `Started goal: ${stripPrefix(i.title)}`,
+      subline: i.target_date ? `Target: ${i.target_date}` : undefined,
+      category: "goal_created",
+    });
+
     if (i.status === "completed" && i.completed_at) {
       const review = i.completion_review as { timelineEntry?: string; summary?: string } | null;
       events.push({
@@ -59,14 +94,14 @@ export async function buildMemoryTimeline(
         dayLabel: dayLabel(i.completed_at),
         headline: review?.timelineEntry || `Finished ${stripPrefix(i.title)}`,
         subline: review?.summary?.slice(0, 120),
-        category: "completion",
+        category: "achievement",
       });
     }
   }
 
   for (const m of milestonesRes.data || []) {
     if (!m.completed_at) continue;
-    const init = m.initiatives as { title?: string; created_at?: string } | null;
+    const init = m.goals as { title?: string; created_at?: string } | null;
     const createdAt = init?.created_at || m.created_at;
     const hoursSinceCreate =
       (new Date(m.completed_at).getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
@@ -83,7 +118,19 @@ export async function buildMemoryTimeline(
   }
 
   for (const t of tasksRes.data || []) {
-    if (!t.completed_at || !isExecutionEvent(t.title)) continue;
+    if (!t.completed_at) continue;
+    const rec = t as { recurrence?: string | null };
+    if (rec.recurrence) {
+      events.push({
+        sortKey: t.completed_at,
+        month: monthLabel(t.completed_at),
+        dayLabel: dayLabel(t.completed_at),
+        headline: `Habit completed: ${t.title}`,
+        category: "habit",
+      });
+      continue;
+    }
+    if (!isExecutionEvent(t.title)) continue;
     events.push({
       sortKey: t.completed_at,
       month: monthLabel(t.completed_at),
@@ -96,6 +143,17 @@ export async function buildMemoryTimeline(
   for (const r of reflectionsRes.data || []) {
     const key = r.created_at || `${r.reflection_date}T12:00:00Z`;
     const moved = r.moved_forward?.trim();
+    const blocked = r.blocked_by?.trim();
+    if (blocked && blocked.length > 8) {
+      events.push({
+        sortKey: key,
+        month: monthLabel(key),
+        dayLabel: dayLabel(key),
+        headline: blocked.length > 80 ? `${blocked.slice(0, 77)}…` : blocked,
+        subline: "Course correction from reflection",
+        category: "course_correction",
+      });
+    }
     if (!moved || moved.length < 8) continue;
     events.push({
       sortKey: key,
@@ -103,6 +161,32 @@ export async function buildMemoryTimeline(
       dayLabel: dayLabel(key),
       headline: moved.length > 80 ? `${moved.slice(0, 77)}…` : moved,
       subline: r.blocked_by ? `Blocked by: ${r.blocked_by.slice(0, 60)}` : "Daily reflection",
+      category: "reflection",
+    });
+  }
+
+  for (const w of reviewsRes.data || []) {
+    const content = w.content as { headline?: string; wins?: string[]; summary?: string } | null;
+    const headline = content?.headline || content?.wins?.[0] || content?.summary?.slice(0, 80);
+    if (!headline) continue;
+    const key = w.created_at || `${w.week_start}T12:00:00Z`;
+    events.push({
+      sortKey: key,
+      month: monthLabel(key),
+      dayLabel: dayLabel(key),
+      headline: headline.length > 80 ? `${headline.slice(0, 77)}…` : headline,
+      subline: "Weekly review win",
+      category: "weekly_win",
+    });
+  }
+
+  for (const m of memoriesRes.data || []) {
+    events.push({
+      sortKey: m.created_at,
+      month: monthLabel(m.created_at),
+      dayLabel: dayLabel(m.created_at),
+      headline: m.text.length > 100 ? `${m.text.slice(0, 97)}…` : m.text,
+      subline: "Important AI reflection",
       category: "reflection",
     });
   }

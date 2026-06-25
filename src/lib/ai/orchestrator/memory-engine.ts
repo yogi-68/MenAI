@@ -283,6 +283,17 @@ export async function summarizeConversation(
   }
 }
 
+const NON_COMPRESSIBLE_MEMORY_TYPES = new Set(["core_value", "direction", "identity"]);
+
+function isCompressibleMemory(row: {
+  memory_type: string;
+  metadata?: Record<string, unknown> | null;
+}): boolean {
+  if (row.metadata?.is_permanent === true) return false;
+  if (NON_COMPRESSIBLE_MEMORY_TYPES.has(row.memory_type)) return false;
+  return true;
+}
+
 /**
  * Compress old memories when count exceeds threshold
  * Called periodically to keep memory storage efficient
@@ -298,14 +309,16 @@ export async function compressMemories(userId: string): Promise<void> {
 
   if (!count || count < 50) return;
 
-  // Get oldest conversation memories
-  const { data: oldMemories } = await supabase
+  // Get oldest conversation memories — skip permanent and identity-tier rows
+  const { data: oldMemoriesRaw } = await supabase
     .from("memories")
-    .select("id, content, created_at")
+    .select("id, content, created_at, memory_type, metadata")
     .eq("user_id", userId)
     .eq("memory_type", "conversation")
     .order("created_at", { ascending: true })
-    .limit(20);
+    .limit(40);
+
+  const oldMemories = (oldMemoriesRaw || []).filter(isCompressibleMemory).slice(0, 20);
 
   if (!oldMemories || oldMemories.length < 10) return;
 

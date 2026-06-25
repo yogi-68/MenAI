@@ -3,7 +3,7 @@ import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import { computeLifeAreaWeights, type LifeAreaKey } from "@/lib/plans/life-area-balancer";
 import { loadMentorMemories } from "@/lib/mentor/mentor-memory";
 import { computeThemeActivity } from "@/lib/user-model/memory-graph-identity";
-import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
+import { isConcreteGoalTitle } from "@/lib/goals/concreteness-gate";
 
 export interface RankedPattern {
   pattern: string;
@@ -92,14 +92,15 @@ export async function loadMemoryRetrievalContext(
         .order("created_at", { ascending: false })
         .limit(10),
       supabase
-        .from("initiatives")
+        .from("goals")
         .select("id, title, life_area")
         .eq("user_id", userId)
+        .eq("goal_kind", "execution")
         .eq("status", "active")
         .limit(5),
       supabase
         .from("profiles")
-        .select("current_focus_initiative_id")
+        .select("current_focus_goal_id")
         .eq("id", userId)
         .maybeSingle(),
       supabase
@@ -125,7 +126,7 @@ export async function loadMemoryRetrievalContext(
     .sort((a, b) => b.rankScore - a.rankScore);
 
   const activeInits = initiativesRes.data || [];
-  const focusId = profileRes.data?.current_focus_initiative_id;
+  const focusId = profileRes.data?.current_focus_goal_id;
   const focusedInit = focusId
     ? activeInits.find((i) => i.id === focusId)
     : activeInits[0];
@@ -385,7 +386,7 @@ export function buildMentorIdentitySynthesis(
     );
   }
 
-  if (ctx.primaryInitiative && isConcreteInitiativeTitle(ctx.primaryInitiative)) {
+  if (ctx.primaryInitiative && isConcreteGoalTitle(ctx.primaryInitiative)) {
     paragraphs.push(`Right now execution is anchored on: ${ctx.primaryInitiative}.`);
   }
 
@@ -486,4 +487,49 @@ export function formatMemoryGraphSummary(ctx: MemoryRetrievalContext): string {
     parts.push(`Top pattern: ${ctx.patterns[0].pattern} (${ctx.patterns[0].mentions}×)`);
   }
   return parts.join(" · ");
+}
+
+export interface PinnedMemory {
+  text: string;
+  memoryType: string;
+  memoryClass: string | null;
+  confidence: number;
+}
+
+/** Load permanent mentor memories — always injected before semantic search. */
+export async function loadPinnedMemories(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<PinnedMemory[]> {
+  const { data } = await supabase
+    .from("mentor_memories")
+    .select("text, memory_type, memory_class, confidence")
+    .eq("user_id", userId)
+    .eq("is_permanent", true)
+    .eq("status", "active")
+    .order("confidence", { ascending: false })
+    .limit(20);
+
+  return (data || []).map((row) => ({
+    text: row.text,
+    memoryType: row.memory_type,
+    memoryClass: row.memory_class ?? null,
+    confidence: row.confidence ?? 0.85,
+  }));
+}
+
+export function formatPinnedMemoriesForPrompt(memories: PinnedMemory[]): string {
+  if (memories.length === 0) return "";
+
+  const lines = [
+    "## PINNED MEMORIES (permanent — never forget these)",
+    "These facts persist across all conversations. Reference them naturally when relevant.",
+    "",
+    ...memories.map((m) => {
+      const cls = m.memoryClass ? ` · ${m.memoryClass}` : "";
+      return `- [${m.memoryType}${cls}] "${m.text}" (${Math.round(m.confidence * 100)}% confidence)`;
+    }),
+  ];
+
+  return lines.join("\n");
 }

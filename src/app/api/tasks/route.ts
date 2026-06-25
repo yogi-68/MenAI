@@ -53,18 +53,8 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  type TaskRow = {
-    id: string;
-    title: string;
-    goal_id: string | null;
-    initiative_id: string | null;
-    [key: string]: unknown;
-  };
-
-  const rows = (data || []) as TaskRow[];
-  const filtered = rows.filter(
-    (t) => !isLegacyGenericTask(t.title || "") && !(t.goal_id && !t.initiative_id)
-  );
+  const rows = data || [];
+  const filtered = rows.filter((t) => !isLegacyGenericTask(t.title || ""));
 
   // Skip heavy evolution on today's task list fetches
   const skipEvolution = dueDate === "today" || status === "all";
@@ -84,16 +74,27 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { title, description, goalId, initiativeId, dueDate, scheduledTime, recurrence, estimatedMinutes } = body;
+  const linkedGoalId = goalId || initiativeId || null;
 
   if (!title) {
     return NextResponse.json({ error: "title is required" }, { status: 400 });
   }
 
-  if (goalId && !initiativeId) {
-    return NextResponse.json(
-      { error: "Tasks cannot link to long-term direction. Create or select an active initiative instead." },
-      { status: 400 }
-    );
+  if (linkedGoalId) {
+    const { data: execGoal } = await supabase
+      .from("goals")
+      .select("id")
+      .eq("id", linkedGoalId)
+      .eq("user_id", user.id)
+      .eq("goal_kind", "execution")
+      .eq("status", "active")
+      .maybeSingle();
+    if (!execGoal) {
+      return NextResponse.json(
+        { error: "Tasks must link to an active execution goal, not a direction goal." },
+        { status: 400 }
+      );
+    }
   }
 
   const normalizedTitle = title.trim();
@@ -125,8 +126,7 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       title: normalizedTitle,
       description: description || null,
-      goal_id: null,
-      initiative_id: initiativeId || null,
+      goal_id: linkedGoalId,
       due_date: dueDate || null,
       scheduled_time: scheduledTime || null,
       recurrence: recurrence || null,
@@ -183,14 +183,14 @@ export async function PATCH(req: NextRequest) {
   if (updates.status === "completed") {
     const { data: existing } = await supabase
       .from("tasks")
-      .select("streak_count, last_completed_at, recurrence, title, goal_id, description, scheduled_time, estimated_minutes, initiative_id, initiatives(life_area)")
+      .select("streak_count, last_completed_at, recurrence, title, goal_id, description, scheduled_time, estimated_minutes, goals(life_area)")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();
 
     if (existing) {
       const lifeArea =
-        (existing as { initiatives?: { life_area?: string } | null }).initiatives?.life_area ||
+        (existing as { goals?: { life_area?: string } | null }).goals?.life_area ||
         "personal";
       completedMeta = { lifeArea, title: existing.title ?? undefined };
       updates.last_completed_at = new Date().toISOString();

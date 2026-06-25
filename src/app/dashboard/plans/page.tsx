@@ -318,7 +318,7 @@ export default function DailyPlansPage() {
               ) : lowContext ? (
                 <p style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5 }}>
                   Limited context — use the questions above or{" "}
-                  <Link href="/dashboard/goals">add initiatives with deadlines</Link>.
+                  <Link href="/dashboard/chat">add initiatives with deadlines</Link>.
                 </p>
               ) : null}
               {plan.topObstacle && (
@@ -585,7 +585,7 @@ export default function DailyPlansPage() {
             {plan?.tasks?.length === 0 ? (
               <>
                 Add an active initiative with a deadline on{" "}
-                <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
+                <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
                   Initiatives
                 </Link>
                 {" "}— daily tasks are generated from initiatives, not generic placeholders.
@@ -593,7 +593,7 @@ export default function DailyPlansPage() {
             ) : (
               <>
                 Add active initiatives with deadlines on{" "}
-                <Link href="/dashboard/goals" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
+                <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
                   Initiatives
                 </Link>
                 {" "}— they drive your daily plan.

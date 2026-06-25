@@ -180,12 +180,14 @@ export async function buildDimensionInput(
       .from("goals")
       .select("title, description")
       .eq("user_id", userId)
+      .eq("goal_kind", "direction")
       .eq("status", "active")
       .limit(10),
     supabase
-      .from("initiatives")
-      .select("title, description, target_date, life_area, id, goal_id, last_action_at")
+      .from("goals")
+      .select("title, description, target_date, life_area, id, parent_goal_id, last_action_at")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .eq("status", "active")
       .order("last_action_at", { ascending: false, nullsFirst: false })
       .limit(8),
@@ -219,7 +221,7 @@ export async function buildDimensionInput(
 
   return {
     goals: goalsRes.data || [],
-    initiatives: orderedInits.map(({ id: _id, goal_id: _g, last_action_at: _l, ...rest }) => rest),
+    initiatives: orderedInits.map(({ id: _id, parent_goal_id: _g, last_action_at: _l, ...rest }) => rest),
     patterns: patternsRes.data || [],
     recentCompletedTasks: tasksRes.count ?? 0,
     recentReflections: reflectionsRes.data || [],
@@ -236,7 +238,7 @@ export function buildKnownFactsFromInput(
     description?: string | null;
     target_date?: string | null;
     life_area?: string | null;
-    goal_id?: string | null;
+    parent_goal_id?: string | null;
   } | null,
   linkedGoalTitle?: string | null
 ): KnownFacts {
@@ -281,8 +283,8 @@ export async function getPlanContextState(
   const input = await buildDimensionInput(supabase, userId, exec);
   const snapshot = buildPlanContextSnapshot(input);
   const primary = exec.primaryInitiative;
-  const linkedGoal = primary?.goal_id
-    ? exec.goals.find((g) => g.id === primary.goal_id)
+  const linkedGoal = primary?.parent_goal_id
+    ? exec.goals.find((g) => g.id === primary.parent_goal_id)
     : null;
   const facts = buildKnownFactsFromInput(input, primary, linkedGoal?.title ?? null);
   const goalAnalysis = primary ? buildGoalAnalysis(facts) : null;
@@ -450,7 +452,7 @@ export async function applyInterviewAnswer(
       sideEffects.push(
         (async () => {
           await supabase
-            .from("initiatives")
+            .from("goals")
             .update({
               description: primary.description
                 ? `${primary.description}\n90-day outcome: ${trimmed}`
@@ -466,7 +468,7 @@ export async function applyInterviewAnswer(
     case "targetDate":
       sideEffects.push(
         (async () => {
-          await supabase.from("initiatives").update({ target_date: trimmed }).eq("id", primary.id);
+          await supabase.from("goals").update({ target_date: trimmed }).eq("id", primary.id);
         })()
       );
       break;

@@ -34,7 +34,7 @@ export async function fetchExecutionMetrics(
 
   const { data: plannedTasks } = await supabase
     .from("tasks")
-    .select("id, status, due_date, initiative_id, initiatives(id, title, life_area)")
+    .select("id, status, due_date, goal_id, goals(id, title, life_area)")
     .eq("user_id", userId)
     .eq("auto_generated", true)
     .gte("due_date", since30)
@@ -62,7 +62,7 @@ export async function fetchExecutionMetrics(
   >();
 
   for (const task of tasks) {
-    const init = task.initiatives as {
+    const init = task.goals as {
       id?: string;
       title?: string;
       life_area?: string;
@@ -73,8 +73,8 @@ export async function fetchExecutionMetrics(
     if (task.status === "completed") areaBucket.completed += 1;
     areaMap.set(area, areaBucket);
 
-    if (init?.id && task.initiative_id) {
-      const ib = initMap.get(task.initiative_id) ?? {
+    if (init?.id && task.goal_id) {
+      const ib = initMap.get(task.goal_id) ?? {
         completed: 0,
         total: 0,
         title: init.title || "Initiative",
@@ -82,7 +82,7 @@ export async function fetchExecutionMetrics(
       };
       ib.total += 1;
       if (task.status === "completed") ib.completed += 1;
-      initMap.set(task.initiative_id, ib);
+      initMap.set(task.goal_id, ib);
     }
   }
 

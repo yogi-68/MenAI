@@ -4,7 +4,7 @@ import {
   computePlanConfidence,
   type PlanConfidence,
 } from "@/lib/plans/plan-confidence";
-import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+import { computeGoalHealth } from "@/lib/plans/goal-health";
 import {
   computeLifeAreaBalance,
   formatBalanceInsight,
@@ -51,6 +51,7 @@ import {
   type GoalAnalysis,
 } from "@/lib/plans/coach-insights";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
 import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
@@ -132,6 +133,7 @@ export interface PlanUserContext {
   timeEstimationRatio: number;
   executionRate7d: number;
   initiativeMap: Map<string, string>;
+  activeGoalTitles: string[];
   lifeAreaInsight?: string;
   timeEstimationInsight?: string;
   planPhase: PlanPhase;
@@ -209,24 +211,24 @@ async function buildInitiativeContextBlocks(
 
 function buildMilestoneLinesForAllocation(
   milestonesData: Array<{
-    initiative_id: string;
+    goal_id: string;
     title: string;
     status: string;
-    initiatives: { title?: string } | { title?: string }[] | null;
+    goals: { title?: string } | { title?: string }[] | null;
   }>,
   allocationIds: string[]
 ): string[] {
   const lines: string[] = [];
   for (const initId of allocationIds) {
-    const initMilestones = milestonesData.filter((m) => m.initiative_id === initId);
+    const initMilestones = milestonesData.filter((m) => m.goal_id === initId);
     const current =
       initMilestones.find((m) => m.status === "in_progress") ||
       initMilestones.find((m) => m.status === "pending");
     if (!current) continue;
-    const initRaw = current.initiatives;
+    const initRaw = current.goals;
     const initTitle = Array.isArray(initRaw)
       ? initRaw[0]?.title
-      : initRaw?.title || "Initiative";
+      : initRaw?.title || "Goal";
     lines.push(`${initTitle}: [CURRENT] ${current.title}`);
   }
   return lines;
@@ -280,9 +282,10 @@ export async function fetchPlanUserContext(
     executionMetrics,
   ] = await Promise.all([
     supabase
-      .from("initiatives")
-      .select("id, title, description, success_criteria, target_date, progress, life_area, last_action_at, status, goal_id, goals(title)")
+      .from("goals")
+      .select("id, title, description, success_criteria, target_date, progress, life_area, last_action_at, status, parent_goal_id, parent_goal:parent_goal_id(title)")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .eq("status", "active")
       .order("target_date", { ascending: true, nullsFirst: false })
       .limit(12),
@@ -290,6 +293,7 @@ export async function fetchPlanUserContext(
       .from("goals")
       .select("id, title, description, category, priority, progress, status, target_date")
       .eq("user_id", userId)
+      .eq("goal_kind", "direction")
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(10),
@@ -324,7 +328,7 @@ export async function fetchPlanUserContext(
     supabase
       .from("profiles")
       .select(
-        "vision, daily_priorities, cognitive_state, founder_mode, work_style, lifestyle_issues, full_name, current_focus_initiative_id, current_focus_until"
+        "vision, daily_priorities, cognitive_state, work_style, lifestyle_issues, full_name, current_focus_goal_id, current_focus_until"
       )
       .eq("id", userId)
       .maybeSingle(),
@@ -350,7 +354,7 @@ export async function fetchPlanUserContext(
       .limit(8),
     supabase
       .from("tasks")
-      .select("status, completed_at, due_date, initiatives(life_area)")
+      .select("status, completed_at, due_date, goals(life_area)")
       .eq("user_id", userId)
       .gte("due_date", new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0])
       .limit(100),
@@ -368,12 +372,12 @@ export async function fetchPlanUserContext(
   const { data: milestonesData } =
     initiativeIds.length > 0
       ? await supabase
-          .from("initiative_milestones")
-          .select("initiative_id, title, status, sort_order, initiatives(title)")
+          .from("goal_milestones")
+          .select("goal_id, title, status, sort_order, goals(title)")
           .eq("user_id", userId)
-          .in("initiative_id", initiativeIds)
+          .in("goal_id", initiativeIds)
           .order("sort_order", { ascending: true })
-      : { data: [] as Array<{ initiative_id: string; title: string; status: string; sort_order: number; initiatives: { title?: string } | null }> };
+      : { data: [] as Array<{ goal_id: string; title: string; status: string; sort_order: number; goals: { title?: string } | null }> };
 
   const initiativesRaw = initiativesRes.data || [];
   const execCtx = await loadExecutionContext(supabase, userId);
@@ -413,7 +417,7 @@ export async function fetchPlanUserContext(
   }
 
   const initiativeHealthLines = initiatives.map((i) => {
-    const health = computeInitiativeHealth({
+    const health = computeGoalHealth({
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
@@ -423,8 +427,9 @@ export async function fetchPlanUserContext(
   });
 
   const initiativeLines = initiatives.map((i) => {
-    const goalTitle = (i.goals as { title?: string } | null)?.title;
-    const health = computeInitiativeHealth({
+    const parentGoal = i.parent_goal as { title?: string } | { title?: string }[] | null;
+    const goalTitle = Array.isArray(parentGoal) ? parentGoal[0]?.title : parentGoal?.title;
+    const health = computeGoalHealth({
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
@@ -494,7 +499,7 @@ export async function fetchPlanUserContext(
   const memoryPlanningConstraints = memoryRetrieval.activePlanningConstraints;
 
   const balanceRows = balanceTasks.map((t) => ({
-    life_area: (t.initiatives as { life_area?: string } | null)?.life_area || "personal",
+    life_area: (t.goals as { life_area?: string } | null)?.life_area || "personal",
     status: t.status,
     completed_at: t.completed_at,
     due_date: t.due_date,
@@ -568,9 +573,6 @@ export async function fetchPlanUserContext(
       )
     );
   }
-  if (profile?.founder_mode && initiatives.some((i) => i.life_area === "business")) {
-    identityParts.push("Operating in founder/builder mode");
-  }
   if (profile?.work_style) identityParts.push(`Work style: ${profile.work_style}`);
 
   const lifeParts: string[] = [];
@@ -613,8 +615,8 @@ export async function fetchPlanUserContext(
   const planContext = primaryInit
     ? await loadPlanContextData(supabase, userId, primaryInit.id)
     : await loadPlanContextData(supabase, userId, "_none");
-  const linkedGoal = primaryInit?.goal_id
-    ? goals.find((g) => g.id === primaryInit.goal_id)
+  const linkedGoal = primaryInit?.parent_goal_id
+    ? goals.find((g) => g.id === primaryInit.parent_goal_id)
     : null;
   const dimensionInput = {
     goals: goals.map((g) => ({ title: g.title, description: g.description })),
@@ -677,16 +679,14 @@ export async function fetchPlanUserContext(
         : "normal";
   const planPhase = options.planPhase ?? currentPlanPhase();
   const middayCompleted = options.middayCompleted ?? [];
-  const allocSlots = userModel.executionAllocation.filter((a) => a.percent >= 10).length || 1;
-  /** 3–5 meaningful tasks — people finish plans, not task lists */
+  const activeGoalCount = Math.max(1, initiatives.length);
+  /** Exactly 3 tasks per active execution goal — performance score formula */
   const maxTasks =
     planMode === "context_building"
       ? 2
       : planPhase === "afternoon" && middayCompleted.length > 0
-        ? 2
-        : planMode === "aggressive"
-          ? Math.min(5, 3 + Math.min(allocSlots - 1, 2))
-          : Math.min(4, 3 + (allocSlots > 2 ? 1 : 0));
+        ? Math.min(activeGoalCount * TASKS_PER_GOAL, activeGoalCount * 2)
+        : activeGoalCount * TASKS_PER_GOAL;
 
   const baseMinutes = 480;
   const availableMinutes =
@@ -751,6 +751,7 @@ export async function fetchPlanUserContext(
     timeEstimationRatio: timeProfile.estimationRatio,
     executionRate7d: executionMetrics.last7Days.rate,
     initiativeMap,
+    activeGoalTitles: initiatives.map((i) => i.title),
     lifeAreaInsight: lifeAreaInsight ?? undefined,
     timeEstimationInsight: timeProfile.insight ?? undefined,
     planPhase,
@@ -802,11 +803,10 @@ function buildPrompt(ctx: PlanUserContext): string {
 - Include at least one task that advances the highest-urgency opportunity if any exist
 - Each task needs a concrete "why" tied to the current initiative milestone`
         : `NORMAL MODE:
-- Generate 3–4 tasks (HARD MAX 5) — people finish plans, not task lists
-- At least 80% MUST link to CURRENT FOCUS initiative
-- Long-term direction informs WHY, never the task list itself (no generic finance/fitness maintenance unless that IS the focus)
-- Secondary portfolio initiatives: max 1 task combined, only if allocation >= 20%
-- Every task needs whyItMatters explaining how it moves the current initiative forward today
+- Generate EXACTLY ${TASKS_PER_GOAL} tasks per active goal (${ctx.initiatives.length} goals → ${ctx.maxTasks} tasks total)
+- Each goal gets its own block of ${TASKS_PER_GOAL} finishable actions — no generic filler
+- Tasks must link to the matching goal via linkedInitiative (goal title)
+- Every task needs whyItMatters explaining how it moves that goal forward today
 - Include "assumptions" array if context is thin`;
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
@@ -964,6 +964,42 @@ Return JSON only:
 }`;
 }
 
+function enforceThreeTasksPerGoal(
+  tasks: DailyPlanTask[],
+  goalTitles: string[],
+  maxTasks: number
+): DailyPlanTask[] {
+  if (goalTitles.length === 0) return tasks.slice(0, maxTasks);
+
+  const byGoal = new Map<string, DailyPlanTask[]>();
+  const unlinked: DailyPlanTask[] = [];
+
+  for (const t of tasks) {
+    const key = t.linkedInitiative?.trim().toLowerCase() || "";
+    const matched = goalTitles.find((g) => g.toLowerCase() === key);
+    if (matched) {
+      const list = byGoal.get(matched.toLowerCase()) || [];
+      list.push(t);
+      byGoal.set(matched.toLowerCase(), list);
+    } else {
+      unlinked.push(t);
+    }
+  }
+
+  const result: DailyPlanTask[] = [];
+  for (const title of goalTitles) {
+    const key = title.toLowerCase();
+    let list = byGoal.get(key) || [];
+    while (list.length < TASKS_PER_GOAL && unlinked.length > 0) {
+      const next = unlinked.shift()!;
+      list.push({ ...next, linkedInitiative: title });
+    }
+    result.push(...list.slice(0, TASKS_PER_GOAL));
+  }
+
+  return result.slice(0, maxTasks);
+}
+
 function fitTasksToTimeBudget(
   tasks: DailyPlanTask[],
   maxMinutes: number,
@@ -1072,6 +1108,7 @@ export async function generateDailyPlanWithAI(
   }
 
   tasks = fitTasksToTimeBudget(tasks, ctx.availableMinutes, ctx.maxTasks);
+  tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
 
   if (tasks.length === 0) {
     throw new Error("AI produced only vague or oversized tasks");
@@ -1159,9 +1196,10 @@ export async function ensureTodayPlan(
   const today = new Date().toISOString().split("T")[0];
 
   const { count: initiativeCount } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
+    .eq("goal_kind", "execution")
     .eq("status", "active");
 
   if ((initiativeCount ?? 0) === 0) {
@@ -1254,7 +1292,7 @@ export async function ensureTodayPlan(
         status: "pending",
         due_date: today,
         estimated_minutes: t.estimatedMinutes,
-        initiative_id: initiativeId || null,
+        goal_id: initiativeId || null,
         auto_generated: true,
         generation_reason: t.isContextBuilding ? "context_building" : "daily_plan",
       };
@@ -1353,7 +1391,7 @@ export async function adjustMiddayPlan(
         status: "pending",
         due_date: today,
         estimated_minutes: t.estimatedMinutes,
-        initiative_id: initiativeId || null,
+        goal_id: initiativeId || null,
         auto_generated: true,
         generation_reason: "midday_adjust",
       };

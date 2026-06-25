@@ -5,8 +5,7 @@ export interface ExecutionContext {
   profile: {
     full_name: string | null;
     vision: string | null;
-    founder_mode: boolean | null;
-    current_focus_initiative_id: string | null;
+    current_focus_goal_id: string | null;
     current_focus_until: string | null;
   } | null;
   initiatives: InitiativeRow[];
@@ -85,13 +84,14 @@ export async function loadExecutionContext(
   ] = await Promise.all([
     supabase
       .from("profiles")
-      .select("full_name, vision, founder_mode, current_focus_initiative_id, current_focus_until")
+      .select("full_name, vision, current_focus_goal_id, current_focus_until")
       .eq("id", userId)
       .maybeSingle(),
     supabase
-      .from("initiatives")
-      .select("id, title, description, target_date, life_area, last_action_at, status, progress, goal_id")
+      .from("goals")
+      .select("id, title, description, target_date, life_area, last_action_at, status, progress, parent_goal_id")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .eq("status", "active")
       .order("last_action_at", { ascending: false, nullsFirst: false })
       .limit(12),
@@ -99,6 +99,7 @@ export async function loadExecutionContext(
       .from("goals")
       .select("id, title, description, target_date, category")
       .eq("user_id", userId)
+      .eq("goal_kind", "direction")
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(10),
@@ -130,14 +131,14 @@ export async function loadExecutionContext(
 
   const profile = profileRes.data;
   const initiatives = initiativesRes.data || [];
-  let focusInitiativeId = profile?.current_focus_initiative_id ?? null;
+  let focusInitiativeId = profile?.current_focus_goal_id ?? null;
   const repairedFocusId = repairFocusInitiativeId(initiatives, focusInitiativeId);
   if (repairedFocusId !== focusInitiativeId && repairedFocusId && profile) {
     focusInitiativeId = repairedFocusId;
     await supabase
       .from("profiles")
       .update({
-        current_focus_initiative_id: repairedFocusId,
+        current_focus_goal_id: repairedFocusId,
         current_focus_until:
           initiatives.find((i) => i.id === repairedFocusId)?.target_date ?? profile.current_focus_until,
       })
@@ -148,16 +149,16 @@ export async function loadExecutionContext(
   let currentMilestone: { title: string; initiativeId: string } | null = null;
   if (primaryInitiative) {
     const { data: ms } = await supabase
-      .from("initiative_milestones")
-      .select("title, initiative_id")
+      .from("goal_milestones")
+      .select("title, goal_id")
       .eq("user_id", userId)
-      .eq("initiative_id", primaryInitiative.id)
+      .eq("goal_id", primaryInitiative.id)
       .eq("status", "in_progress")
       .order("sort_order", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (ms) {
-      currentMilestone = { title: ms.title, initiativeId: ms.initiative_id };
+      currentMilestone = { title: ms.title, initiativeId: ms.goal_id };
     }
   }
 

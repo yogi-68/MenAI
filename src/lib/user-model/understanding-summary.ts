@@ -2,7 +2,7 @@ import type { UserModel } from "@/lib/user-model/types";
 import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import { buildMemoryGraphIdentityAnswer } from "@/lib/user-model/memory-graph-identity";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
-import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
+import { isConcreteGoalTitle } from "@/lib/goals/concreteness-gate";
 
 export interface UnderstandingSummary {
   mentorBrief: string;
@@ -34,7 +34,7 @@ export function buildUnderstandingSummary(model: UserModel): UnderstandingSummar
   }
 
   const focus = model.currentFocus.title;
-  if (focus && isConcreteInitiativeTitle(focus)) {
+  if (focus && isConcreteGoalTitle(focus)) {
     graphParts.push(`Current execution focus: ${focus}.`);
   }
 

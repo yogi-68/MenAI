@@ -43,11 +43,12 @@ export async function computeLifeAreaWeights(
 ): Promise<Record<LifeAreaKey, number>> {
   const [profileRes, goalsRes, initiativesRes, signalsRes] = await Promise.all([
     supabase.from("profiles").select("life_area_weights").eq("id", userId).maybeSingle(),
-    supabase.from("goals").select("category, title").eq("user_id", userId).eq("status", "active"),
+    supabase.from("goals").select("category, title").eq("user_id", userId).eq("goal_kind", "direction").eq("status", "active"),
     supabase
-      .from("initiatives")
+      .from("goals")
       .select("life_area, title")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .eq("status", "active"),
     supabase
       .from("identity_signals")

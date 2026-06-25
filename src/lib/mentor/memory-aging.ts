@@ -181,9 +181,10 @@ async function applyPivotToInitiativesAndGoals(
   pivot: DirectionPivot
 ): Promise<void> {
   const { data: initiatives } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id, title, life_area")
     .eq("user_id", userId)
+    .eq("goal_kind", "execution")
     .eq("status", "active");
 
   let abandonedFocusId: string | null = null;
@@ -199,7 +200,7 @@ async function applyPivotToInitiativesAndGoals(
     if (shouldAbandon) {
       abandonedFocusId = init.id;
       await supabase
-        .from("initiatives")
+        .from("goals")
         .update({ status: "abandoned", updated_at: new Date().toISOString() })
         .eq("id", init.id);
     }
@@ -219,6 +220,7 @@ async function applyPivotToInitiativesAndGoals(
         title: "Prepare for UPSC",
         category: "learning",
         priority: "high",
+        goal_kind: "direction",
         status: "active",
         source: "direction_pivot",
       });
@@ -240,12 +242,12 @@ async function applyPivotToInitiativesAndGoals(
   if (abandonedFocusId) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("current_focus_initiative_id")
+      .select("current_focus_goal_id")
       .eq("id", userId)
       .maybeSingle();
 
-    if (profile?.current_focus_initiative_id === abandonedFocusId) {
-      profileUpdate.current_focus_initiative_id = null;
+    if (profile?.current_focus_goal_id === abandonedFocusId) {
+      profileUpdate.current_focus_goal_id = null;
       profileUpdate.current_focus_until = null;
     }
   }

@@ -6,18 +6,45 @@ This guide will help you properly set up the database schema, automatic task gen
 
 ### 1. Run Database Migrations
 
-Go to your Supabase Dashboard → SQL Editor and run these files **in order**:
+**Source of truth:** [`supabase/migrations/`](supabase/migrations/) (numbered `001` through `040`).
 
-1. **`supabase/schema.sql`** - Base schema (if not already run)
-2. **`supabase/migrations/010_consolidated_schema.sql`** - ⭐ **RUN THIS** - Consolidated schema with all features
+Do **not** use deleted legacy files (`schema.sql`, `migration_life_os.sql`).
 
-The consolidated migration will:
-- Add missing profile columns (vision, work_style, daily_priorities, etc.)
-- Create proper goals, tasks, commitments tables
-- Set up onboarding_responses and onboarding_progress tables
-- Create identity_signals and execution_patterns tables
-- Add automatic task generation function
-- Set up proper RLS policies
+#### Option A — Supabase CLI (recommended)
+
+```bash
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase db push
+```
+
+#### Option B — SQL Editor (manual)
+
+In Supabase Dashboard → SQL Editor, run each file in **numeric order**:
+
+1. `supabase/migrations/001_*.sql` … through `038_*.sql` (skip any already applied)
+2. **`039_unify_goals.sql`** — merges initiatives into goals (MenAI V2)
+3. **`040_memory_persistence.sql`** — permanent AI memory columns
+
+After running 039 and 040, verify with:
+
+```bash
+# Paste and run in SQL Editor:
+supabase/scripts/verify-v2-migrations.sql
+```
+
+Expected results:
+- `goals` has `description`, `goal_kind`, `life_area`
+- `tasks` has `goal_id` only (no `initiative_id`)
+- `initiatives` table does not exist
+- `mentor_memories` has `is_permanent`, `memory_class`
+- `profiles` has `current_focus_goal_id` (not `coaching_style` / `founder_mode`)
+
+Key V2 migration (`039`) will:
+- Add missing `goals` columns (including `description`) on older databases
+- Copy active initiatives into `goals` with `goal_kind = 'execution'`
+- Rename `initiative_milestones` → `goal_milestones`
+- Merge `tasks.initiative_id` into `tasks.goal_id`
+- Drop `initiatives`, `user_reports`, and coaching-style profile columns
 
 ### 2. Deploy Edge Function for Automatic Task Generation
 

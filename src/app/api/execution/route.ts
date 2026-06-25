@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
-import {
-  computeMomentumScore,
-  computePlanReturnRate,
-} from "@/lib/plans/momentum-score";
-import { formatMomentumLabel } from "@/lib/plans/language-guard";
+import { computePerformanceScore } from "@/lib/plans/performance-score";
+import { computePlanReturnRate } from "@/lib/plans/momentum-score";
 
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -14,17 +11,11 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [metrics, momentum, planReturn] = await Promise.all([
+  const [metrics, performance, planReturn] = await Promise.all([
     fetchExecutionMetrics(supabase, user.id),
-    computeMomentumScore(supabase, user.id),
+    computePerformanceScore(supabase, user.id),
     computePlanReturnRate(supabase, user.id),
   ]);
 
-  const momentumDisplay = formatMomentumLabel(
-    momentum.label,
-    momentum.factors,
-    momentum.executionRate7d
-  );
-
-  return NextResponse.json({ metrics, momentum, momentumDisplay, planReturn });
+  return NextResponse.json({ metrics, performance, planReturn });
 }

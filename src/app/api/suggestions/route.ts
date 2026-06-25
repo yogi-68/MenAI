@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { assertCanActivateInitiative } from "@/lib/ai/memory-confidence";
+import { assertCanActivateGoal } from "@/lib/ai/memory-confidence";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
-import { generateMilestonesForInitiative } from "@/lib/plans/milestone-generator";
+import { generateMilestonesForGoal } from "@/lib/plans/milestone-generator";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   const title = (edits?.title || suggestion.title).trim();
 
   if (suggestion.suggestion_type === "initiative") {
-    const gate = await assertCanActivateInitiative(supabase, user.id);
+    const gate = await assertCanActivateGoal(supabase, user.id);
     if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: 409 });
 
     const targetDate =
@@ -81,19 +81,21 @@ export async function POST(req: NextRequest) {
       payload.targetDate ||
       defaultDeadline(30);
 
-    const { data: created, error: insErr } = await supabase.from("initiatives").insert({
+    const { data: created, error: insErr } = await supabase.from("goals").insert({
       user_id: user.id,
       title,
       description: payload.description || null,
       target_date: targetDate,
       life_area: edits?.lifeArea || payload.lifeArea || "personal",
+      goal_kind: "execution",
+      category: edits?.lifeArea || payload.lifeArea || "personal",
       status: "active",
-    }).select("id, title, description").single();
+    }).select("id, title, description, life_area").single();
 
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
 
     if (created) {
-      await generateMilestonesForInitiative(
+      await generateMilestonesForGoal(
         supabase,
         user.id,
         created.id,
@@ -126,6 +128,7 @@ export async function POST(req: NextRequest) {
       description: payload.description || null,
       category: payload.category || "personal",
       priority: payload.priority || "medium",
+      goal_kind: "direction",
       source: "chat_suggestion",
     });
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });

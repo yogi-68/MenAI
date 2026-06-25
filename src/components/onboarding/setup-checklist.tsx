@@ -41,7 +41,7 @@ export function SetupChecklist({ hasInitiatives = false }: SetupChecklistProps) 
         <li>Crack UPSC Prelims by September</li>
       </ul>
       <Link
-        href="/dashboard/goals"
+        href="/dashboard/chat"
         className="btn-primary"
         style={{ display: "inline-block", padding: "10px 20px", fontSize: "0.9rem", textDecoration: "none" }}
       >

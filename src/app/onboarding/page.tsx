@@ -20,7 +20,7 @@ import {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [currentQuestionId, setCurrentQuestionId] = useState<string>("Q1");
+  const [currentQuestionId, setCurrentQuestionId] = useState<string>("Q2");
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [textInput, setTextInput] = useState("");
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
@@ -43,12 +43,7 @@ export default function OnboardingPage() {
 
   const [customDate, setCustomDate] = useState("");
 
-  const flowResponses: OnboardingResponseMap = {
-    ...responses,
-    Q1: responses.Q1 ?? (selectedOptions.length && currentQuestionId === "Q1"
-      ? { responseData: { selected: selectedOptions } }
-      : undefined),
-  };
+  const flowResponses: OnboardingResponseMap = { ...responses };
 
   const currentQuestion = ONBOARDING_QUESTIONS[currentQuestionId];
   const questionNumber = getQuestionNumber(currentQuestionId, flowResponses);
@@ -68,7 +63,7 @@ export default function OnboardingPage() {
       .then((bootstrap) => {
         wasReset = !!bootstrap.onboardingReset;
         if (wasReset) {
-          setCurrentQuestionId("Q1");
+          setCurrentQuestionId("Q2");
           setResponses({});
           resetInputs();
         }
@@ -85,7 +80,7 @@ export default function OnboardingPage() {
         } else if (data.progress?.currentQuestionId && !wasReset) {
           const nextId = data.progress.currentQuestionId;
           setCurrentQuestionId(
-            isValidQuestionId(nextId) ? nextId : "Q1"
+            isValidQuestionId(nextId) ? nextId : "Q2"
           );
         }
       })
@@ -182,22 +177,13 @@ export default function OnboardingPage() {
     }
 
     if (question.id === "Q2") {
-      const q1Selected = responses.Q1?.responseData?.selected;
-      const directions = Array.isArray(q1Selected)
-        ? q1Selected
-        : q1Selected
-          ? [q1Selected]
-          : selectedOptions.length && currentQuestionId === "Q1"
-            ? selectedOptions
-            : [];
-      const buildingWhat = responses.Q1B?.response || null;
       const validateRes = await fetch("/api/onboarding/validate-initiative", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: response,
-          directions,
-          buildingWhat,
+          directions: [],
+          buildingWhat: null,
         }),
       });
       const validateData = await validateRes.json();

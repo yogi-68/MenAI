@@ -13,19 +13,20 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("current_focus_initiative_id, current_focus_until")
+    .select("current_focus_goal_id, current_focus_until")
     .eq("id", user.id)
     .single();
 
-  if (!profile?.current_focus_initiative_id) {
+  if (!profile?.current_focus_goal_id) {
     return NextResponse.json({ focus: null });
   }
 
   const { data: initiative } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id, title, target_date, life_area, status")
-    .eq("id", profile.current_focus_initiative_id)
+    .eq("id", profile.current_focus_goal_id)
     .eq("user_id", user.id)
+    .eq("goal_kind", "execution")
     .maybeSingle();
 
   if (!initiative || initiative.status !== "active") {
@@ -55,7 +56,7 @@ export async function PATCH(req: NextRequest) {
   if (initiativeId === null) {
     await supabase
       .from("profiles")
-      .update({ current_focus_initiative_id: null, current_focus_until: null })
+      .update({ current_focus_goal_id: null, current_focus_until: null })
       .eq("id", user.id);
     await invalidateTodayPlan(supabase, user.id);
     scheduleUserModelRefresh(supabase, user.id);
@@ -63,10 +64,11 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { data: initiative } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id, title, target_date")
     .eq("id", initiativeId)
     .eq("user_id", user.id)
+    .eq("goal_kind", "execution")
     .eq("status", "active")
     .single();
 
@@ -79,7 +81,7 @@ export async function PATCH(req: NextRequest) {
   await supabase
     .from("profiles")
     .update({
-      current_focus_initiative_id: initiativeId,
+      current_focus_goal_id: initiativeId,
       current_focus_until: focusUntil,
     })
     .eq("id", user.id);

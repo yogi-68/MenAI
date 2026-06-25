@@ -33,7 +33,9 @@ import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import {
   formatMemoryRetrievalForPrompt,
+  formatPinnedMemoriesForPrompt,
   loadMemoryRetrievalContext,
+  loadPinnedMemories,
 } from "@/lib/mentor/memory-retrieval";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
@@ -210,7 +212,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     skipMemory ? Promise.resolve(emptyMemory) : getMemoryContext(input.userId, input.message),
     serviceClient
       .from("profiles")
-      .select("full_name, vision, founder_mode, coaching_style")
+      .select("full_name, vision")
       .eq("id", input.userId)
       .single(),
     buildCognitiveState(input.userId),
@@ -222,8 +224,16 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     ? await getUserModel(serviceClient, input.userId, { refresh: true })
     : initialUserModel;
 
+  const pinnedMemories = await loadPinnedMemories(serviceClient, input.userId);
+  const pinnedBlock = formatPinnedMemoriesForPrompt(pinnedMemories);
+
   const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
-  const memoryRetrievalBlock = formatMemoryRetrievalForPrompt(retrievalCtx, input.message);
+  const memoryRetrievalBlock = [
+    pinnedBlock,
+    formatMemoryRetrievalForPrompt(retrievalCtx, input.message),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
     role: m.role as "user" | "assistant",
@@ -234,8 +244,6 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
     vision: profileResult.data?.vision || undefined,
-    founderMode: profileResult.data?.founder_mode || false,
-    coachingStyle: profileResult.data?.coaching_style || "balanced",
     sessionCount: conversationHistory.length,
   };
 
@@ -639,7 +647,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     skipMemory ? Promise.resolve(emptyMemory) : getMemoryContext(input.userId, input.message),
     serviceClient
       .from("profiles")
-      .select("full_name, vision, founder_mode, coaching_style")
+      .select("full_name, vision")
       .eq("id", input.userId)
       .single(),
     buildCognitiveState(input.userId),
@@ -651,8 +659,16 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     ? await getUserModel(serviceClient, input.userId, { refresh: true })
     : initialUserModel;
 
+  const pinnedMemories = await loadPinnedMemories(serviceClient, input.userId);
+  const pinnedBlock = formatPinnedMemoriesForPrompt(pinnedMemories);
+
   const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
-  const memoryRetrievalBlock = formatMemoryRetrievalForPrompt(retrievalCtx, input.message);
+  const memoryRetrievalBlock = [
+    pinnedBlock,
+    formatMemoryRetrievalForPrompt(retrievalCtx, input.message),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const conversationHistory = (historyResult.data || []).map((m) => ({
     role: m.role as "user" | "assistant",
@@ -663,8 +679,6 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     id: input.userId,
     fullName: profileResult.data?.full_name || undefined,
     vision: profileResult.data?.vision || undefined,
-    founderMode: profileResult.data?.founder_mode || false,
-    coachingStyle: profileResult.data?.coaching_style || "balanced",
     sessionCount: conversationHistory.length,
   };
 

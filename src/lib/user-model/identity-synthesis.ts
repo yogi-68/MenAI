@@ -5,7 +5,7 @@ import {
   type WhoAmIStatement,
   type WhoAmIStatementTag,
 } from "@/lib/user-model/identity-dimensions";
-import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
+import { isConcreteGoalTitle } from "@/lib/goals/concreteness-gate";
 import { buildMemoryGraphIdentityAnswer } from "@/lib/user-model/memory-graph-identity";
 import {
   buildMentorIdentitySynthesis,
@@ -124,13 +124,13 @@ export function buildEvidenceBasedWhoAmI(
     );
   }
 
-  if (bundle.focusTitle && isConcreteInitiativeTitle(bundle.focusTitle)) {
+  if (bundle.focusTitle && isConcreteGoalTitle(bundle.focusTitle)) {
     const e = [`Focus initiative: "${bundle.focusTitle}"`];
     evidenceLog.push(...e);
     statements.push(
       stmt("verified", `Right now you're executing on ${bundle.focusTitle}.`, e)
     );
-  } else if (bundle.focusTitle && !isConcreteInitiativeTitle(bundle.focusTitle)) {
+  } else if (bundle.focusTitle && !isConcreteGoalTitle(bundle.focusTitle)) {
     const e = [`Vague focus label stored: "${bundle.focusTitle}" — not used for identity`];
     evidenceLog.push(...e);
   }

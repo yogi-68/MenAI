@@ -1,31 +1,32 @@
 import {
-  MAX_ACTIVE_INITIATIVES,
+  MAX_ACTIVE_GOALS,
   MEMORY_CONFIDENCE,
 } from "@/lib/product/constants";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export async function countActiveInitiatives(
+export async function countActiveGoals(
   supabase: SupabaseClient,
   userId: string
 ): Promise<number> {
   const { count } = await supabase
-    .from("initiatives")
+    .from("goals")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
+    .eq("goal_kind", "execution")
     .eq("status", "active");
   return count ?? 0;
 }
 
-export async function assertCanActivateInitiative(
+export async function assertCanActivateGoal(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const n = await countActiveInitiatives(supabase, userId);
-  if (n >= MAX_ACTIVE_INITIATIVES) {
+  const n = await countActiveGoals(supabase, userId);
+  if (n >= MAX_ACTIVE_GOALS) {
     return {
       ok: false,
-      error: `You can have at most ${MAX_ACTIVE_INITIATIVES} active initiatives. Pause one before adding another.`,
+      error: `You can have at most ${MAX_ACTIVE_GOALS} active goals. Pause one before adding another.`,
     };
   }
   return { ok: true };

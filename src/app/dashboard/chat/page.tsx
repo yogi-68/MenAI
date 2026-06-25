@@ -17,7 +17,6 @@ import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
 import {
   Send,
   Loader2,
-  Plus,
   AlertTriangle,
   Phone,
   MessageSquare,
@@ -446,10 +445,6 @@ export default function ChatPage() {
 
       <aside className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="chat-sidebar-header">
-          <button type="button" onClick={startNewChat} className="chat-new-btn" disabled={isSending}>
-            <Plus size={18} />
-            New Thread
-          </button>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}

@@ -24,7 +24,7 @@ const QUESTION_EXTRACTORS: Record<string, (response: string, responseData: any) 
   Q1: extractDirectionAreas,
   Q1B: extractBusinessBuilding,
   Q2: extractInitialCommitment,
-  Q2STAGE: extractInitiativeStage,
+  Q2STAGE: extractGoalStage,
   Q3: extractDeadlineFrame,
   Q4: extractObstaclePattern,
   Q5: extractCoachingStyle,
@@ -196,7 +196,7 @@ async function extractPlanningStyle(
 }
 
 /** Q2STAGE: business stage for milestones */
-async function extractInitiativeStage(
+async function extractGoalStage(
   _response: string,
   responseData: { selected?: string }
 ): Promise<ExtractionResult> {
@@ -808,11 +808,6 @@ async function persistExtractedMemory(
 
   // Update profile with extracted data
   const profileUpdates: any = {};
-  
-  if (extracted.supportStyle) {
-    profileUpdates.support_style = extracted.supportStyle;
-    profileUpdates.coaching_style = extracted.supportStyle; // Also set coaching_style
-  }
   
   if (extracted.reflectionFrequency) {
     profileUpdates.reflection_frequency = extracted.reflectionFrequency;

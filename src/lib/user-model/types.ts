@@ -99,7 +99,7 @@ export interface InitiativeRow {
   last_action_at: string | null;
   status: string;
   progress: number | null;
-  goal_id: string | null;
+  parent_goal_id: string | null;
 }
 
 export interface GoalRow {

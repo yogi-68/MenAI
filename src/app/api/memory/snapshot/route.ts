@@ -30,7 +30,7 @@ export async function GET() {
     service
       .from("profiles")
       .select(
-        "life_area_weights, life_area_last_mentioned, user_model_updated_at, current_focus_initiative_id"
+        "life_area_weights, life_area_last_mentioned, user_model_updated_at, current_focus_goal_id"
       )
       .eq("id", userId)
       .maybeSingle(),
@@ -58,11 +58,12 @@ export async function GET() {
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(15),
-    service.from("goals").select("title, status, category").eq("user_id", userId).eq("status", "active"),
+    service.from("goals").select("title, status, category").eq("user_id", userId).eq("goal_kind", "direction").eq("status", "active"),
     service
-      .from("initiatives")
+      .from("goals")
       .select("title, status, life_area")
       .eq("user_id", userId)
+      .eq("goal_kind", "execution")
       .eq("status", "active"),
     service
       .from("identity_signals")

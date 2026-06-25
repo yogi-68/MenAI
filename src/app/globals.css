@@ -1,14 +1,16 @@
 @import "tailwindcss";
 
-/* ===== DESIGN TOKENS — CALM PREMIUM INTELLIGENCE ===== */
+/* ===== DESIGN TOKENS — CLAYMORPHISM PREMIUM ===== */
 :root {
   /* Light Theme - Default */
-  --bg-primary: #fafafa;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #f0f0f4;
-  --bg-card: rgba(255, 255, 255, 0.6);
-  --bg-glass: rgba(0, 0, 0, 0.01);
-  --bg-glass-hover: rgba(0, 0, 0, 0.03);
+  --bg-primary: #e8ecf4;
+  --bg-secondary: #f4f6fb;
+  --bg-tertiary: #dfe6f2;
+  --bg-card: rgba(255, 255, 255, 0.72);
+  --bg-glass: rgba(255, 255, 255, 0.55);
+  --bg-glass-hover: rgba(255, 255, 255, 0.78);
+  --bg-clay: linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(240,244,252,0.85) 100%);
+  --bg-clay-inset: rgba(255, 255, 255, 0.35);
 
   --text-primary: #121218;
   --text-secondary: #5e5e6e;
@@ -21,6 +23,10 @@
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.08);
   --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.05);
+  --shadow-clay-outer: 8px 8px 24px rgba(163, 177, 198, 0.45), -6px -6px 20px rgba(255, 255, 255, 0.85);
+  --shadow-clay-inner: inset 2px 2px 6px rgba(163, 177, 198, 0.25), inset -2px -2px 6px rgba(255, 255, 255, 0.9);
+  --shadow-clay-hover: 12px 12px 32px rgba(163, 177, 198, 0.5), -8px -8px 24px rgba(255, 255, 255, 0.9);
+  --transition-soft: 0.35s cubic-bezier(0.2, 0, 0, 1);
 
   --scrollbar-thumb: rgba(0, 0, 0, 0.05);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.1);
@@ -35,11 +41,11 @@
   --gradient-primary: linear-gradient(135deg, #3b82f6, #60a5fa);
   --gradient-dark: linear-gradient(180deg, #050508, #0c0c12);
   
-  /* Smooth radii */
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  /* Smooth radii — clay uses larger corners */
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+  --radius-xl: 36px;
   --radius-full: 9999px;
   
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -48,12 +54,14 @@
 
 /* Dark Theme */
 html.dark {
-  --bg-primary: #050508;
-  --bg-secondary: #0c0c12;
-  --bg-tertiary: #13131c;
-  --bg-card: rgba(12, 12, 18, 0.4);
-  --bg-glass: rgba(255, 255, 255, 0.02);
-  --bg-glass-hover: rgba(255, 255, 255, 0.04);
+  --bg-primary: #0a0c14;
+  --bg-secondary: #12151f;
+  --bg-tertiary: #1a1e2a;
+  --bg-card: rgba(22, 26, 38, 0.75);
+  --bg-glass: rgba(255, 255, 255, 0.04);
+  --bg-glass-hover: rgba(255, 255, 255, 0.07);
+  --bg-clay: linear-gradient(145deg, rgba(30, 34, 48, 0.95) 0%, rgba(18, 21, 31, 0.9) 100%);
+  --bg-clay-inset: rgba(255, 255, 255, 0.03);
 
   --text-primary: #f2f2f5;
   --text-secondary: #9090a1;
@@ -66,6 +74,9 @@ html.dark {
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
   --shadow-glow: 0 0 40px rgba(59, 130, 246, 0.1);
+  --shadow-clay-outer: 8px 8px 24px rgba(0, 0, 0, 0.45), -4px -4px 16px rgba(255, 255, 255, 0.04);
+  --shadow-clay-inner: inset 2px 2px 8px rgba(0, 0, 0, 0.35), inset -1px -1px 6px rgba(255, 255, 255, 0.04);
+  --shadow-clay-hover: 12px 12px 32px rgba(0, 0, 0, 0.5), -6px -6px 20px rgba(255, 255, 255, 0.05);
 
   --scrollbar-thumb: rgba(255, 255, 255, 0.05);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.1);
@@ -165,20 +176,45 @@ h1, h2, h3, h4, h5, h6 {
   animation: shimmer 2s infinite;
 }
 
-/* ===== GLASS MORPHISM & LAYOUTS ===== */
+/* ===== CLAYMORPHISM & LAYOUTS ===== */
+.clay-card,
 .glass-card {
-  background: var(--bg-card);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: var(--bg-clay);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
-  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-soft);
+  box-shadow: var(--shadow-clay-outer);
 }
 
+.clay-card:hover,
 .glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow-md);
+  border-color: var(--border-active);
+  box-shadow: var(--shadow-clay-hover);
+  transform: translateY(-1px);
+}
+
+.clay-card-inset {
+  background: var(--bg-clay-inset);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-clay-inner);
+  border: 1px solid var(--border-color);
+}
+
+.clay-stat-value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+.clay-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 /* ===== TEXT STYLES ===== */
@@ -298,10 +334,11 @@ h1, h2, h3, h4, h5, h6 {
 .sidebar {
   width: 260px;
   height: 100vh;
-  background: var(--bg-card);
+  background: var(--bg-clay);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-right: 1px solid var(--border-color);
+  box-shadow: var(--shadow-clay-outer);
   padding: 24px 16px;
   display: flex;
   flex-direction: column;
@@ -309,7 +346,7 @@ h1, h2, h3, h4, h5, h6 {
   left: 0;
   top: 0;
   z-index: 40;
-  transition: transform 0.3s ease;
+  transition: transform var(--transition-soft);
 }
 
 .sidebar-link {

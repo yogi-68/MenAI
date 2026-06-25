@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { buildDashboardCoachBriefing } from "@/lib/dashboard/setup-facts";
 import { selectDashboardTasks } from "@/lib/dashboard/pending-tasks";
-import { computeInitiativeHealth } from "@/lib/plans/initiative-health";
+import { computeGoalHealth } from "@/lib/plans/goal-health";
 import { trackDailyReturn } from "@/lib/analytics/track-event";
 import { getUserModel } from "@/lib/user-model/loader";
 import { formatUserModelSummary, userModelToCoachBriefing } from "@/lib/user-model/format-for-prompt";
@@ -28,16 +28,17 @@ export async function GET() {
 
   const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel, yesterdayTasksRes] =
     await Promise.all([
-      supabase.from("profiles").select("full_name, current_focus_initiative_id, current_focus_until").eq("id", user.id).single(),
+      supabase.from("profiles").select("full_name, current_focus_goal_id, current_focus_until").eq("id", user.id).single(),
       supabase
         .from("tasks")
-        .select("id, title, status, due_date, auto_generated, created_at, initiative_id")
+        .select("id, title, status, due_date, auto_generated, created_at, goal_id")
         .eq("user_id", user.id)
         .order("due_date", { ascending: true, nullsFirst: false }),
       supabase
-        .from("initiatives")
+        .from("goals")
         .select("id, title, life_area, progress, last_action_at, target_date, status, description")
         .eq("user_id", user.id)
+        .eq("goal_kind", "execution")
         .eq("status", "active")
         .order("last_action_at", { ascending: false, nullsFirst: false })
         .limit(8),
@@ -84,12 +85,12 @@ export async function GET() {
 
   const modelSummary = formatUserModelSummary(userModel);
   const coachBriefingFromModel = userModelToCoachBriefing(userModel);
-  const focusId = userModel.currentFocus.initiativeId || profileRes.data?.current_focus_initiative_id;
+  const focusId = userModel.currentFocus.initiativeId || profileRes.data?.current_focus_goal_id;
   const focusInit = focusId ? initiatives.find((i) => i.id === focusId) : initiatives[0];
 
   const focusTitle = userModel.currentFocus.title || focusInit?.title || null;
   const focusHealth = focusInit
-    ? computeInitiativeHealth({
+    ? computeGoalHealth({
         status: focusInit.status,
         targetDate: focusInit.target_date,
         lastActionAt: focusInit.last_action_at,

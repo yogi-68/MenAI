@@ -18,22 +18,23 @@ MenAI turns long-term direction into **finishable daily actions** and optimizes 
 | Finance | Recurring income systems |
 | Learning | Content creation, skills |
 
-The **architecture is universal** (direction → initiative → daily task → reflection).  
-The **voice** adapts to the user's initiatives — founder language appears only when their data is founder-shaped.
+The **architecture is universal** (direction → active goal → 3 daily tasks → reflection).  
+MenAI uses a **single execution-focused mentor persona** — no coaching style toggles.
 
-We do **not** optimize for "everyone at once" with generic wellness fluff. We optimize for **people who want to execute consistently** in 1–3 focus areas at a time.
+We do **not** optimize for "everyone at once" with generic wellness fluff. We optimize for **people who want to execute consistently** with up to **3 active goals** at a time.
 
 ---
 
 ## Mental model
 
 ```
-Direction (goals)        →  long-term outcomes (financial freedom, build wealth)
-Active initiatives (≤3)  →  what you execute this month (AI SaaS, fat loss)
-Daily plan               →  finishable tasks for TODAY only
-Reflection               →  learning loop (what moved, what blocked)
-Weekly review            →  narrative longitudinal understanding
-Memory timeline (roadmap)→  emotional retention ("April: wanted SaaS → June: first user")
+Direction goals            →  long-term context (goal_kind = direction)
+Active execution goals (≤3) →  what you execute this month (goal_kind = execution)
+Daily plan                 →  exactly 3 tasks per active goal
+Performance score          →  0–100 based on task completion (66/33/0 per goal-day)
+Reflection                 →  learning loop (what moved, what blocked)
+Weekly / Monthly review    →  analytics + coach narrative
+Life timeline              →  visual history with filters and search
 ```
 
 ---
@@ -110,9 +111,11 @@ Detected initiative: Launch AI SaaS MVP
 
 ### 6. What is MenAI optimizing?
 
-**Consistency** — not raw productivity.
+**Consistency via visible Performance Score (0–100).**
 
-Fitness, business, study, and relationships all require showing up repeatedly. Metrics internally track execution rate and consecutive active days; users see **narrative**, not discipline scores.
+Each active goal gets 3 planned tasks per day. Daily score = average completion across goals (100 / 66 / 33 / 0). Weekly and monthly scores roll up automatically. Shown on Overview, goal analytics, and review pages.
+
+**Code:** `src/lib/plans/performance-score.ts`, `/api/analytics/*`
 
 ---
 
@@ -130,40 +133,32 @@ Fitness, business, study, and relationships all require showing up repeatedly. M
 
 ---
 
-### 8. How many active initiatives?
+### 8. How many active goals?
 
-**Maximum 3 active.** Others must be paused.
+**Maximum 3 active execution goals.** Others must be paused.
 
-Enforced on `POST /api/initiatives`, re-activation via `PATCH`, and accepting suggestions.
-
----
-
-### 9. Should reports use scores?
-
-**No user-facing scores.** Weekly review is narrative-only.
-
-Bad: `Discipline Score 83`  
-Good: *"This week you completed most planned work. The biggest blocker was changing priorities mid-week."*
-
-**Code:** `src/app/dashboard/reports/page.tsx`, `weekly-review-generator.ts`
-
-Admin dashboard may still show TTFT/cost — users never see these.
+Enforced on `POST /api/goals` (goal_kind=execution), re-activation via `PATCH`, and accepting suggestions.
 
 ---
 
-### 10. Memory Timeline (shipped)
+### 9. Weekly & Monthly reviews
 
-**Memory Timeline** — `/dashboard/timeline`
+**Analytics + narrative** — not a separate Reports page.
 
-Built from goals, initiatives, task execution, daily reflections, and weekly reviews. Grouped by month:
+- `/dashboard/reviews/weekly` — score trends, completion charts, coach summary
+- `/dashboard/reviews/monthly` — life-area radar, goal comparison
 
-```
-April  — Started fitness initiative
-May    — Lost 3kg (reflection)
-June   — Recovered consistency (weekly review)
-```
+**Code:** `src/app/api/analytics/reviews/weekly/route.ts`, review pages under `src/app/dashboard/reviews/`
 
-**Code:** `src/lib/plans/memory-timeline.ts`, `/api/memory/timeline`
+---
+
+### 10. Life Timeline (shipped)
+
+**Life Timeline** — `/dashboard/timeline`
+
+Visual timeline with filters, search, and category analytics. Events include goal created, milestones, habits, reflections, weekly wins, course corrections, and achievements.
+
+**Code:** `src/lib/plans/memory-timeline.ts`, `/api/memory/timeline`, `/api/analytics/timeline`
 
 ---
 
@@ -250,8 +245,10 @@ Narrative coach summary, cached per week.
 | `src/lib/product/constants.ts` | Architecture constants (max initiatives, confidence, patterns) |
 | `src/lib/ai/memory-confidence.ts` | Confidence gates, suggestion queue, identity archive |
 | `src/lib/tasks/finishable-today.ts` | "Can you finish this today?" validation |
-| `src/lib/plans/daily-plan-generator.ts` | AI daily planner |
-| `src/lib/plans/initiative-health.ts` | On track / at risk / stalled |
+| `src/lib/plans/performance-score.ts` | Daily/weekly/monthly Performance Score |
+| `src/lib/plans/daily-plan-generator.ts` | AI daily planner (3 tasks per goal) |
+| `src/lib/plans/goal-health.ts` | On track / at risk / stalled |
+| `src/app/api/analytics/` | Dashboard analytics APIs |
 | `src/app/api/suggestions/` | Confirm/dismiss AI-detected initiatives |
 | `supabase/migrations/` | Schema source of truth |
 
@@ -275,7 +272,7 @@ Narrative coach summary, cached per week.
 
 ## Database setup
 
-1. Apply migrations `supabase/migrations/*.sql` (through `027`).
+1. Apply migrations `supabase/migrations/*.sql` in order through **`040`**, then run [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) in the SQL Editor.
 2. Env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`
 3. Admin: `UPDATE profiles SET role = 'admin' WHERE id = 'YOUR_UUID';`
 
@@ -289,11 +286,11 @@ Deploy: push to `main` → Vercel auto-deploy.
 
 ## Principles for contributors
 
-1. **Initiatives drive execution** — goals are direction only.
+1. **Execution goals drive planning** — direction goals are context only (`goal_kind`).
 2. **Tasks must be finishable today** — reject vague lifetime goals as tasks.
-3. **Confirm before creating initiatives** — no silent auto-structure.
-4. **Max 3 active initiatives** — force focus.
-5. **Optimize consistency** — narrative over scores for users.
+3. **Confirm before creating goals** — no silent auto-structure.
+4. **Max 3 active execution goals** — force focus.
+5. **Performance Score (0–100)** — 3 tasks per goal per day; visible on dashboard.
 6. **Show less** — one insight beats seven cards.
 
 ---

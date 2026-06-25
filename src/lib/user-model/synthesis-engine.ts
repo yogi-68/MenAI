@@ -143,8 +143,8 @@ export async function synthesizeUserModel(
   }));
 
   const planContext = await loadPlanContextData(supabase, userId, primary.id);
-  const linkedGoal = primary.goal_id
-    ? ctx.goals.find((g) => g.id === primary.goal_id)
+  const linkedGoal = primary.parent_goal_id
+    ? ctx.goals.find((g) => g.id === primary.parent_goal_id)
     : null;
   const goalTexts = linkedGoal ? [linkedGoal.title] : [];
 
@@ -186,7 +186,7 @@ export async function synthesizeUserModel(
         targetDate: i.target_date,
       })),
     ...ctx.goals
-      .filter((g) => g.id !== primary.goal_id)
+      .filter((g) => g.id !== primary.parent_goal_id)
       .map((g) => ({
         id: g.id,
         title: g.title,

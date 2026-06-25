@@ -8,9 +8,9 @@ import {
 } from "@/lib/plans/milestone-quality";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type InitiativeStage = "exploring" | "first_client" | "has_clients" | "scaling";
+export type GoalStage = "exploring" | "first_client" | "has_clients" | "scaling";
 
-const STAGE_MILESTONES: Record<InitiativeStage, string[]> = {
+const STAGE_MILESTONES: Record<GoalStage, string[]> = {
   exploring: [
     "Interview 5 potential customers",
     "Write one-page problem and offer hypothesis",
@@ -77,37 +77,37 @@ const DEFAULTS_BY_AREA: Record<string, string[]> = {
     "Complete first concrete deliverable",
     "Log progress daily for 14 days",
     "Hit midpoint checkpoint",
-    "Finish the initiative outcome",
+    "Finish the goal outcome",
   ],
 };
 
 const ANTI_HALLUCINATION = `
 NEVER invent milestones the user did not imply:
-- NO workshops, certifications, courses, or "attend X events" unless explicitly in initiative context
-- NO generic "track income/expenses" unless initiative is explicitly personal finance tracking
-- NO outreach/email tasks unless business/client acquisition is the initiative
-- Use ONLY initiative title, description, success criteria, stage, and life area as evidence
+- NO workshops, certifications, courses, or "attend X events" unless explicitly in goal context
+- NO generic "track income/expenses" unless goal is explicitly personal finance tracking
+- NO outreach/email tasks unless business/client acquisition is the goal
+- Use ONLY goal title, description, success criteria, stage, and life area as evidence
 `.trim();
 
-export async function generateMilestonesForInitiative(
+export async function generateMilestonesForGoal(
   supabase: SupabaseClient,
   userId: string,
-  initiativeId: string,
+  goalId: string,
   title: string,
   description?: string | null,
   lifeArea = "personal",
   force = false,
-  stage?: InitiativeStage | null
+  stage?: GoalStage | null
 ): Promise<void> {
   const { count } = await supabase
-    .from("initiative_milestones")
+    .from("goal_milestones")
     .select("id", { count: "exact", head: true })
-    .eq("initiative_id", initiativeId);
+    .eq("goal_id", goalId);
 
   if ((count ?? 0) > 0 && !force) return;
 
   if (force && (count ?? 0) > 0) {
-    await supabase.from("initiative_milestones").delete().eq("initiative_id", initiativeId);
+    await supabase.from("goal_milestones").delete().eq("goal_id", goalId);
   }
 
   const area = areaKey(lifeArea);
@@ -129,7 +129,7 @@ export async function generateMilestonesForInitiative(
       messages: [
         {
           role: "system",
-          content: `Generate 4-6 sequential milestones for a ${area} initiative.
+          content: `Generate 4-6 sequential milestones for a ${area} goal.
 
 ${MILESTONE_QUALITY_PROMPT}
 
@@ -142,7 +142,7 @@ JSON only: {"milestones": ["...", "..."]}`,
         },
         {
           role: "user",
-          content: `Initiative: ${title}
+          content: `Goal: ${title}
 ${description ? `Context: ${description}` : ""}
 ${resolvedStage ? `Stage: ${resolvedStage}` : ""}
 Return concrete milestones from first physical action to outcome. No workshops unless user mentioned workshops.`,
@@ -170,10 +170,10 @@ Return concrete milestones from first physical action to outcome. No workshops u
     /* use defaults */
   }
 
-  await supabase.from("initiative_milestones").insert(
+  await supabase.from("goal_milestones").insert(
     titles.map((t, i) => ({
       user_id: userId,
-      initiative_id: initiativeId,
+      goal_id: goalId,
       title: t.slice(0, 200),
       sort_order: i,
       status: i === 0 ? "in_progress" : "pending",
@@ -183,7 +183,7 @@ Return concrete milestones from first physical action to outcome. No workshops u
   await regenerateMilestonesIfAbstract(
     supabase,
     userId,
-    initiativeId,
+    goalId,
     title,
     description,
     lifeArea
@@ -194,15 +194,15 @@ Return concrete milestones from first physical action to outcome. No workshops u
 export async function regenerateMilestonesIfAbstract(
   supabase: SupabaseClient,
   userId: string,
-  initiativeId: string,
+  goalId: string,
   title: string,
   description?: string | null,
   lifeArea = "personal"
 ): Promise<boolean> {
   const { data: existing } = await supabase
-    .from("initiative_milestones")
+    .from("goal_milestones")
     .select("title")
-    .eq("initiative_id", initiativeId)
+    .eq("goal_id", goalId)
     .eq("user_id", userId);
 
   if (!existing?.length) return false;
@@ -212,10 +212,10 @@ export async function regenerateMilestonesIfAbstract(
   ).length;
   if (abstractCount < Math.ceil(existing.length / 2) && hallucinated === 0) return false;
 
-  await generateMilestonesForInitiative(
+  await generateMilestonesForGoal(
     supabase,
     userId,
-    initiativeId,
+    goalId,
     title,
     description,
     lifeArea,

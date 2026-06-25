@@ -1,5 +1,5 @@
 import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
-import { isConcreteInitiativeTitle } from "@/lib/initiatives/concreteness-gate";
+import { isConcreteGoalTitle } from "@/lib/goals/concreteness-gate";
 
 export interface ThemeActivity {
   key: string;
@@ -141,7 +141,7 @@ export function buildMemoryGraphIdentityAnswer(bundle: EvidenceBundle): {
     evidenceStatements.push({ text, evidence: [`[${top.memoryType}] ${top.text}`] });
   }
 
-  if (bundle.focusTitle && isConcreteInitiativeTitle(bundle.focusTitle)) {
+  if (bundle.focusTitle && isConcreteGoalTitle(bundle.focusTitle)) {
     const text = `Right now you're executing on ${bundle.focusTitle}.`;
     paragraphs.push(text);
     evidenceStatements.push({ text, evidence: [`Current focus initiative: "${bundle.focusTitle}"`] });

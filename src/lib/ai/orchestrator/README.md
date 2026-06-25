@@ -94,7 +94,7 @@ const [historyResult, memory, profileResult, lifeContext] = await Promise.all([
   getMemoryContext(userId, input.message),
   
   // User profile
-  serviceClient.from("profiles").select("full_name, vision, founder_mode, coaching_style")
+  serviceClient.from("profiles").select("full_name, vision")
     .eq("id", input.userId)
     .single(),
   

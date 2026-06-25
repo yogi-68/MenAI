@@ -292,7 +292,7 @@ async function _rebuildCognitiveState(userId: string): Promise<CognitiveState> {
       .limit(20),
     supabase
       .from("profiles")
-      .select("full_name, vision, founder_mode, coaching_style, cognitive_state")
+      .select("full_name, vision, cognitive_state")
       .eq("id", userId)
       .single(),
   ]);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { assessInitiativeQuality } from "@/lib/initiatives/initiative-quality-gate";
+import { assessGoalQuality } from "@/lib/goals/goal-quality-gate";
 
 export const runtime = "nodejs";
 
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title required" }, { status: 400 });
   }
 
-  const assessment = assessInitiativeQuality(title, {
+  const assessment = assessGoalQuality(title, {
     directions,
     buildingWhat: buildingWhat || null,
   });

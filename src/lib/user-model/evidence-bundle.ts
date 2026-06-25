@@ -63,7 +63,7 @@ export async function buildEvidenceBundle(
   const [profileRes, patternsRes, mentorMemories, reflectionsRes] = await Promise.all([
     supabase
       .from("profiles")
-      .select("work_style, founder_mode")
+      .select("work_style")
       .eq("id", userId)
       .maybeSingle(),
     supabase
@@ -98,7 +98,7 @@ export async function buildEvidenceBundle(
 
   return {
     vision: ctx.profile?.vision ?? null,
-    founderMode: Boolean(profileRes.data?.founder_mode),
+    founderMode: initiatives.some((i) => i.lifeArea === "business"),
     workStyle: profileRes.data?.work_style ?? null,
     goals: ctx.goals.map((g) => ({
       title: g.title,

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
-import { Settings, CheckCircle, ChevronDown, Sun, Moon } from "lucide-react";
+import { Settings, CheckCircle, Sun, Moon } from "lucide-react";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -15,10 +15,6 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState(false);
 
   const [fullName, setFullName] = useState("");
-  const [vision, setVision] = useState("");
-  const [founderMode, setFounderMode] = useState(false);
-  const [coachingStyle, setCoachingStyle] = useState("balanced");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
@@ -28,26 +24,22 @@ export default function SettingsPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("*")
+        .select("full_name")
         .eq("id", authUser.id)
         .maybeSingle();
 
       if (profile) {
         setFullName(profile.full_name || "");
-        setVision(profile.vision || "");
-        setFounderMode(profile.founder_mode || false);
-        setCoachingStyle(profile.coaching_style || "balanced");
       }
-      
-      // Load theme from localStorage
+
       const savedTheme = localStorage.getItem("menai-theme") as "light" | "dark" | null;
       setTheme(savedTheme || "light");
-      
+
       setLoading(false);
     };
 
     loadProfile();
-  }, []);
+  }, [supabase]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,16 +54,12 @@ export default function SettingsPage() {
         .from("profiles")
         .update({
           full_name: fullName,
-          vision: vision,
-          founder_mode: founderMode,
-          coaching_style: coachingStyle,
           updated_at: new Date().toISOString(),
         })
         .eq("id", authUser.id);
 
       if (error) throw error;
 
-      // Update local Zustand store
       if (user) {
         setUser({
           ...user,
@@ -93,20 +81,13 @@ export default function SettingsPage() {
     const newTheme = theme === "light" ? "dark" : "light";
     setTheme(newTheme);
     localStorage.setItem("menai-theme", newTheme);
-    
+
     if (newTheme === "dark") {
       document.documentElement.classList.add("dark");
     } else {
       document.documentElement.classList.remove("dark");
     }
   };
-
-  // Map internal values to display labels
-  const coachingOptions = [
-    { value: "gentle", label: "Supportive" },
-    { value: "balanced", label: "Balanced" },
-    { value: "push", label: "Direct" },
-  ];
 
   if (loading) {
     return (
@@ -119,21 +100,17 @@ export default function SettingsPage() {
 
   return (
     <div style={{ padding: "40px 32px", maxWidth: "640px", margin: "0 auto" }}>
-      {/* Header */}
       <div className="animate-fade-in" style={{ marginBottom: "32px" }}>
         <h1 style={{ fontSize: "1.6rem", fontWeight: 700, marginBottom: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
           <Settings size={24} style={{ color: "var(--accent-primary)" }} />
           Settings
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
-          MenAI adapts to you over time. These are lightweight preferences.
+          Your name and display preferences.
         </p>
       </div>
 
-      {/* Main Form */}
       <form onSubmit={handleSave} className="animate-slide-up" style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
-        
-        {/* Section 0 — Theme Toggle */}
         <div className="glass-card" style={{ padding: "28px" }}>
           <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
             Theme
@@ -141,7 +118,7 @@ export default function SettingsPage() {
           <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.4 }}>
             Switch between light and dark mode.
           </p>
-          
+
           <button
             type="button"
             onClick={toggleTheme}
@@ -171,7 +148,6 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* Section 1 — Profile */}
         <div className="glass-card" style={{ padding: "28px" }}>
           <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "8px" }}>
             Full Name
@@ -187,124 +163,6 @@ export default function SettingsPage() {
           />
         </div>
 
-        {/* Section 2 — Direction */}
-        <div className="glass-card" style={{ padding: "28px" }}>
-          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
-            What are you trying to move toward right now?
-          </label>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "10px", lineHeight: 1.4 }}>
-            This helps MenAI understand your direction and give more aligned guidance over time.
-          </p>
-          <textarea
-            className="input-field"
-            value={vision}
-            onChange={(e) => setVision(e.target.value)}
-            placeholder="e.g. Building an AI SaaS, improving consistency, finding clearer direction..."
-            rows={3}
-            style={{ width: "100%", background: "var(--bg-glass)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "var(--radius-md)", color: "var(--text-primary)", resize: "vertical" }}
-          />
-        </div>
-
-        {/* Section 3 — Coaching Style */}
-        <div className="glass-card" style={{ padding: "28px" }}>
-          <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "4px" }}>
-            Coaching Style
-          </label>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "14px", lineHeight: 1.4 }}>
-            MenAI adapts naturally over time, but this controls how gently or directly it challenges you.
-          </p>
-          
-          <div style={{
-            display: "flex",
-            background: "var(--bg-glass)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "var(--radius-md)",
-            padding: "4px",
-          }}>
-            {coachingOptions.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setCoachingStyle(opt.value)}
-                style={{
-                  flex: 1,
-                  padding: "10px 0",
-                  borderRadius: "calc(var(--radius-md) - 2px)",
-                  border: "none",
-                  background: coachingStyle === opt.value ? "var(--accent-primary)" : "transparent",
-                  color: coachingStyle === opt.value ? "white" : "var(--text-secondary)",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                  fontWeight: coachingStyle === opt.value ? 600 : 500,
-                  transition: "all 0.2s ease",
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Advanced Section — Collapsed */}
-        <div className="glass-card" style={{ padding: "0", overflow: "hidden" }}>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            style={{
-              width: "100%",
-              padding: "18px 28px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-              fontSize: "0.85rem",
-              fontWeight: 600,
-            }}
-          >
-            Advanced
-            <ChevronDown
-              size={16}
-              style={{
-                transition: "transform 0.2s ease",
-                transform: showAdvanced ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            />
-          </button>
-          
-          {showAdvanced && (
-            <div style={{ padding: "0 28px 24px", borderTop: "1px solid var(--border-color)" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "14px",
-                  paddingTop: "18px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  id="founderMode"
-                  checked={founderMode}
-                  onChange={(e) => setFounderMode(e.target.checked)}
-                  style={{ marginTop: "4px", width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-primary)" }}
-                />
-                <div style={{ flex: 1 }}>
-                  <label htmlFor="founderMode" style={{ display: "block", fontSize: "0.88rem", fontWeight: 600, color: "var(--text-primary)", cursor: "pointer" }}>
-                    Founder-oriented coaching
-                  </label>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px", lineHeight: 1.4 }}>
-                    Prioritizes shipping, product thinking, and execution momentum.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Save Button */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             {success && (

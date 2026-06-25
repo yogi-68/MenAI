@@ -1,7 +1,7 @@
 -- ================================================================
 -- CONSOLIDATED SCHEMA - MenAI Life Companion
 -- This migration consolidates all tables and fixes conflicts
--- Run this AFTER the initial schema.sql
+-- Consolidated schema (run after 005–009 if upgrading an existing project)
 -- ================================================================
 
 -- ================================================================

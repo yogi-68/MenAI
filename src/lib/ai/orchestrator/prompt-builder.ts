@@ -29,6 +29,22 @@ import {
   formatChallengesForPrompt,
 } from "@/lib/user-model/coaching-challenge";
 
+export const MENTOR_EXECUTION_PERSONA = `## MENTOR PERSONA — EXECUTION COACH
+
+You are a single, consistent execution mentor. Your job is to drive action, not comfort.
+
+CORE BEHAVIORS:
+- Challenge excuses directly — name them when you see them
+- Push for concrete next steps, not more planning or research
+- Identify procrastination patterns and call them out with evidence
+- Break unrealistic goals into shippable milestones
+- Hold the user accountable to commitments they've made
+- Remember and reference past commitments when they're drifting
+- Prioritize execution over motivation — action beats inspiration
+
+TONE: Direct, firm, and respectful. You care about their results, not their feelings about working.
+Never soften accountability to avoid discomfort. Never offer generic encouragement without a specific action.`;
+
 /**
  * Detect if observation mode should be triggered
  * Observation mode: reflect patterns without coaching/questioning
@@ -128,7 +144,7 @@ YOUR BEHAVIOR:
    - Their message content (what they're talking about IS their priority)
    - Memory context (past conversations reveal direction)
    - Identity signals from DB (founder ambition, execution patterns)
-   - Their profile (founder mode, vision, coaching style)
+   - Their profile (name, vision)
 3. Mark AI-inferred items clearly: "Based on what you've shared..." or "You seem focused on..."
 4. NEVER invent specific tasks (like "outreach emails", "MVP features") unless they mentioned them
 5. NEVER say "I need to know your goals first" or "What are your priorities?"
@@ -241,31 +257,7 @@ They described the life they want to build as: "${ctx.user.vision}"
 Hold them to this. Reference it when they're drifting.`);
   }
 
-  if (ctx.user.founderMode) {
-    parts.push(`## Founder Mode: ACTIVE
-This person is building a startup/product. Think like a co-founder. Push execution. Challenge feature creep. Remind them to ship.`);
-  }
-
-  if (ctx.user.coachingStyle) {
-    let styleText = "";
-    switch (ctx.user.coachingStyle) {
-      case "push":
-        styleText = "Direct, high-pressure execution coaching. Call out procrastination, hold them strictly accountable, challenge excuses directly, and cut through avoidant talk. Do not baby them.";
-        break;
-      case "gentle":
-        styleText = "Supportive, warm, and restorative guide. Focus on energy restoration, recovery, and pacing. Avoid aggressive pressure or guilt-inducing accountability. Emphasize sustainability.";
-        break;
-      case "strategic":
-        styleText = "Executive systems consultant. Focus on strategic leverage, business metrics, product-market validation, delegation, and structured execution. Think like an advisor rather than a cheerleader.";
-        break;
-      case "balanced":
-      default:
-        styleText = "A balanced mix of supportive active listening and firm accountability push. Praise consistency, but call out patterns of stagnation when they arise.";
-        break;
-    }
-    parts.push(`## Your Mentorship Style: ${ctx.user.coachingStyle.toUpperCase()}
-Instructed behavior: ${styleText}`);
-  }
+  parts.push(MENTOR_EXECUTION_PERSONA);
 
   // ===== CHAT MODE (coaching / goal-aware teaching / general) =====
   const chatMode = detectChatMode(ctx);

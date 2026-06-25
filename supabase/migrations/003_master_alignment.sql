@@ -1,6 +1,6 @@
 -- MenAI Master Alignment Migration
 -- Adds identity_signals, execution_patterns, and context_confidence_log tables
--- Run this after migration_life_os.sql
+-- Run this after core tables exist (005+)
 
 -- ===== Identity Signals Table =====
 -- Tracks user identity aspirations extracted from conversations

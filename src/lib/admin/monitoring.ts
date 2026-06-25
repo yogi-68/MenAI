@@ -115,7 +115,7 @@ export async function fetchAdminMonitoring(): Promise<AdminMonitoringSnapshot> {
     db.from("profiles").select("id, full_name"),
     db.from("daily_plans").select("id", { count: "exact", head: true }).eq("plan_date", todayDate),
     db.from("daily_reflections").select("id", { count: "exact", head: true }).eq("reflection_date", todayDate),
-    db.from("initiatives").select("id", { count: "exact", head: true }).eq("status", "active"),
+    db.from("goals").select("id", { count: "exact", head: true }).eq("status", "active").eq("goal_kind", "execution"),
     db
       .from("ai_usage_log")
       .select("ttft_ms, duration_ms, created_at, metadata")

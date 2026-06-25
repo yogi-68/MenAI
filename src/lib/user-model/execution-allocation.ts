@@ -1,8 +1,8 @@
 import { detectDomain, type CoachDomain } from "@/lib/plans/coach-insights";
 import {
-  computeInitiativeHealth,
-  type InitiativeHealth,
-} from "@/lib/plans/initiative-health";
+  computeGoalHealth,
+  type GoalHealth,
+} from "@/lib/plans/goal-health";
 import type { InitiativeRow } from "@/lib/user-model/types";
 
 export type AllocationRole = "focus" | "secondary" | "maintenance";
@@ -22,7 +22,7 @@ export interface ActivePortfolioEntry {
   title: string;
   lifeArea: string | null;
   domain: CoachDomain;
-  health: InitiativeHealth;
+  health: GoalHealth;
   healthLabel: string;
   targetDate: string | null;
   isFocus: boolean;
@@ -57,7 +57,7 @@ function computeRawWeight(
     factors.push("current focus");
   }
 
-  const health = computeInitiativeHealth({
+  const health = computeGoalHealth({
     status: init.status,
     targetDate: init.target_date,
     lastActionAt: init.last_action_at,
@@ -158,7 +158,7 @@ export function computeExecutionAllocation(
     const isFocus = init.id === focusId;
     const { weight, factors } = computeRawWeight(init, isFocus, now);
     const domain = detectDomain(`${init.title} ${init.description || ""}`, init.life_area);
-    const health = computeInitiativeHealth({
+    const health = computeGoalHealth({
       status: init.status,
       targetDate: init.target_date,
       lastActionAt: init.last_action_at,
@@ -186,7 +186,7 @@ export function computeExecutionAllocation(
 
   const portfolio: ActivePortfolioEntry[] = active.map((init) => {
     const isFocus = init.id === focusId;
-    const health = computeInitiativeHealth({
+    const health = computeGoalHealth({
       status: init.status,
       targetDate: init.target_date,
       lastActionAt: init.last_action_at,
