@@ -1,11 +1,23 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans, Syne, JetBrains_Mono } from "next/font/google";
 import { Providers } from "@/lib/providers";
 import "./globals.css";
+
+const syne = Syne({
+  subsets: ["latin"],
+  variable: "--font-syne",
+  display: "swap",
+});
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-jakarta",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono-loaded",
   display: "swap",
 });
 
@@ -34,20 +46,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Inline theme script to prevent flash — runs before paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='dark')document.documentElement.classList.add('dark');else document.documentElement.classList.remove('dark');}catch(e){document.documentElement.classList.remove('dark');}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='light')document.documentElement.classList.remove('dark');else document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}})();`,
           }}
         />
       </head>
-      <body className={`${plusJakarta.variable} ${plusJakarta.className} antialiased`}>
-        {/* Ambient background orbs */}
-        <div className="ambient-bg" aria-hidden="true">
-          <div className="ambient-orb ambient-orb-1" />
-          <div className="ambient-orb ambient-orb-2" />
-          <div className="ambient-orb ambient-orb-3" />
-        </div>
+      <body
+        className={`${syne.variable} ${plusJakarta.variable} ${jetbrainsMono.variable} ${plusJakarta.className} antialiased`}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

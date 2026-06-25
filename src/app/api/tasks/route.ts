@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import { finishableTaskError } from "@/lib/tasks/finishable-today";
+import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
 import { trackProductEventOnce, trackProductEvent } from "@/lib/analytics/track-event";
 import { buildCognitiveState } from "@/lib/ai/orchestrator/cognition-engine";
 import { autoEvolveAndApply } from "@/lib/ai/orchestrator/task-evolution-engine";
@@ -101,6 +102,25 @@ export async function POST(req: NextRequest) {
   const taskError = finishableTaskError(normalizedTitle);
   if (taskError) {
     return NextResponse.json({ error: taskError }, { status: 400 });
+  }
+
+  const resolvedDueDate =
+    dueDate === "today" ? new Date().toISOString().split("T")[0] : dueDate || null;
+
+  if (linkedGoalId && resolvedDueDate) {
+    const { count } = await supabase
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("goal_id", linkedGoalId)
+      .eq("due_date", resolvedDueDate)
+      .in("status", ["pending", "in_progress", "completed"]);
+    if ((count ?? 0) >= TASKS_PER_GOAL) {
+      return NextResponse.json(
+        { error: `Maximum ${TASKS_PER_GOAL} tasks per goal per day. Complete or remove a task first.` },
+        { status: 400 }
+      );
+    }
   }
 
   let dupQuery = supabase

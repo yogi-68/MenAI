@@ -454,4 +454,5 @@ export interface PipelineContext {
   conversationId: string;
   modelConfig: ModelConfig;
   memoryRetrievalBlock?: string;
+  rhythmBlock?: string;
 }

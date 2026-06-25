@@ -140,14 +140,7 @@ export default function DashboardOverview() {
         </p>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-4 mb-8">
-        <RadialProgressChart
-          title="Today"
-          subtitle="Performance"
-          value={data?.performance.daily ?? 0}
-          loading={isLoading}
-          label="Daily"
-        />
+      <div className="grid gap-6 lg:grid-cols-3 mb-8">
         <RadialProgressChart
           title="This week"
           subtitle="Performance"
@@ -261,7 +254,7 @@ export default function DashboardOverview() {
                 href="/dashboard/chat"
                 className="btn-primary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
               >
-                <MessageSquare size={14} /> Tell MenAI your goal
+                <MessageSquare size={14} /> Talk to your coach
               </Link>
               <Link
                 href="/onboarding"

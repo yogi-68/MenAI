@@ -58,7 +58,7 @@ export function RadialProgressChart({
             pointerEvents: "none",
           }}
         >
-          <span style={{ fontSize: "2rem", fontWeight: 600, color: chartColors.primary }}>{pct}%</span>
+          <span className="score-hero font-data" style={{ color: chartColors.primary }} data-numeric>{pct}%</span>
           <span style={{ fontSize: "0.75rem", color: chartColors.muted }}>{label}</span>
         </div>
       </div>

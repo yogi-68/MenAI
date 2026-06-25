@@ -31,6 +31,8 @@ import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
 import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
+import { buildRhythmContext, formatRhythmBlockForPrompt } from "@/lib/plans/rhythm-phase";
+import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
 import {
   formatMemoryRetrievalForPrompt,
   formatPinnedMemoriesForPrompt,
@@ -282,6 +284,10 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     });
   }
 
+  const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
+  const rhythmCtx = buildRhythmContext(taskStats);
+  const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
+
   const ctx: PipelineContext = {
     input,
     user,
@@ -296,6 +302,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     conversationId,
     modelConfig,
     memoryRetrievalBlock,
+    rhythmBlock,
   };
 
   // ===== STEP 8: Build Prompt & Call LLM =====
@@ -709,6 +716,10 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     });
   }
 
+  const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
+  const rhythmCtx = buildRhythmContext(taskStats);
+  const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
+
   const ctx: PipelineContext = {
     input,
     user,
@@ -723,6 +734,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     conversationId,
     modelConfig,
     memoryRetrievalBlock,
+    rhythmBlock,
   };
 
   const promptMessages = buildPrompt(ctx);

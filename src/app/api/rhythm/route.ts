@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildCognitiveState, formatCognitiveStateForDashboard } from "@/lib/ai/orchestrator/cognition-engine";
 import { needsSynthesisOnLogin, runDeepSynthesis } from "@/lib/ai/orchestrator/synthesis-worker";
+import { getCurrentPhase } from "@/lib/plans/rhythm-phase";
 
 export const runtime = "nodejs";
 
@@ -44,13 +45,6 @@ interface RhythmContext {
   };
   tasks_due_today: number;
   maturity_level: string;
-}
-
-function getCurrentPhase(): RhythmPhase {
-  const hour = new Date().getHours();
-  if (hour < 12) return "morning";
-  if (hour < 18) return "afternoon";
-  return "night";
 }
 
 export async function GET() {

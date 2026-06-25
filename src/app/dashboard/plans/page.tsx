@@ -549,7 +549,16 @@ export default function DailyPlansPage() {
                     }}
                   >
                     <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>Why? </span>
-                    {planTask.whyItMatters}
+                    {planTask.linkedMilestone ? (
+                      <>
+                        <span style={{ color: "var(--text-primary)" }}>
+                          Milestone: {planTask.linkedMilestone} —{" "}
+                        </span>
+                        {planTask.whyItMatters}
+                      </>
+                    ) : (
+                      planTask.whyItMatters
+                    )}
                   </p>
 
                   {(planTask.linkedInitiative || planTask.linkedMilestone) && (
@@ -622,7 +631,7 @@ export default function DailyPlansPage() {
               <>
                 Add an active goal with a deadline in{" "}
                 <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-                  Intelligence
+                  Coach
                 </Link>
                 {" "}— MenAI generates 3 coach tasks per goal per day from milestones and your recent activity.
               </>
@@ -630,7 +639,7 @@ export default function DailyPlansPage() {
               <>
                 Add active goals with deadlines in{" "}
                 <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-                  Intelligence
+                  Coach
                 </Link>
                 {" "}— they drive your daily plan.
               </>

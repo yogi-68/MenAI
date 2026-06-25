@@ -15,7 +15,7 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState(false);
 
   const [fullName, setFullName] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -33,7 +33,7 @@ export default function SettingsPage() {
       }
 
       const savedTheme = localStorage.getItem("menai-theme") as "light" | "dark" | null;
-      setTheme(savedTheme || "light");
+      setTheme(savedTheme || "dark");
 
       setLoading(false);
     };

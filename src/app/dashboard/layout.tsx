@@ -17,10 +17,11 @@ import {
   Activity,
 } from "lucide-react";
 import { ClaySidebarLink, PageTransition } from "@/components/ui";
+import { PerformanceScoreBadge } from "@/components/dashboard/performance-score-badge";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
-  { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
+  { href: "/dashboard/chat", icon: MessageSquare, label: "Coach" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
@@ -94,27 +95,18 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <div className="ambient-bg" />
-
       <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            marginBottom: "40px",
+            marginBottom: "16px",
             paddingLeft: "8px",
           }}
         >
           <Link href="/dashboard" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-            <span
-              style={{
-                fontSize: "1.2rem",
-                fontWeight: 500,
-                color: "var(--text-primary)",
-                letterSpacing: "-0.02em",
-              }}
-            >
+            <span className="font-display" style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--text-primary)" }}>
               MenAI
             </span>
           </Link>
@@ -128,7 +120,9 @@ export default function DashboardLayout({
           </button>
         </div>
 
-        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+        <PerformanceScoreBadge />
+
+        <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
           {primaryNav.map((item) => {
             const isActive =
               pathname === item.href ||
@@ -216,8 +210,8 @@ export default function DashboardLayout({
           >
             <Menu size={24} />
           </button>
-          <span style={{ fontWeight: 500, letterSpacing: "-0.02em" }}>MenAI</span>
-          <div style={{ width: 24 }} />
+          <span className="font-display" style={{ fontWeight: 600, fontSize: "0.95rem" }}>MenAI</span>
+          <PerformanceScoreBadge compact />
         </div>
 
         <div

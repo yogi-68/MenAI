@@ -259,6 +259,10 @@ Hold them to this. Reference it when they're drifting.`);
 
   parts.push(MENTOR_EXECUTION_PERSONA);
 
+  if (ctx.rhythmBlock) {
+    parts.push(`## Time context (adapt tone and urgency)\n${ctx.rhythmBlock}`);
+  }
+
   // ===== CHAT MODE (coaching / goal-aware teaching / general) =====
   const chatMode = detectChatMode(ctx);
   parts.push(buildChatModeGuidance(chatMode));

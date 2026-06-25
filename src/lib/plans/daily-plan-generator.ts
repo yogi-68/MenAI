@@ -267,7 +267,6 @@ export async function fetchPlanUserContext(
   const today = new Date().toISOString().split("T")[0];
 
   const [
-    goalsRes,
     pendingTasksRes,
     completedTasksRes,
     patternsRes,
@@ -281,14 +280,6 @@ export async function fetchPlanUserContext(
     timeProfile,
     executionMetrics,
   ] = await Promise.all([
-    supabase
-      .from("goals")
-      .select("id, title, description, category, priority, progress, status, target_date")
-      .eq("user_id", userId)
-      .eq("goal_kind", "direction")
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(10),
     supabase
       .from("tasks")
       .select("title, status, due_date, estimated_minutes")
@@ -397,7 +388,7 @@ export async function fetchPlanUserContext(
   const primaryInit = primaryId
     ? initiativesRaw.find((i) => i.id === primaryId)
     : initiativesRaw[0];
-  const goals = goalsRes.data || [];
+  const goals: Array<{ id: string; title: string; description?: string | null; target_date?: string | null; progress?: number | null; parent_goal_id?: string | null }> = [];
   const pendingTasks = pendingTasksRes.data || [];
   const completedTasks = completedTasksRes.data || [];
   const patterns = patternsRes.data || [];
@@ -524,19 +515,8 @@ export async function fetchPlanUserContext(
       upcomingDeadlines.push(`${i.title} due ${i.target_date}`);
     }
   }
-  for (const g of goals) {
-    if (g.target_date && g.target_date >= today) {
-      upcomingDeadlines.push(`${g.title} due ${g.target_date}`);
-    }
-  }
 
-  const goalLines = goals.map((g) => {
-    const parts = [g.title];
-    if (g.description) parts.push(g.description);
-    if (g.target_date) parts.push(`target ${g.target_date}`);
-    if (g.progress) parts.push(`(${g.progress}% done)`);
-    return parts.join(" — ");
-  });
+  const goalLines: string[] = [];
 
   const commitmentLines = commitments.map(
     (c) =>
@@ -618,11 +598,9 @@ export async function fetchPlanUserContext(
   const planContext = primaryInit
     ? await loadPlanContextData(supabase, userId, primaryInit.id)
     : await loadPlanContextData(supabase, userId, "_none");
-  const linkedGoal = primaryInit?.parent_goal_id
-    ? goals.find((g) => g.id === primaryInit.parent_goal_id)
-    : null;
+  const linkedGoal = null; // direction goals excluded from daily planner
   const dimensionInput = {
-    goals: goals.map((g) => ({ title: g.title, description: g.description })),
+    goals: [],
     initiatives: initiatives.map((i) => ({
       title: i.title,
       description: i.description,
@@ -647,7 +625,7 @@ export async function fetchPlanUserContext(
           initiativeDescription: primaryInit.description ?? undefined,
           targetDate: primaryInit.target_date ?? undefined,
           lifeArea: primaryInit.life_area ?? undefined,
-          goalTexts: linkedGoal ? [linkedGoal.title] : [],
+          goalTexts: [],
           planContext: planContext as Record<string, unknown>,
         })
       : null;
@@ -675,29 +653,15 @@ export async function fetchPlanUserContext(
   }
 
   const planMode: PlanMode =
-    effectiveScore < 55
-      ? "context_building"
-      : effectiveScore >= 78
-        ? "aggressive"
-        : "normal";
+    effectiveScore < 55 && initiatives.length === 0 ? "context_building" : "normal";
   const planPhase = options.planPhase ?? currentPlanPhase();
   const middayCompleted = options.middayCompleted ?? [];
   const activeGoalCount = Math.max(1, initiatives.length);
-  /** Exactly 3 tasks per active execution goal — performance score formula */
   const maxTasks =
-    planMode === "context_building"
-      ? 2
-      : planPhase === "afternoon" && middayCompleted.length > 0
-        ? Math.min(activeGoalCount * TASKS_PER_GOAL, activeGoalCount * 2)
-        : activeGoalCount * TASKS_PER_GOAL;
+    initiatives.length > 0 ? activeGoalCount * TASKS_PER_GOAL : planMode === "context_building" ? 2 : 0;
 
   const baseMinutes = 480;
-  const availableMinutes =
-    planMode === "aggressive"
-      ? Math.round(baseMinutes * (timeProfile.estimationRatio > 1.2 ? 0.85 : 1))
-      : planMode === "context_building"
-        ? Math.min(180, baseMinutes)
-        : baseMinutes;
+  const availableMinutes = baseMinutes;
 
   let availableMinutesAdjusted = availableMinutes;
   if (planPhase === "afternoon" && middayCompleted.length > 0) {
@@ -792,25 +756,17 @@ function buildPrompt(ctx: PlanUserContext): string {
   const availableHours = Math.round(ctx.availableMinutes / 60);
 
   const modeInstructions =
-    ctx.planMode === "context_building"
-      ? `CONTEXT-BUILDING MODE:
-- Generate ONLY 1–2 context-building tasks tied to CURRENT FOCUS initiative
-- Ask for missing execution info in whyTheseTasks (blockers, time available, next milestone)
-- Mark ALL tasks isContextBuilding: true
-- Do NOT invent execution work from long-term direction or vague goals`
-      : ctx.planMode === "aggressive"
-        ? `AGGRESSIVE EXECUTION MODE:
-- Generate 3–5 high-leverage tasks (HARD MAX 5) — quality over quantity
-- 80%+ MUST link to CURRENT FOCUS initiative
-- Prioritize at-risk and stalled focus work
-- Include at least one task that advances the highest-urgency opportunity if any exist
-- Each task needs a concrete "why" tied to the current initiative milestone`
-        : `NORMAL MODE:
+    ctx.planMode === "context_building" && ctx.initiatives.length === 0
+      ? `CONTEXT-BUILDING MODE (no active goals yet):
+- Generate ONLY 1–2 context-building tasks
+- Ask for missing execution info in whyTheseTasks
+- Mark ALL tasks isContextBuilding: true`
+      : `EXECUTION MODE — STRICT 3-TASK RULE:
 - Generate EXACTLY ${TASKS_PER_GOAL} tasks per active goal (${ctx.initiatives.length} goals → ${ctx.maxTasks} tasks total)
-- Each goal gets its own block of ${TASKS_PER_GOAL} finishable actions — no generic filler
-- Tasks must link to the matching goal via linkedInitiative (goal title)
-- Every task needs whyItMatters explaining how it moves that goal forward today
-- Include "assumptions" array if context is thin`;
+- NO bonus tasks, NO optional stretches, NO 4th or 5th tasks
+- Each task needs whyItMatters tying it to the goal's CURRENT milestone and recent activity
+- Tasks must link via linkedInitiative (exact goal title) and linkedMilestone
+- Tell the user what fits today and what does NOT if they cannot finish something`;
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
 
@@ -873,9 +829,6 @@ ${ctx.lifeAreaInsight ? `\nBalance insight: ${ctx.lifeAreaInsight}` : ""}
 
 Upcoming deadlines:
 ${listOrFallback(ctx.upcomingDeadlines, "None")}
-
-Goals (background DIRECTION only — never generate tasks from these):
-${listOrFallback(ctx.goals, "None")}
 
 TASK FORMAT (mandatory for every task):
 - title: specific action verb + deliverable (NOT "work on X")
@@ -1066,12 +1019,7 @@ export async function generateDailyPlanWithAI(
     >;
   };
 
-  const timeMode =
-    ctx.planMode === "aggressive"
-      ? "aggressive"
-      : ctx.planMode === "context_building"
-        ? "conservative"
-        : "normal";
+  const timeMode = ctx.planMode === "context_building" ? "conservative" : "normal";
 
   let tasks: DailyPlanTask[] = (parsed.tasks || [])
     .filter((t) => t.title && (t.isContextBuilding || passesTaskQualityGate(t.title)))
@@ -1094,7 +1042,7 @@ export async function generateDailyPlanWithAI(
       linkedMilestone: t.linkedMilestone?.trim(),
     }));
 
-  if (ctx.planMode === "context_building") {
+  if (ctx.planMode === "context_building" && ctx.initiatives.length === 0) {
     tasks = tasks.filter((t) => t.isContextBuilding).slice(0, 2);
     if (tasks.length === 0 && (parsed.tasks || []).length > 0) {
       tasks = (parsed.tasks || []).slice(0, 2).map((t) => ({
@@ -1110,6 +1058,7 @@ export async function generateDailyPlanWithAI(
     }
   }
 
+  tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
   tasks = fitTasksToTimeBudget(tasks, ctx.availableMinutes, ctx.maxTasks);
   tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
 
@@ -1226,13 +1175,15 @@ export async function ensureTodayPlan(
 
   if (existing?.plan_content) {
     const content = normalizePlanContent(existing.plan_content);
+    const expectedTasks = goalCount * TASKS_PER_GOAL;
     const stale =
       content.tasks.some((t) => isVagueTask(t.title)) ||
       content.tasks.some((t) => !t.deliverable || !t.successMetric) ||
       !content.whyTheseTasks ||
       !content.confidence ||
       !content.planMode ||
-      !content.planningContext;
+      !content.planningContext ||
+      (expectedTasks > 0 && content.tasks.length !== expectedTasks);
 
     if (!stale && content.tasks.length > 0) {
       return { plan: content, planId: existing.id, created: false };

@@ -24,10 +24,13 @@ export function buildUnderstandingSummaryFromBundle(
   };
 }
 
-export function buildUnderstandingSummary(model: UserModel): UnderstandingSummary {
+export function buildUnderstandingSummary(
+  model: UserModel,
+  options?: { forDailySurface?: boolean }
+): UnderstandingSummary {
   const graphParts: string[] = [];
 
-  if (model.identity.longTermDirections.length > 0) {
+  if (!options?.forDailySurface && model.identity.longTermDirections.length > 0) {
     graphParts.push(
       `Long-term direction includes ${model.identity.longTermDirections.slice(0, 4).join(", ")}.`
     );

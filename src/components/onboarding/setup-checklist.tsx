@@ -35,7 +35,7 @@ export function SetupChecklist({ hasGoals = false }: SetupChecklistProps) {
         <li>Crack UPSC Prelims by September</li>
       </ul>
       <Link href="/dashboard/chat" className="btn-primary inline-block px-5 py-2.5 text-sm no-underline">
-        Add a goal in Intelligence
+        Add a goal in Coach
       </Link>
     </ClayCard>
   );

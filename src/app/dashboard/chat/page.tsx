@@ -14,7 +14,7 @@ import {
   type MessagePage,
 } from "@/lib/chat/fetch-messages";
 import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
-import { IdentityBrief } from "@/components/chat/identity-brief";
+import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
 import {
   Send,
   Loader2,
@@ -492,7 +492,7 @@ export default function ChatPage() {
       </aside>
 
       <div className="chat-main">
-        <IdentityBrief />
+        <CoachKnowledgePanel />
         {crisisAlert && (
           <div className="chat-crisis-banner">
             <AlertTriangle size={18} />

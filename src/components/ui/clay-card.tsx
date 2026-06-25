@@ -1,9 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { motion, type HTMLMotionProps } from "framer-motion";
+import { type HTMLAttributes } from "react";
 
-interface ClayCardProps extends HTMLMotionProps<"div"> {
+interface ClayCardProps extends HTMLAttributes<HTMLDivElement> {
   inset?: boolean;
   hover?: boolean;
 }
@@ -16,18 +16,15 @@ export function ClayCard({
   ...props
 }: ClayCardProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
+    <div
       className={cn(
-        inset ? "clay-card-inset" : "clay-card",
-        !hover && "hover:!transform-none hover:!shadow-[var(--shadow-clay-outer)]",
+        inset ? "card-inset clay-card-inset" : "card clay-card",
+        !hover && "hover:!border-[var(--border-color)]",
         className
       )}
       {...props}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
