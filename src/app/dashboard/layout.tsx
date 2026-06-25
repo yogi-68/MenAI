@@ -14,7 +14,6 @@ import {
   X,
   Calendar,
   History,
-  BarChart3,
   Activity,
 } from "lucide-react";
 import { ClaySidebarLink, PageTransition } from "@/components/ui";
@@ -24,8 +23,6 @@ const primaryNav = [
   { href: "/dashboard/chat", icon: MessageSquare, label: "Intelligence" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
-  { href: "/dashboard/reviews/weekly", icon: BarChart3, label: "Weekly Review" },
-  { href: "/dashboard/reviews/monthly", icon: BarChart3, label: "Monthly Review" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 

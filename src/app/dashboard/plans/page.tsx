@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Clock, Target, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { PlanContextInterview } from "@/components/plans/plan-context-interview";
+import { ClayCard } from "@/components/ui";
 import { isLowPlanConfidence } from "@/lib/plans/language-guard";
 
 interface DailyPlanContent {
@@ -133,6 +134,16 @@ export default function DailyPlansPage() {
     staleTime: 60_000,
   });
 
+  const { data: goalsPayload } = useQuery({
+    queryKey: ["execution-goals"],
+    queryFn: async () => {
+      const res = await fetch("/api/goals?goal_kind=execution&status=active");
+      if (!res.ok) return { goals: [] as { id: string; title: string }[] };
+      return res.json() as Promise<{ goals: { id: string; title: string }[] }>;
+    },
+    staleTime: 60_000,
+  });
+
   const completeTask = useMutation({
     mutationFn: async ({ id, actualMinutes }: { id: string; actualMinutes?: number }) => {
       const res = await fetch("/api/tasks", {
@@ -189,8 +200,21 @@ export default function DailyPlansPage() {
   const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
   const planningQuality = plan?.planningContext?.planningQuality;
   const evidence = plan?.evidence || [];
-  const hasInitiatives = !evidence.some((e) => e.includes("No active initiatives"));
-  const showSetup = !hasInitiatives;
+  const hasGoals =
+    (goalsPayload?.goals?.length ?? 0) > 0 &&
+    !evidence.some((e) => /No active goals|No active initiatives/i.test(e));
+  const showSetup = !hasGoals;
+
+  const tasksByGoal = useMemo(() => {
+    const groups = new Map<string, DailyPlanTask[]>();
+    for (const t of plan?.tasks ?? []) {
+      const key = t.linkedInitiative?.trim() || "Focus";
+      const list = groups.get(key) ?? [];
+      list.push(t);
+      groups.set(key, list);
+    }
+    return [...groups.entries()];
+  }, [plan?.tasks]);
 
   // Match plan tasks to DB tasks by title for checkboxes
   const taskByTitle = new Map(
@@ -237,9 +261,9 @@ export default function DailyPlansPage() {
         )}
       </header>
 
-      {!isLoading && showSetup && <SetupChecklist hasInitiatives={hasInitiatives} />}
+      {!isLoading && showSetup && <SetupChecklist hasGoals={hasGoals} />}
 
-      {!isLoading && hasInitiatives && <PlanContextInterview hasInitiatives={hasInitiatives} />}
+      {!isLoading && hasGoals && <PlanContextInterview hasInitiatives={hasGoals} />}
 
       {topPriority && !isLoading && (
         <section
@@ -318,7 +342,7 @@ export default function DailyPlansPage() {
               ) : lowContext ? (
                 <p style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5 }}>
                   Limited context — use the questions above or{" "}
-                  <Link href="/dashboard/chat">add initiatives with deadlines</Link>.
+                  <Link href="/dashboard/chat">add goals with deadlines</Link>.
                 </p>
               ) : null}
               {plan.topObstacle && (
@@ -378,9 +402,9 @@ export default function DailyPlansPage() {
         </div>
       )}
 
-        <section className="glass-card" style={{ padding: "clamp(20px, 4vw, 36px)" }}>
+        <ClayCard className="p-6 md:p-8" hover={false}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
-          <h2 style={{ fontSize: "1rem", fontWeight: 500, margin: 0 }}>What to do</h2>
+          <h2 className="text-base font-medium m-0">What to do — 3 tasks per goal</h2>
           {totalTasks > 0 && (
             <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
               {completedTasks}/{totalTasks} complete
@@ -391,11 +415,20 @@ export default function DailyPlansPage() {
         {isLoading ? (
           <div
             className="skeleton shimmer"
-            style={{ height: "280px", width: "100%", borderRadius: "8px" }}
+            style={{ height: "280px", width: "100%", borderRadius: "var(--radius-md)" }}
           />
         ) : plan?.tasks && plan.tasks.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-            {plan.tasks.map((planTask, idx) => {
+          <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+            {tasksByGoal.map(([goalTitle, goalTasks]) => (
+              <div key={goalTitle}>
+                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                  <h3 className="text-sm font-medium m-0" style={{ color: "var(--text-primary)" }}>
+                    {goalTitle}
+                  </h3>
+                  <span className="text-xs clay-label">{goalTasks.length}/3 tasks</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {goalTasks.map((planTask, idx) => {
               const dbTask = taskByTitle.get(planTask.title.toLowerCase());
               const isDone = dbTask?.status === "completed";
 
@@ -570,6 +603,9 @@ export default function DailyPlansPage() {
                 </div>
               );
             })}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <p
@@ -584,24 +620,24 @@ export default function DailyPlansPage() {
           >
             {plan?.tasks?.length === 0 ? (
               <>
-                Add an active initiative with a deadline on{" "}
+                Add an active goal with a deadline in{" "}
                 <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-                  Initiatives
+                  Intelligence
                 </Link>
-                {" "}— daily tasks are generated from initiatives, not generic placeholders.
+                {" "}— MenAI generates 3 coach tasks per goal per day from milestones and your recent activity.
               </>
             ) : (
               <>
-                Add active initiatives with deadlines on{" "}
+                Add active goals with deadlines in{" "}
                 <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
-                  Initiatives
+                  Intelligence
                 </Link>
                 {" "}— they drive your daily plan.
               </>
             )}
           </p>
         )}
-      </section>
+        </ClayCard>
 
       {/* Daily Reflection — end of day context for tomorrow's plan */}
       <ReflectionSection todayKey={todayKey} />

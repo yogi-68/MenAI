@@ -14,6 +14,7 @@ import {
   type MessagePage,
 } from "@/lib/chat/fetch-messages";
 import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
+import { IdentityBrief } from "@/components/chat/identity-brief";
 import {
   Send,
   Loader2,
@@ -491,6 +492,7 @@ export default function ChatPage() {
       </aside>
 
       <div className="chat-main">
+        <IdentityBrief />
         {crisisAlert && (
           <div className="chat-crisis-banner">
             <AlertTriangle size={18} />
@@ -533,7 +535,7 @@ export default function ChatPage() {
                 patterns over time.
               </p>
               <div className="chat-suggestions">
-                {["I want to build an AI SaaS", "Help me plan my first initiative", "I am stuck"].map(
+                {["I want to build an AI SaaS", "Help me set a 90-day goal", "Who am I?"].map(
                   (suggestion) => (
                     <button
                       key={suggestion}

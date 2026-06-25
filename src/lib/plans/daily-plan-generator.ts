@@ -28,6 +28,7 @@ import {
   loadWeaknessProfiles,
 } from "@/lib/mentor/weakness-engine";
 import { formatMentorMemoriesForPrompt, loadMentorMemories } from "@/lib/mentor/mentor-memory";
+import { fetchActiveExecutionGoals, countActiveExecutionGoals } from "@/lib/goals/active-goals";
 import { loadMemoryRetrievalContext } from "@/lib/mentor/memory-retrieval";
 import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
 import {
@@ -266,7 +267,6 @@ export async function fetchPlanUserContext(
   const today = new Date().toISOString().split("T")[0];
 
   const [
-    initiativesRes,
     goalsRes,
     pendingTasksRes,
     completedTasksRes,
@@ -281,14 +281,6 @@ export async function fetchPlanUserContext(
     timeProfile,
     executionMetrics,
   ] = await Promise.all([
-    supabase
-      .from("goals")
-      .select("id, title, description, success_criteria, target_date, progress, life_area, last_action_at, status, parent_goal_id, parent_goal:parent_goal_id(title)")
-      .eq("user_id", userId)
-      .eq("goal_kind", "execution")
-      .eq("status", "active")
-      .order("target_date", { ascending: true, nullsFirst: false })
-      .limit(12),
     supabase
       .from("goals")
       .select("id, title, description, category, priority, progress, status, target_date")
@@ -368,7 +360,19 @@ export async function fetchPlanUserContext(
     fetchExecutionMetrics(supabase, userId),
   ]);
 
-  const initiativeIds = (initiativesRes.data || []).map((i) => i.id);
+  const executionGoals = await fetchActiveExecutionGoals(supabase, userId);
+  const parentIds = executionGoals.map((g) => g.parent_goal_id).filter(Boolean) as string[];
+  const parentMap = new Map<string, string>();
+  if (parentIds.length > 0) {
+    const { data: parents } = await supabase.from("goals").select("id, title").in("id", parentIds);
+    for (const p of parents || []) parentMap.set(p.id, p.title);
+  }
+  const initiativesRaw = executionGoals.map((g) => ({
+    ...g,
+    parent_goal: g.parent_goal_id ? { title: parentMap.get(g.parent_goal_id) } : null,
+  }));
+
+  const initiativeIds = initiativesRaw.map((i) => i.id);
   const { data: milestonesData } =
     initiativeIds.length > 0
       ? await supabase
@@ -379,7 +383,6 @@ export async function fetchPlanUserContext(
           .order("sort_order", { ascending: true })
       : { data: [] as Array<{ goal_id: string; title: string; status: string; sort_order: number; goals: { title?: string } | null }> };
 
-  const initiativesRaw = initiativesRes.data || [];
   const execCtx = await loadExecutionContext(supabase, userId);
   const userModel = await getUserModel(supabase, userId);
   const allocationIds = userModel.executionAllocation.map((a) => a.initiativeId);
@@ -421,9 +424,9 @@ export async function fetchPlanUserContext(
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
-      progress: i.progress,
+      progress: i.progress ?? 0,
     });
-    return `${i.title} [${lifeAreaLabel(i.life_area)}] — ${health.label}: ${health.reason}`;
+    return `${i.title} [${lifeAreaLabel(i.life_area || "personal")}] — ${health.label}: ${health.reason}`;
   });
 
   const initiativeLines = initiatives.map((i) => {
@@ -433,9 +436,9 @@ export async function fetchPlanUserContext(
       status: i.status,
       targetDate: i.target_date,
       lastActionAt: i.last_action_at,
-      progress: i.progress,
+      progress: i.progress ?? 0,
     });
-    const parts = [`[${lifeAreaLabel(i.life_area)}]`, i.title, `(${health.label})`];
+    const parts = [`[${lifeAreaLabel(i.life_area || "personal")}]`, i.title, `(${health.label})`];
     if (i.description) parts.push(i.description);
     const criteria = (i as { success_criteria?: string | null }).success_criteria;
     if (criteria) parts.push(`success criteria: ${criteria}`);
@@ -641,9 +644,9 @@ export async function fetchPlanUserContext(
       ? buildGoalAnalysis({
           domain: detectDomain(`${primaryInit.title} ${primaryInit.description || ""}`, primaryInit.life_area),
           initiativeTitle: primaryInit.title,
-          initiativeDescription: primaryInit.description,
-          targetDate: primaryInit.target_date,
-          lifeArea: primaryInit.life_area,
+          initiativeDescription: primaryInit.description ?? undefined,
+          targetDate: primaryInit.target_date ?? undefined,
+          lifeArea: primaryInit.life_area ?? undefined,
           goalTexts: linkedGoal ? [linkedGoal.title] : [],
           planContext: planContext as Record<string, unknown>,
         })
@@ -1175,17 +1178,17 @@ export async function invalidateTodayPlan(
 
 export function buildEmptyPlan(): DailyPlanContent {
   return {
-    daySummary: "Add an active initiative to generate today's tasks.",
+    daySummary: "Add an active goal with a deadline to generate today's tasks.",
     whatMattersNow: undefined,
     whyTheseTasks: "",
     confidence: {
       score: 15,
-      gaps: ["No active initiatives"],
+      gaps: ["No active goals"],
       strengths: [],
     },
     planMode: "context_building",
     tasks: [],
-    evidence: ["No active initiatives"],
+    evidence: ["No active goals"],
   };
 }
 
@@ -1195,14 +1198,9 @@ export async function ensureTodayPlan(
 ): Promise<{ plan: DailyPlanContent; planId: string; created: boolean }> {
   const today = new Date().toISOString().split("T")[0];
 
-  const { count: initiativeCount } = await supabase
-    .from("goals")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("goal_kind", "execution")
-    .eq("status", "active");
+  const goalCount = await countActiveExecutionGoals(supabase, userId);
 
-  if ((initiativeCount ?? 0) === 0) {
+  if (goalCount === 0) {
     await invalidateTodayPlan(supabase, userId);
     const empty = buildEmptyPlan();
     const { data: inserted, error } = await supabase

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
 
 export const TASKS_PER_GOAL = 3;
 
@@ -45,13 +46,8 @@ export async function computePerformanceScore(
   const since30 = dateStr(daysAgo(30));
   const since7 = dateStr(daysAgo(7));
 
-  const [goalsRes, tasksRes] = await Promise.all([
-    supabase
-      .from("goals")
-      .select("id, title, status")
-      .eq("user_id", userId)
-      .eq("goal_kind", "execution")
-      .eq("status", "active"),
+  const [goals, tasksRes] = await Promise.all([
+    fetchActiveExecutionGoals(supabase, userId, 50),
     supabase
       .from("tasks")
       .select("id, goal_id, status, due_date, completed_at, auto_generated")
@@ -61,7 +57,6 @@ export async function computePerformanceScore(
       .lte("due_date", today),
   ]);
 
-  const goals = goalsRes.data || [];
   const tasks = tasksRes.data || [];
   const activeGoalIds = new Set(goals.map((g) => g.id));
 

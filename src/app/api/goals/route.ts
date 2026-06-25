@@ -8,6 +8,7 @@ import { assertCanActivateGoal } from "@/lib/ai/memory-confidence";
 import { MAX_ACTIVE_GOALS } from "@/lib/product/constants";
 import { assessGoalQuality } from "@/lib/goals/goal-quality-gate";
 import { generateMilestonesForGoal } from "@/lib/plans/milestone-generator";
+import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
 
 async function invalidatePlanForUser(userId: string) {
   const supabase = await createServerSupabaseClient();
@@ -55,11 +56,20 @@ export async function GET(req: NextRequest) {
   if (category) query = query.eq("category", category);
 
   const { data, error } = await query.limit(50);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error && goalKind !== "execution") {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
-  const goals = data || [];
+  let goals = data || [];
+  if (goalKind === "execution" && (error || goals.length === 0)) {
+    const fallback = await fetchActiveExecutionGoals(supabase, user.id, 50);
+    goals = fallback as typeof goals;
+  } else if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
   const executionGoals = goals.filter(
-    (g) => (g as { goal_kind?: string }).goal_kind === "execution"
+    (g) => (g as { goal_kind?: string }).goal_kind === "execution" || (g as { target_date?: string }).target_date
   );
 
   return NextResponse.json({
