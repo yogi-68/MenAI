@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AreaChartCard, RadialProgressChart } from "@/components/charts";
+import { AreaChartCard, BarChartCard, RadialProgressChart } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
 
 export function WeeklyReviewPanel() {
@@ -28,8 +28,31 @@ export function WeeklyReviewPanel() {
 
   const loading = weeklyReviewLoading || weeklyPerfLoading;
 
+  const trend = weeklyPerf?.trend ?? [];
+  const thisWeek = trend.slice(-7);
+  const lastWeek = trend.slice(-14, -7);
+  const thisAvg =
+    thisWeek.length > 0
+      ? Math.round(thisWeek.reduce((a: number, p: { value: number }) => a + p.value, 0) / thisWeek.length)
+      : weeklyPerf?.summary?.weekly ?? 0;
+  const lastAvg =
+    lastWeek.length > 0
+      ? Math.round(lastWeek.reduce((a: number, p: { value: number }) => a + p.value, 0) / lastWeek.length)
+      : 0;
+  const delta = thisAvg - lastAvg;
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <BarChartCard
+        title="Week over week"
+        subtitle={delta >= 0 ? `+${delta} vs last week` : `${delta} vs last week`}
+        data={[
+          { label: "Last week", value: lastAvg || thisAvg, fill: "var(--text-muted)" },
+          { label: "This week", value: thisAvg, fill: "var(--accent-primary)" },
+        ]}
+        loading={loading}
+        hideHeader={false}
+      />
       <RadialProgressChart
         title="Weekly score"
         subtitle="Review"
@@ -37,15 +60,17 @@ export function WeeklyReviewPanel() {
         loading={loading}
         label="Weekly"
       />
-      {weeklyReview?.review?.headline && (
+      {(weeklyReview?.review?.whatHappened || weeklyReview?.review?.focusNextWeek) && (
         <ClayCard className="p-4 lg:col-span-2" hover={false}>
           <p className="label mb-2">Coach summary</p>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}>
-            {weeklyReview.review.headline}
-          </p>
-          {weeklyReview.review.summary && (
+          {weeklyReview.review.whatHappened && (
+            <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}>
+              {weeklyReview.review.whatHappened}
+            </p>
+          )}
+          {weeklyReview.review.focusNextWeek && (
             <p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-              {weeklyReview.review.summary}
+              Focus next week: {weeklyReview.review.focusNextWeek}
             </p>
           )}
         </ClayCard>

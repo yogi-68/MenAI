@@ -3,7 +3,7 @@
  * Extracts memory from onboarding questionnaire responses
  */
 
-import { createClient } from "@/lib/supabase/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenAI } from "@/lib/ai/openai";
 import { FAST_MODEL } from "@/lib/ai/models";
 
@@ -39,7 +39,8 @@ export async function extractOnboardingMemory(
   userId: string,
   questionId: string,
   response: string | null,
-  responseData: any
+  responseData: any,
+  supabase: SupabaseClient
 ): Promise<void> {
   const extractor = QUESTION_EXTRACTORS[questionId];
   if (!extractor) {
@@ -49,10 +50,8 @@ export async function extractOnboardingMemory(
 
   try {
     const extracted = await extractor(response || "", responseData);
-    await persistExtractedMemory(userId, questionId, extracted);
+    await persistExtractedMemory(supabase, userId, questionId, extracted);
     
-    // Mark response as processed
-    const supabase = createClient();
     await supabase
       .from("onboarding_responses")
       .update({ processed: true })
@@ -155,6 +154,11 @@ async function extractObstaclePattern(
       trigger: "Irregular follow-through",
       behavioralImpact: "Momentum resets frequently",
     },
+    lack_of_time: {
+      pattern: "scattered_focus",
+      trigger: "Calendar overload",
+      behavioralImpact: "Important initiative work gets squeezed out",
+    },
     avoidance: {
       pattern: "avoidance",
       trigger: "Fear of failure or judgment",
@@ -167,6 +171,14 @@ async function extractObstaclePattern(
 
   return {
     obstacles: [key],
+    identitySignals: [
+      {
+        type: "self-discipline",
+        description: `Primary obstacle: ${key.replace(/_/g, " ")}`,
+        longTermDirection: mapped.behavioralImpact,
+        confidence: 0.85,
+      },
+    ],
     executionPatterns: [
       {
         ...mapped,
@@ -267,6 +279,14 @@ async function extractSuccessCriteria(
         description: response.trim(),
         category: "personal",
         timeframe: "30_days",
+        confidence: 0.9,
+      },
+    ],
+    identitySignals: [
+      {
+        type: "other",
+        description: `Success looks like: ${response.trim()}`,
+        longTermDirection: response.trim(),
         confidence: 0.9,
       },
     ],
@@ -712,11 +732,11 @@ This is a 30-day commitment. Be specific.`
  * Persist extracted memory to database
  */
 async function persistExtractedMemory(
+  supabase: SupabaseClient,
   userId: string,
   questionId: string,
   extracted: ExtractionResult
 ): Promise<void> {
-  const supabase = createClient();
 
   // Insert goals
   if (extracted.goals && extracted.goals.length > 0) {

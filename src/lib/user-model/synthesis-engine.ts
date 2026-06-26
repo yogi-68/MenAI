@@ -32,18 +32,36 @@ import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
 import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { loadIdentityProfile } from "@/lib/plans/identity-profile-store";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 
 function buildSynthesisKnowledgeBullets(
   bundle: EvidenceBundle,
   understands: string[]
 ): string[] {
   const ACHIEVEMENT = /\b(secured|landed|closed|completed|achieved|client|milestone)\b/i;
+  const PATTERN_LABELS: Record<string, string> = {
+    overthinking: "Tends to overthink before starting",
+    procrastination: "Delays when tasks feel large",
+    burnout: "Energy drops under sustained load",
+    scattered_focus: "Spreads focus across priorities",
+    inconsistency: "Momentum resets frequently",
+    avoidance: "Skips high-stakes tasks",
+    perfectionism: "Waits for perfect before shipping",
+  };
   const sources = [
     ...bundle.identitySignals.map((s) => s.description).filter(Boolean),
     ...bundle.mentorMemories.filter((m) => ACHIEVEMENT.test(m.text)).map((m) => m.text),
     ...understands,
   ];
-  return formatKnowledgeBulletsForRail(sources);
+  const bullets = formatKnowledgeBulletsForRail(sources);
+  const topPattern = bundle.patterns?.[0]?.pattern;
+  if (topPattern && bullets.length < 4) {
+    const label = PATTERN_LABELS[topPattern] || `Pattern: ${topPattern.replace(/_/g, " ")}`;
+    if (!bullets.some((b) => b.toLowerCase().includes(topPattern.replace(/_/g, " ")))) {
+      bullets.push(label.slice(0, 48));
+    }
+  }
+  return bullets.slice(0, 4);
 }
 
 function computeConfidence(input: {
@@ -319,6 +337,8 @@ export async function synthesizeUserModel(
       user_model_updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
+
+  invalidateUserCache(userId, "user model synthesis");
 
   return model;
 }

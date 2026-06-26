@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { upsertGoalProgressSnapshotForGoal } from "@/lib/plans/goal-progress-snapshots";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import { finishableTaskError } from "@/lib/tasks/finishable-today";
 import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
@@ -266,6 +267,12 @@ export async function PATCH(req: NextRequest) {
   invalidateUserCache(user.id, "task updated");
   if (updates.status === "completed") {
     scheduleUserModelRefresh(supabase, user.id);
+    const goalId = data?.goal_id as string | null;
+    if (goalId) {
+      upsertGoalProgressSnapshotForGoal(supabase, user.id, goalId).catch((err) =>
+        console.warn("[tasks] snapshot upsert failed:", err)
+      );
+    }
   }
 
   return NextResponse.json({ task: data });

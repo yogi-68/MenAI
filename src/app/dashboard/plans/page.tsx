@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, Clock, Target, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { PlanContextInterview } from "@/components/plans/plan-context-interview";
+import { DailyCompletionRing } from "@/components/charts/daily-completion-ring";
 import { ClayCard } from "@/components/ui";
 import { isLowPlanConfidence } from "@/lib/plans/language-guard";
 import { goalAccent } from "@/lib/goals/goal-colors";
@@ -288,10 +289,8 @@ export default function DailyPlansPage() {
             </p>
           )}
           {totalTasks > 0 && (
-            <div style={{ marginTop: "14px" }}>
-              <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                {completedTasks}/{totalTasks} done today ({completionRate}%)
-              </span>
+            <div style={{ marginTop: "16px" }}>
+              <DailyCompletionRing completed={completedTasks} total={totalTasks} />
             </div>
           )}
         </section>

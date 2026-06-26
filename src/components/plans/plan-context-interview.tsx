@@ -1,5 +1,9 @@
 "use client";
 
+/**
+ * Mid-day plan context interview — shown on Today's Plan when planning context is thin.
+ * Fetches /api/plans/context and submits answers to /api/plans/interview.
+ */
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, SkipForward } from "lucide-react";

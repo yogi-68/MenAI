@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { MessageSquare, Plus, Target } from "lucide-react";
 import { BarChartCard } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
+import { ScoreSparkline } from "@/components/charts/score-sparkline";
 import { MonthlyReviewPanel, WeeklyReviewPanel } from "@/components/dashboard/goal-review-tabs";
 import { goalAccent } from "@/lib/goals/goal-colors";
 import { dailyScoreBarColor } from "@/components/charts/chart-theme";
@@ -224,10 +225,17 @@ export default function DashboardOverview() {
                       />
                     </div>
 
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center gap-2">
                       <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: goalAccent(index) }}>
                         {goal.progress}% complete
                       </span>
+                      {goal.sparkline?.length > 0 && (
+                        <div className="w-20 shrink-0">
+                          <ScoreSparkline
+                            points={goal.sparkline.map((v) => ({ value: v }))}
+                          />
+                        </div>
+                      )}
                       <span
                         style={{
                           fontSize: "0.75rem",

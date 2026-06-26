@@ -103,7 +103,8 @@ Onboarding is a **one-question-at-a-time** questionnaire. It runs at `/onboardin
 | [`src/app/api/onboarding/answer/route.ts`](src/app/api/onboarding/answer/route.ts) | Saves each answer to `onboarding_responses` |
 | [`src/app/api/onboarding/progress/route.ts`](src/app/api/onboarding/progress/route.ts) | Returns current step / completion |
 | [`src/app/api/onboarding/validate-initiative/route.ts`](src/app/api/onboarding/validate-initiative/route.ts) | Blocks vague goals before continue |
-| [`src/lib/onboarding/finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) | Turns answers into DB records + first plan |
+| [`src/app/api/onboarding/finalize/route.ts`](src/app/api/onboarding/finalize/route.ts) | SSE finalize with step progress |
+| [`src/components/onboarding/finalize-progress.tsx`](src/components/onboarding/finalize-progress.tsx) | 4-step setup tracker UI |
 | [`src/lib/ai/onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) | Optional LLM extraction for selected answers |
 
 ### Question flow (4 steps)
@@ -113,7 +114,7 @@ Defined in [`questions.ts`](src/lib/onboarding/questions.ts) → `buildQuestionF
 | Step | ID | Question | Type | What it creates |
 |------|-----|----------|------|-----------------|
 | 1 | **Q2** | What are you actively trying to achieve in the next 30–90 days? | Text | Raw goal title (validated for concreteness) |
-| 2 | **Q3** | When do you want to achieve this? | Forced choice (30 / 60 / 90 days or custom date) | `target_date` on the goal |
+| 2 | **Q3** | When do you want to achieve this? | Forced choice (30 / 60 / 90 days, custom date, or **flexible — no fixed date**) | `target_date` on the goal (null = week-relative milestones) |
 | 3 | **Q4** | What is the biggest thing slowing you down? | Forced choice (+ optional “other”) | `execution_patterns` row (procrastination, overthinking, etc.) |
 | 4 | **Q7** | What would make the next 30 days successful? | Text | `success_criteria` on the goal |
 
@@ -121,18 +122,18 @@ Name comes from the auth profile — there is no separate name question in the m
 
 ### What happens on final answer (Q7)
 
-When the user completes Q7, [`finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) runs:
+When the user completes Q7, `POST /api/onboarding/finalize` streams progress while [`finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) runs:
 
-1. **Load** all `onboarding_responses` for the user.
-2. **Validate** Q2 via [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) — vague goals may be saved as “needs sharpening” without a deadline plan.
-3. **Insert execution pattern** from Q4 obstacle map (`OBSTACLE_PATTERN_MAP`).
-4. **Create execution goal** in `goals` (`goal_kind = 'execution'`, `source = 'onboarding'`) if none exists.
-5. **Generate milestones** via [`milestone-generator.ts`](src/lib/plans/milestone-generator.ts).
-6. **Set focus** — `profiles.current_focus_goal_id` + `current_focus_until`.
-7. **Generate today's plan** — `ensureTodayPlan()` in [`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts).
-8. **Refresh user model** — `scheduleUserModelRefresh()` for coach memory.
-9. **Mark complete** — `onboarding_progress.completed_at` + `profiles.onboarding_completed = true`.
-10. **Redirect** → `/dashboard`.
+1. **Load** responses + block weak/unsharpened goals.
+2. **Insert** `execution_patterns` + **`identity_signals`** (goal domain, obstacle, success definition).
+3. **Create execution goal** with success criteria and optional deadline.
+4. **Generate milestones** (LLM + obstacle context; week-relative if no deadline).
+5. **Generate today's plan** — `ensureTodayPlan()` + cache invalidation.
+6. **Build user model synchronously** — `await synthesizeUserModel()` (first run only; coach rail populated on landing).
+7. **Mark complete** — `profiles.onboarding_completed` + `onboarding_progress.completed_at` last.
+8. **Redirect** → `/dashboard/plans`.
+
+Q2 shows **"Checking your goal…"** during LLM sharpen validation. Q4 shows a 3-step obstacle preview. Q3 **flexible** shows a week-by-week planning note.
 
 ### Onboarding gate in the app
 
@@ -316,7 +317,7 @@ MentalAI/
 | `chat/` | `chat-message.tsx`, `coach-rail.tsx`, `coach-knowledge-panel.tsx`, `markdown-content.tsx` | Coach UI |
 | `dashboard/` | `performance-score-badge.tsx`, `sidebar-streak.tsx`, `goal-review-tabs.tsx` | Sidebar score + overview tabs |
 | `onboarding/` | `setup-checklist.tsx` | Post-onboarding nudge when no goals |
-| `plans/` | `plan-context-interview.tsx` | In-app plan context questions |
+| `plans/` | `plan-context-interview.tsx` | Mid-day plan context interview on Today's Plan when context is thin |
 | `ui/` | `clay-card.tsx`, `clay-sidebar-link.tsx` | Shared primitives |
 
 ### `src/lib/` — Business logic
@@ -371,6 +372,7 @@ MentalAI/
 5. **Time-aware coach** — rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
 6. **Personalized tasks** — planner reads `UserContext` (identity, last achievement, mentor memories) — not generic templates  
 7. **Human why-lines** — three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
+8. **Charts** — sidebar score sparkline, daily completion ring on Today's Plan, goal heatmap + weekly WoW bar, coach execution radar  
 
 ---
 

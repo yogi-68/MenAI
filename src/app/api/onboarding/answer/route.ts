@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       });
 
     // Extract memory asynchronously (non-blocking)
-    extractOnboardingMemory(user.id, questionId, response, responseData)
+    extractOnboardingMemory(user.id, questionId, response, responseData, supabase)
       .catch((err) => {
         console.error("Background extraction error:", err);
       });

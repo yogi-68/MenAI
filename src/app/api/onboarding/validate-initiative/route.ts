@@ -27,13 +27,15 @@ export async function POST(request: NextRequest) {
     buildingWhat: buildingWhat || null,
   });
 
+  let llmSharpen: Awaited<ReturnType<typeof assessGoalWithLLM>> = null;
   if (assessment.needsSharpening) {
-    const llmSharpen = await assessGoalWithLLM(title);
+    llmSharpen = await assessGoalWithLLM(title);
     if (llmSharpen) {
       assessment = {
         ...assessment,
         sharpenPrompt: llmSharpen.sharpenPrompt,
         sharpenOptions: llmSharpen.sharpenOptions,
+        message: llmSharpen.message || assessment.message,
       };
     }
   }
@@ -45,6 +47,10 @@ export async function POST(request: NextRequest) {
     needsSharpening: assessment.needsSharpening,
     sharpenPrompt: assessment.sharpenPrompt,
     sharpenOptions: assessment.sharpenOptions,
+    exampleTitle:
+      assessment.needsSharpening && llmSharpen?.exampleTitle
+        ? llmSharpen.exampleTitle
+        : assessment.sharpenOptions?.[0]?.resultTitle,
     title: assessment.title,
     message: assessment.message,
     suggestions: assessment.suggestions,

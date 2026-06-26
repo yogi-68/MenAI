@@ -7,3 +7,7 @@ export { PieChartCard, type PieChartPoint } from "./pie-chart-card";
 export { DonutChartCard, type DonutChartPoint } from "./donut-chart-card";
 export { RadarChartCard, type RadarChartPoint } from "./radar-chart-card";
 export { RadialProgressChart } from "./radial-progress-chart";
+export { ScoreSparkline } from "./score-sparkline";
+export { DailyCompletionRing } from "./daily-completion-ring";
+export { CompletionHeatmap } from "./completion-heatmap";
+export { ExecutionProfileRadar } from "./execution-profile-radar";

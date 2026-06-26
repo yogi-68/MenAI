@@ -6,8 +6,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
-import { trackProductEvent } from "@/lib/analytics/track-event";
-import { finalizeOnboarding } from "@/lib/onboarding/finalize-onboarding";
 
 export const runtime = "nodejs";
 
@@ -75,16 +73,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (completed) {
-      updateData.completed_at = new Date().toISOString();
-
-      await finalizeOnboarding(supabase, user.id);
-
-      trackProductEvent(user.id, "onboarding_completed").catch(() => {});
+      return NextResponse.json(
+        { error: "Use POST /api/onboarding/finalize to complete onboarding" },
+        { status: 400 }
+      );
     }
 
-    await supabase
-      .from("onboarding_progress")
-      .upsert(updateData);
+    await supabase.from("onboarding_progress").upsert(updateData);
 
     return NextResponse.json({ success: true });
   } catch (error) {

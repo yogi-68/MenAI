@@ -8,6 +8,7 @@ import {
   LineChartCard,
   AreaChartCard,
   BarChartCard,
+  CompletionHeatmap,
   RadialProgressChart,
 } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
@@ -186,6 +187,17 @@ export default function GoalDetailPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2 mb-8">
+        <ClayCard className="p-5 md:p-6" hover={false}>
+          <h3 className="text-base font-medium mb-4" style={{ color: "var(--text-primary)" }}>
+            Completion heatmap
+          </h3>
+          <CompletionHeatmap
+            cells={(data?.dailyTrend ?? []).map((d) => ({
+              date: d.date,
+              count: d.completed,
+            }))}
+          />
+        </ClayCard>
         <LineChartCard
           title="Weekly trend"
           subtitle="Goal analytics"

@@ -42,6 +42,7 @@ import {
   loadExecutionContext,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { formatExecutionAllocationForPrompt } from "@/lib/user-model/execution-allocation";
 import type { PlanContextData } from "@/lib/plans/plan-interview";
 import {
@@ -1178,10 +1179,6 @@ export async function generateDailyPlanWithAI(
         linkedMilestone: t.linkedMilestone?.trim(),
       };
       return sanitizePlanTaskFields(base, { momentumHook: ctx.lastAchievement });
-    })
-    .map((t) => {
-      const why = buildTaskWhyLine(t, { momentumHook: ctx.lastAchievement });
-      return { ...t, whyItMatters: why };
     });
 
   if (ctx.planMode === "context_building" && ctx.initiatives.length === 0) {
@@ -1396,6 +1393,9 @@ export async function ensureTodayPlan(
     await supabase.from("tasks").insert(newTasks);
   }
 
+  invalidateUserCache(userId, "daily plan generated");
+  scheduleUserModelRefresh(supabase, userId);
+
   return { plan: planContent, planId: inserted.id, created: true };
 }
 
@@ -1510,6 +1510,10 @@ function normalizePlanContent(raw: unknown): DailyPlanContent {
       deliverable: legacy.deliverable || "",
       successMetric: legacy.successMetric || "",
       isContextBuilding: legacy.isContextBuilding ?? false,
+      linkedInitiative: legacy.linkedInitiative,
+      linkedMilestone: legacy.linkedMilestone,
+      lifeArea: legacy.lifeArea,
+      status: (legacy as DailyPlanTask & { status?: string }).status,
     };
   });
 

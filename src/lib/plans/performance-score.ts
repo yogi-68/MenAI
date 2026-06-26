@@ -196,15 +196,10 @@ export async function computeGoalAnalytics(
     const snapshot = snapshotByDate.get(d);
     if (snapshot) {
       const completed = snapshot.tasks_completed_count ?? 0;
-      const score = Math.round(Number(snapshot.progress_pct) || scoreFromCompletion(completed));
+      const score = scoreFromCompletion(completed);
       dailyTrend.push({ date: d, score, completed });
-      if (completed === 0 && score === 0) {
-        const dayTasks = tasks.filter((t) => t.due_date === d);
-        if (dayTasks.length > 0) missedDays.push(d);
-      } else if (completed === 0) {
-        const dayTasks = tasks.filter((t) => t.due_date === d);
-        if (dayTasks.length > 0) missedDays.push(d);
-      }
+      const dayTasks = tasks.filter((t) => t.due_date === d);
+      if (dayTasks.length > 0 && completed === 0) missedDays.push(d);
     } else {
       const dayTasks = tasks.filter((t) => t.due_date === d);
       const completed = dayTasks.filter((t) => t.status === "completed").length;

@@ -34,6 +34,7 @@ export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
       { value: "60", label: "60 days" },
       { value: "90", label: "90 days" },
       { value: "custom", label: "Custom date" },
+      { value: "flexible", label: "Flexible — no fixed date" },
     ],
   },
   Q4: {

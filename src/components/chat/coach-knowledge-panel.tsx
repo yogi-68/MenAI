@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { ClayCard } from "@/components/ui";
+import { ExecutionProfileRadar } from "@/components/charts/execution-profile-radar";
 import type { UserModel } from "@/lib/user-model/types";
 import { isUserModelStale } from "@/lib/user-model/staleness";
 import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
@@ -110,6 +111,21 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
                 <li key={item}>· {item}</li>
               ))}
             </ul>
+          )}
+
+          {!isRail && model && (
+            <div className="mb-4">
+              <p className="label mb-2">Your execution profile</p>
+              <ExecutionProfileRadar
+                scores={{
+                  focus: model.currentFocus?.title ? 82 : 55,
+                  consistency: model.obstacles.some((o) => /inconsist/i.test(o)) ? 45 : 72,
+                  clarity: model.confidence === "high" ? 85 : model.confidence === "moderate" ? 68 : 50,
+                  momentum: model.recentActivity ? 70 : 40,
+                  openness: model.stillNeeds.length <= 2 ? 78 : 58,
+                }}
+              />
+            </div>
           )}
 
           {stillNeeds.length > 0 && (

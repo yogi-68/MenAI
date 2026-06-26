@@ -97,7 +97,8 @@ export async function generateMilestonesForGoal(
   description?: string | null,
   lifeArea = "personal",
   force = false,
-  stage?: GoalStage | null
+  stage?: GoalStage | null,
+  obstacleContext?: { key?: string; label?: string; notes?: string | null }
 ): Promise<void> {
   const { count } = await supabase
     .from("goal_milestones")
@@ -144,8 +145,10 @@ JSON only: {"milestones": ["...", "..."]}`,
           role: "user",
           content: `Goal: ${title}
 ${description ? `Context: ${description}` : ""}
+${obstacleContext?.label ? `Primary obstacle: ${obstacleContext.label}` : ""}
+${obstacleContext?.notes ? `Obstacle detail: ${obstacleContext.notes}` : ""}
 ${resolvedStage ? `Stage: ${resolvedStage}` : ""}
-Return concrete milestones from first physical action to outcome. No workshops unless user mentioned workshops.`,
+Return concrete milestones from first physical action to outcome. Reference the goal title in each milestone. No workshops unless user mentioned workshops.`,
         },
       ],
     });

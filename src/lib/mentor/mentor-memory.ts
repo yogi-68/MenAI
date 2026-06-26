@@ -173,6 +173,10 @@ export async function persistMentorMemories(
       await touchLifeAreaMention(supabase, userId, area as LifeAreaKey);
     }
   }
+
+  if (memories.length > 0) {
+    invalidateUserCache(userId, "mentor memory write");
+  }
 }
 
 /** Process chat message for beliefs, patterns, and life-area updates. */

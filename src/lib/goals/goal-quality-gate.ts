@@ -140,7 +140,12 @@ export function assessGoalQuality(
 /** Optional LLM sharpen when heuristic gate flags a vague goal (onboarding). */
 export async function assessGoalWithLLM(
   raw: string
-): Promise<{ sharpenPrompt: string; sharpenOptions: SharpenOption[] } | null> {
+): Promise<{
+  sharpenPrompt: string;
+  sharpenOptions: SharpenOption[];
+  exampleTitle?: string;
+  message?: string;
+} | null> {
   try {
     const openai = getOpenAI();
     const response = await openai.chat.completions.create({
@@ -151,7 +156,7 @@ export async function assessGoalWithLLM(
         {
           role: "system",
           content:
-            'Return JSON: { "sharpenPrompt": string, "options": [{ "value": string, "label": string, "resultTitle": string }] }. resultTitle must be a concrete 90-day outcome. Reject vague goals like "build a business" unless sharpened.',
+            'Return JSON: { "sharpenPrompt": string, "exampleTitle": string, "message": string, "options": [{ "value": string, "label": string, "resultTitle": string }] }. exampleTitle is one concrete rewrite the user should try. resultTitle must be a concrete 90-day outcome.',
         },
         {
           role: "user",
@@ -165,6 +170,8 @@ export async function assessGoalWithLLM(
 
     const parsed = JSON.parse(content) as {
       sharpenPrompt?: string;
+      exampleTitle?: string;
+      message?: string;
       options?: Array<{ value?: string; label?: string; resultTitle?: string }>;
     };
 
@@ -182,6 +189,12 @@ export async function assessGoalWithLLM(
     return {
       sharpenPrompt: parsed.sharpenPrompt?.trim() || "What specific outcome are you trying to reach?",
       sharpenOptions,
+      exampleTitle: parsed.exampleTitle?.trim() || sharpenOptions[0]?.resultTitle,
+      message:
+        parsed.message?.trim() ||
+        (parsed.exampleTitle
+          ? `Try: "${parsed.exampleTitle.trim()}" instead of a vague goal.`
+          : undefined),
     };
   } catch {
     return null;

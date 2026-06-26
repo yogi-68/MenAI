@@ -18,6 +18,19 @@ import {
   type OnboardingResponseMap,
 } from "@/lib/onboarding/questions";
 
+import { FinalizeProgress } from "@/components/onboarding/finalize-progress";
+
+const OBSTACLE_PREVIEW: Record<string, { approach: string; taskType: string }> = {
+  overthinking: { approach: "Daily decisions only", taskType: "3 concrete tasks/day" },
+  procrastination: { approach: "Smallest next step first", taskType: "3 concrete tasks/day" },
+  burnout: { approach: "Energy-aware pacing", taskType: "3 lighter tasks/day" },
+  scattered_focus: { approach: "One priority at a time", taskType: "3 focused tasks/day" },
+  scattered_focus_priorities: { approach: "One priority at a time", taskType: "3 focused tasks/day" },
+  lack_of_time: { approach: "Protect one deep block", taskType: "3 high-leverage tasks/day" },
+  avoidance: { approach: "Ship before perfect", taskType: "3 concrete tasks/day" },
+  inconsistency: { approach: "Daily rhythm over intensity", taskType: "3 repeatable tasks/day" },
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
   const [currentQuestionId, setCurrentQuestionId] = useState<string>("Q2");
@@ -41,6 +54,8 @@ export default function OnboardingPage() {
     sharpenOptions: Array<{ value: string; label: string; resultTitle: string }>;
   } | null>(null);
 
+  const [validatingGoal, setValidatingGoal] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [customDate, setCustomDate] = useState("");
 
   const flowResponses: OnboardingResponseMap = { ...responses };
@@ -49,6 +64,7 @@ export default function OnboardingPage() {
   const questionNumber = getQuestionNumber(currentQuestionId, flowResponses);
   const totalQuestions = getTotalQuestions(flowResponses);
   const progress = (questionNumber / totalQuestions) * 100;
+  const q3Flexible = currentQuestionId === "Q3" && selectedOptions.includes("flexible");
   const q3Custom = currentQuestionId === "Q3" && selectedOptions.includes("custom");
 
   // Prevent hydration errors with a mounted check
@@ -177,37 +193,44 @@ export default function OnboardingPage() {
     }
 
     if (question.id === "Q2") {
-      const validateRes = await fetch("/api/onboarding/validate-initiative", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: response,
-          directions: [],
-          buildingWhat: null,
-        }),
-      });
-      const validateData = await validateRes.json();
-      if (!validateData.valid) {
-        setInitiativeBlocked({
-          message: validateData.message,
-          suggestions: validateData.suggestions || [],
+      setValidatingGoal(true);
+      try {
+        const validateRes = await fetch("/api/onboarding/validate-initiative", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: response,
+            directions: [],
+            buildingWhat: null,
+          }),
         });
-        setInitiativeWeak(null);
-        setError(validateData.message);
-        return;
-      }
-      if (validateData.needsSharpening) {
-        setInitiativeWeak({
-          message: validateData.message || "Valid direction — let's make it concrete.",
-          sharpenPrompt: validateData.sharpenPrompt || "How are you planning to do this?",
-          sharpenOptions: validateData.sharpenOptions || [],
-        });
+        const validateData = await validateRes.json();
+        if (!validateData.valid) {
+          setInitiativeBlocked({
+            message: validateData.message,
+            suggestions: validateData.suggestions || [],
+          });
+          setInitiativeWeak(null);
+          setError(validateData.message);
+          return;
+        }
+        if (validateData.needsSharpening) {
+          setInitiativeWeak({
+            message: validateData.exampleTitle
+              ? `Try: "${validateData.exampleTitle}"`
+              : validateData.message || "Valid direction — let's make it concrete.",
+            sharpenPrompt: validateData.sharpenPrompt || "How are you planning to do this?",
+            sharpenOptions: validateData.sharpenOptions || [],
+          });
+          setInitiativeBlocked(null);
+          setError(null);
+          return;
+        }
         setInitiativeBlocked(null);
-        setError(null);
-        return;
+        setInitiativeWeak(null);
+      } finally {
+        setValidatingGoal(false);
       }
-      setInitiativeBlocked(null);
-      setInitiativeWeak(null);
     }
 
     // Save response
@@ -238,25 +261,9 @@ export default function OnboardingPage() {
       resetInputs();
       setCurrentQuestionId(nextQuestionId);
     } else {
-      // Onboarding complete — guard against double-fire
       if (completionRedirectedRef.current) return;
       completionRedirectedRef.current = true;
-
-      setSaving(true);
-      await fetch("/api/onboarding/progress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          completed: true,
-        }),
-      });
-
-      // Trigger snapshot rebuild
-      await fetch("/api/dashboard/snapshot", {
-        method: "POST",
-      });
-
-      router.replace("/dashboard/plans");
+      setFinalizing(true);
     }
   };
 
@@ -299,6 +306,14 @@ export default function OnboardingPage() {
             : showOther && currentQuestion.allowOther
               ? otherText.trim().length > 0 || selectedOptions.length > 0
               : selectedOptions.length > 0);
+
+  if (finalizing) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-primary)", color: "var(--text-primary)" }}>
+        <FinalizeProgress />
+      </div>
+    );
+  }
 
   if (!isMounted || !currentQuestion) {
     return (
@@ -530,6 +545,55 @@ export default function OnboardingPage() {
                         />
                       )}
 
+                      {q3Flexible && (
+                        <p
+                          style={{
+                            fontSize: "0.9rem",
+                            color: "var(--text-secondary)",
+                            lineHeight: 1.6,
+                            margin: 0,
+                            padding: "12px 16px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border-color)",
+                            background: "rgba(255,255,255,0.03)",
+                          }}
+                        >
+                          Without a deadline, MenAI plans week-by-week. You can add a specific date
+                          later in Settings.
+                        </p>
+                      )}
+
+                      {currentQuestionId === "Q4" && selectedOptions[0] && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto 1fr auto 1fr",
+                            gap: 8,
+                            alignItems: "center",
+                            marginTop: 8,
+                            padding: "12px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--border-color)",
+                            background: "rgba(255,255,255,0.03)",
+                            fontSize: "0.78rem",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          <span style={{ textAlign: "center", fontWeight: 600, color: "var(--text-primary)" }}>
+                            {ONBOARDING_QUESTIONS.Q4.options?.find((o) => o.value === selectedOptions[0])?.label ||
+                              "Your obstacle"}
+                          </span>
+                          <span>→</span>
+                          <span style={{ textAlign: "center" }}>
+                            {OBSTACLE_PREVIEW[selectedOptions[0]]?.approach || "Tailored daily structure"}
+                          </span>
+                          <span>→</span>
+                          <span style={{ textAlign: "center" }}>
+                            {OBSTACLE_PREVIEW[selectedOptions[0]]?.taskType || "3 concrete tasks/day"}
+                          </span>
+                        </div>
+                      )}
+
                       {currentQuestion.allowOther && (
                         <motion.button
                           whileHover={{ scale: 1.01 }}
@@ -678,16 +742,16 @@ export default function OnboardingPage() {
                     </span>
                   )}
                 <motion.button
-                  whileHover={{ scale: saving || !canContinue ? 1 : 1.02 }}
-                  whileTap={{ scale: saving || !canContinue ? 1 : 0.98 }}
+                  whileHover={{ scale: saving || validatingGoal || !canContinue ? 1 : 1.02 }}
+                  whileTap={{ scale: saving || validatingGoal || !canContinue ? 1 : 0.98 }}
                   onClick={() => handleNext()}
-                  disabled={saving || !canContinue}
+                  disabled={saving || validatingGoal || !canContinue}
                   className="btn-primary"
                   style={{
                     flex: 1,
                     padding: "16px 24px",
-                    opacity: saving || !canContinue ? 0.5 : 1,
-                    cursor: saving || !canContinue ? "not-allowed" : "pointer",
+                    opacity: saving || validatingGoal || !canContinue ? 0.5 : 1,
+                    cursor: saving || validatingGoal || !canContinue ? "not-allowed" : "pointer",
                     fontWeight: 600,
                     display: "flex",
                     alignItems: "center",
@@ -695,7 +759,13 @@ export default function OnboardingPage() {
                     gap: "8px",
                   }}
                 >
-                  {saving ? "Saving..." : questionNumber === totalQuestions ? "Complete Setup" : "Continue"}
+                  {saving
+                    ? "Saving..."
+                    : validatingGoal
+                      ? "Checking your goal…"
+                      : questionNumber === totalQuestions
+                        ? "Complete Setup"
+                        : "Continue"}
                 </motion.button>
               </div>
             </div>

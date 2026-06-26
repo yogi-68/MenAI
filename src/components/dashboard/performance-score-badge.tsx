@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { ScoreSparkline } from "@/components/charts/score-sparkline";
 
 interface PerformanceSummary {
   summary: {
@@ -10,6 +11,7 @@ interface PerformanceSummary {
     tasksCompletedToday?: number;
     tasksDueToday?: number;
   };
+  trend?: Array<{ label: string; value: number }>;
 }
 
 interface PerformanceScoreBadgeProps {
@@ -49,17 +51,22 @@ export function PerformanceScoreBadge({ compact = false }: PerformanceScoreBadge
         {isLoading ? "—" : daily}
       </div>
       {!compact && (
-        <div className="score-hero__subtitle">
-          {expected > 0 ? (
-            <>
-              {completed} of {expected}
-              <br />
-              tasks done
-            </>
-          ) : (
-            taskLine
+        <>
+          <div className="score-hero__subtitle">
+            {expected > 0 ? (
+              <>
+                {completed} of {expected}
+                <br />
+                tasks done
+              </>
+            ) : (
+              taskLine
+            )}
+          </div>
+          {!isLoading && data?.trend && data.trend.length > 0 && (
+            <ScoreSparkline points={data.trend.slice(-7).map((p) => ({ value: p.value }))} />
           )}
-        </div>
+        </>
       )}
     </Link>
   );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { regenerateMilestonesIfAbstract } from "@/lib/plans/milestone-generator";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -70,6 +71,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   await invalidateTodayPlan(supabase, user.id);
+  invalidateUserCache(user.id, "milestone updated");
   return NextResponse.json({ success: true });
 }
 
@@ -113,5 +115,6 @@ export async function POST(req: NextRequest) {
   }
 
   await invalidateTodayPlan(supabase, user.id);
+  invalidateUserCache(user.id, "milestone updated");
   return NextResponse.json({ regenerated: true });
 }
