@@ -36,6 +36,7 @@ interface GoalAnalyticsPayload {
   progress: number;
   estimatedCompletionDate: string | null;
   successProbability: number;
+  tasksCompletedTotal: number;
   dailyProgressNeeded: number | null;
   todayScore: number;
   todayCompleted: number;
@@ -155,13 +156,24 @@ export default function GoalDetailPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3 mb-8">
-        <RadialProgressChart
-          title="Success probability"
-          subtitle="Forecast"
-          value={data?.successProbability ?? 0}
-          loading={isLoading}
-          label="Likelihood"
-        />
+        {(data?.tasksCompletedTotal ?? 0) > 0 ? (
+          <RadialProgressChart
+            title="Success probability"
+            subtitle="Forecast"
+            value={data?.successProbability ?? 0}
+            loading={isLoading}
+            label="Likelihood"
+          />
+        ) : (
+          <ClayCard className="p-5 md:p-6 flex flex-col justify-center" hover={false}>
+            <h3 className="text-base font-medium mb-2" style={{ color: "var(--text-primary)" }}>
+              Success probability
+            </h3>
+            <p className="text-sm m-0" style={{ color: "var(--text-muted)", lineHeight: 1.6 }}>
+              Complete some tasks to see your forecast.
+            </p>
+          </ClayCard>
+        )}
         <div className="lg:col-span-2">
           <AreaChartCard
             title="Daily performance"

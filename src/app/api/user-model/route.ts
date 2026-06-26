@@ -13,11 +13,16 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const refresh = new URL(req.url).searchParams.get("refresh") === "1";
-  const model = refresh
-    ? await refreshUserModel(supabase, user.id)
-    : await getUserModel(supabase, user.id);
 
-  return NextResponse.json({ userModel: model });
+  const [model, profileRes] = await Promise.all([
+    refresh ? refreshUserModel(supabase, user.id) : getUserModel(supabase, user.id),
+    supabase.from("profiles").select("user_model_updated_at").eq("id", user.id).maybeSingle(),
+  ]);
+
+  const updatedAt =
+    profileRes.data?.user_model_updated_at ?? model.synthesizedAt ?? null;
+
+  return NextResponse.json({ userModel: model, updatedAt });
 }
 
 /** POST /api/user-model — force re-synthesis after data changes */
@@ -29,5 +34,14 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const model = await refreshUserModel(supabase, user.id);
-  return NextResponse.json({ userModel: model });
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("user_model_updated_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return NextResponse.json({
+    userModel: model,
+    updatedAt: profile?.user_model_updated_at ?? model.synthesizedAt ?? null,
+  });
 }

@@ -1,5 +1,5 @@
--- MenAI V2: Verify migrations 039 + 040 applied correctly
--- Run in Supabase SQL Editor after applying 039_unify_goals.sql and 040_memory_persistence.sql
+-- MenAI V2: Verify migrations 039 + 040 + 041 applied correctly
+-- Run in Supabase SQL Editor after applying migrations through 041_chat_and_safety_tables.sql
 
 -- Goals table has V2 columns
 SELECT column_name, data_type
@@ -45,3 +45,20 @@ SELECT column_name
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'profiles'
   AND column_name IN ('coaching_style', 'founder_mode', 'current_focus_goal_id');
+
+-- Chat tables (041)
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = 'messages'
+) AS messages_table_exists;
+
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = 'crisis_events'
+) AS crisis_events_table_exists;
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'messages'
+  AND column_name IN ('conversation_id', 'user_id', 'role', 'content', 'emotion_data')
+ORDER BY column_name;

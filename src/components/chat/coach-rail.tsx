@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
+import { isUserModelStale } from "@/lib/user-model/staleness";
+import type { UserModel } from "@/lib/user-model/types";
 
 interface CoachSnapshot {
   score: number;
@@ -23,6 +25,29 @@ export function CoachRail() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: userModelData } = useQuery({
+    queryKey: ["user-model-coach"],
+    queryFn: async () => {
+      const res = await fetch("/api/user-model");
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ userModel: UserModel; updatedAt: string | null }>;
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const memoryStale = isUserModelStale(
+    userModelData?.updatedAt,
+    userModelData?.userModel?.synthesizedAt
+  );
+
+  const statusLabel = isLoading
+    ? "Loading…"
+    : data?.statusLabel
+      ? `${data.statusLabel}${memoryStale ? " · updating" : ""}`
+      : memoryStale
+        ? "Score — · updating"
+        : "Score —";
+
   return (
     <aside className="coach-rail" aria-label="Coach panel">
       <div className="coach-rail__header">
@@ -39,7 +64,7 @@ export function CoachRail() {
           </Link>
         </div>
         <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-          {isLoading ? "Loading…" : data?.statusLabel ?? "Score — · updating"}
+          {statusLabel}
         </p>
       </div>
 

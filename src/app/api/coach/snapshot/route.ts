@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computePerformanceScore } from "@/lib/plans/performance-score";
-import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
-import { getUserModel } from "@/lib/user-model/loader";
-import { getCurrentPhase } from "@/lib/plans/rhythm-phase";
+import { getUserContext } from "@/lib/context/user-context";
 
 export const runtime = "nodejs";
 
@@ -20,10 +17,8 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [performance, taskStats, userModel, convRes] = await Promise.all([
-    computePerformanceScore(supabase, user.id),
-    fetchTodayTaskStats(supabase, user.id),
-    getUserModel(supabase, user.id),
+  const [userContext, convRes] = await Promise.all([
+    getUserContext(supabase, user.id),
     supabase
       .from("conversations")
       .select("id")
@@ -59,17 +54,19 @@ export async function GET() {
     }
   }
 
-  const understands = userModel.understands?.slice(0, 4) ?? [];
-  const phase = getCurrentPhase();
+  const phase = userContext.rhythmPhase;
+  const completed = userContext.todayPlan.filter((t) => t.status === "completed").length;
+  const expected = userContext.todayPlan.length;
 
   return NextResponse.json({
-    score: performance.daily,
+    score: userContext.scoreToday,
     phase,
-    statusLabel: `Score ${performance.daily} · ${phase}`,
-    tasksCompletedToday: taskStats.tasksCompletedToday,
-    tasksDueToday: taskStats.tasksDueToday,
+    statusLabel: `Score ${userContext.scoreToday} · ${phase}`,
+    tasksCompletedToday: completed,
+    tasksDueToday: expected,
     lastMessage,
     earlierMessage,
-    knows: understands.length > 0 ? understands : userModel.whoAmIAnswer?.split("\n").filter(Boolean).slice(0, 4) ?? [],
+    knows: userContext.knowledgeBullets,
+    lastAchievement: userContext.lastAchievement,
   });
 }

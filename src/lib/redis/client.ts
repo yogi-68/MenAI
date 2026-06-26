@@ -59,7 +59,10 @@ export const REDIS_KEYS = {
   
   // Memory summary - compact memory for fast retrieval
   MEMORY_SUMMARY: (userId: string) => `menai:memory:${userId}`,
-  
+
+  // Unified user context — planner, coach rail, snapshot
+  USER_CONTEXT: (userId: string) => `menai:user-context:${userId}`,
+
   // Conversation cache - last 30 messages
   CONVERSATION: (conversationId: string) => `menai:conv:${conversationId}`,
 };
@@ -73,6 +76,7 @@ export const CACHE_TTL = {
   LIFE_SNAPSHOT: 10 * 60,       // 10 minutes
   RECENT_INSIGHTS: 30 * 60,     // 30 minutes
   MEMORY_SUMMARY: 15 * 60,      // 15 minutes
+  USER_CONTEXT: 15 * 60,        // 15 minutes
   CONVERSATION: 60 * 60,        // 1 hour
 };
 
@@ -142,5 +146,6 @@ export async function invalidateUserCache(userId: string): Promise<void> {
     REDIS_KEYS.LIFE_SNAPSHOT(userId),
     REDIS_KEYS.RECENT_INSIGHTS(userId),
     REDIS_KEYS.MEMORY_SUMMARY(userId),
+    REDIS_KEYS.USER_CONTEXT(userId),
   ]);
 }

@@ -54,6 +54,8 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
 import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
+import { getUserContext, formatUserContextForPlanner } from "@/lib/context/user-context";
+import { sanitizePlanTaskFields } from "@/lib/plans/task-why-line";
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
 
@@ -145,6 +147,8 @@ export interface PlanUserContext {
   lifeAreaWeightPlan: string;
   mentorMemoryBlock: string;
   memoryPlanningConstraints: string[];
+  lastAchievement: string | null;
+  userContextBlock: string;
 }
 
 function buildDomainScopedContextNotes(
@@ -678,6 +682,8 @@ export async function fetchPlanUserContext(
         ? [`[FOCUS — 100%] ${primaryInit.title}: current focus only`]
         : [];
 
+  const userContext = await getUserContext(supabase, userId);
+
   return {
     initiatives: initiativeLines,
     initiativeHealth: initiativeHealthLines,
@@ -729,6 +735,8 @@ export async function fetchPlanUserContext(
     lifeAreaWeightPlan,
     mentorMemoryBlock,
     memoryPlanningConstraints,
+    lastAchievement: userContext.lastAchievement,
+    userContextBlock: formatUserContextForPlanner(userContext),
   };
 }
 
@@ -764,14 +772,20 @@ function buildPrompt(ctx: PlanUserContext): string {
       : `EXECUTION MODE — STRICT 3-TASK RULE:
 - Generate EXACTLY ${TASKS_PER_GOAL} tasks per active goal (${ctx.initiatives.length} goals → ${ctx.maxTasks} tasks total)
 - NO bonus tasks, NO optional stretches, NO 4th or 5th tasks
-- Each task needs whyItMatters tying it to the goal's CURRENT milestone and recent activity
-- Tasks must link via linkedInitiative (exact goal title) and linkedMilestone
+- Each task needs whyItMatters tying it to the goal's CURRENT milestone, recent win, or identity values — never generic busywork
+- Tasks must reference what the coach already knows about this person (values, recent wins, domain)
+- Tasks must link via linkedInitiative (exact goal title) and linkedMilestone when a milestone exists
+- If no milestone exists, omit linkedMilestone — do NOT write "No milestones yet"
 - Tell the user what fits today and what does NOT if they cannot finish something`;
 
   return `You are an elite execution coach and execution planner — not a goal tracker.
 
 USER MODEL (authoritative — one person, multiple pursuits):
 ${ctx.userModelNarrative}
+
+UNIFIED USER CONTEXT (identity, recent win, values — personalize every task title and whyItMatters):
+${ctx.userContextBlock}
+${ctx.lastAchievement ? `\nBuild on this momentum: ${ctx.lastAchievement}` : ""}
 
 EXECUTION ALLOCATION (distribute tasks and time proportionally — intelligently mixed day):
 ${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% to current focus initiative")}
@@ -1023,24 +1037,27 @@ export async function generateDailyPlanWithAI(
 
   let tasks: DailyPlanTask[] = (parsed.tasks || [])
     .filter((t) => t.title && (t.isContextBuilding || passesTaskQualityGate(t.title)))
-    .map((t) => ({
-      title: t.title.trim(),
-      whyItMatters:
-        t.whyItMatters?.trim() ||
-        "This is the highest-leverage move available today.",
-      estimatedMinutes: adjustMinutesForUser(
-        Math.min(180, Math.max(30, Number(t.estimatedMinutes) || 60)),
-        ctx.timeEstimationRatio,
-        timeMode
-      ),
-      deliverable: t.deliverable?.trim() || "Completed output ready to review",
-      successMetric:
-        t.successMetric?.trim() || "Done and verifiable with a clear yes/no",
-      isContextBuilding: ctx.planMode === "context_building" || !!t.isContextBuilding,
-      lifeArea: t.lifeArea,
-      linkedInitiative: t.linkedInitiative?.trim(),
-      linkedMilestone: t.linkedMilestone?.trim(),
-    }));
+    .map((t) => {
+      const base = {
+        title: t.title.trim(),
+        whyItMatters:
+          t.whyItMatters?.trim() ||
+          "This is the highest-leverage move available today.",
+        estimatedMinutes: adjustMinutesForUser(
+          Math.min(180, Math.max(30, Number(t.estimatedMinutes) || 60)),
+          ctx.timeEstimationRatio,
+          timeMode
+        ),
+        deliverable: t.deliverable?.trim() || "Completed output ready to review",
+        successMetric:
+          t.successMetric?.trim() || "Done and verifiable with a clear yes/no",
+        isContextBuilding: ctx.planMode === "context_building" || !!t.isContextBuilding,
+        lifeArea: t.lifeArea,
+        linkedInitiative: t.linkedInitiative?.trim(),
+        linkedMilestone: t.linkedMilestone?.trim(),
+      };
+      return sanitizePlanTaskFields(base, { momentumHook: ctx.lastAchievement });
+    });
 
   if (ctx.planMode === "context_building" && ctx.initiatives.length === 0) {
     tasks = tasks.filter((t) => t.isContextBuilding).slice(0, 2);

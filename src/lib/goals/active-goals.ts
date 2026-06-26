@@ -57,33 +57,6 @@ export async function fetchActiveExecutionGoals(
     }
   }
 
-  const legacyInitiatives = await supabase
-    .from("initiatives")
-    .select(
-      "id, title, description, success_criteria, target_date, progress, life_area, last_action_at, status, goal_id"
-    )
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("target_date", { ascending: true, nullsFirst: false })
-    .limit(limit);
-
-  if (!legacyInitiatives.error && (legacyInitiatives.data?.length ?? 0) > 0) {
-    return legacyInitiatives.data.map((i) => ({
-      id: i.id,
-      title: i.title,
-      description: i.description,
-      success_criteria: i.success_criteria ?? null,
-      target_date: i.target_date,
-      progress: i.progress,
-      life_area: i.life_area,
-      last_action_at: i.last_action_at,
-      status: i.status,
-      parent_goal_id: i.goal_id,
-      priority: "medium",
-      goal_kind: "execution",
-    }));
-  }
-
   const fallback = await supabase
     .from("goals")
     .select(GOAL_SELECT.replace(", goal_kind", ""))

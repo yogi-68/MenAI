@@ -28,7 +28,9 @@ export function RadialProgressChart({
   className,
 }: RadialProgressChartProps) {
   const pct = Math.min(100, Math.round((value / max) * 100));
-  const data = [{ name: label, value: pct, fill: seriesColor(0) }];
+  const arcValue = Math.max(pct, 5);
+  const data = [{ name: "progress", value: arcValue, fill: seriesColor(0) }];
+  const centerLabel = label === "Likelihood" ? `${pct}%` : label;
 
   return (
     <ChartShell title={title} subtitle={subtitle} loading={loading} action={action} className={className}>
@@ -37,14 +39,18 @@ export function RadialProgressChart({
           <RadialBarChart
             cx="50%"
             cy="50%"
-            innerRadius="68%"
-            outerRadius="100%"
-            barSize={12}
+            innerRadius="60%"
+            outerRadius="80%"
+            barSize={14}
             data={data}
             startAngle={90}
             endAngle={-270}
           >
-            <RadialBar background={{ fill: chartColors.grid }} dataKey="value" cornerRadius={8} />
+            <RadialBar
+              background={{ fill: "rgba(124, 111, 255, 0.08)" }}
+              dataKey="value"
+              cornerRadius={8}
+            />
           </RadialBarChart>
         </ResponsiveContainer>
         <div
@@ -58,8 +64,10 @@ export function RadialProgressChart({
             pointerEvents: "none",
           }}
         >
-          <span className="score-hero font-data" style={{ color: chartColors.primary }} data-numeric>{pct}%</span>
-          <span style={{ fontSize: "0.75rem", color: chartColors.muted }}>{label}</span>
+          <span className="font-data" style={{ color: chartColors.primary, fontSize: "1.75rem", fontWeight: 700 }} data-numeric>
+            {pct}%
+          </span>
+          <span style={{ fontSize: "0.75rem", color: chartColors.muted }}>{centerLabel}</span>
         </div>
       </div>
     </ChartShell>

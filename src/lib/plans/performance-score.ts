@@ -223,6 +223,8 @@ export async function computeGoalAnalytics(
     Math.round(avgRecent * 0.6 + progress * 0.3 + Math.min(streak, 7) * 2)
   );
 
+  const tasksCompletedTotal = tasks.filter((t) => t.status === "completed").length;
+
   return {
     goal,
     milestones: milestonesRes.data || [],
@@ -236,6 +238,7 @@ export async function computeGoalAnalytics(
     progress,
     estimatedCompletionDate,
     successProbability,
+    tasksCompletedTotal,
     dailyProgressNeeded,
     todayScore: dailyTrend.find((d) => d.date === today)?.score ?? 0,
     todayCompleted: dailyTrend.find((d) => d.date === today)?.completed ?? 0,

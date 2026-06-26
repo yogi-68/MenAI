@@ -196,7 +196,10 @@ export default function DashboardOverview() {
                 <Link key={goal.id} href={`/dashboard/goals/${goal.id}`} className="no-underline block">
                   <ClayCard className="p-5 h-full" hover>
                     <div className="flex justify-between items-start gap-2 mb-3">
-                      <h3 className="text-base font-medium leading-snug" style={{ color: "var(--text-primary)" }}>
+                      <h3
+                        className="leading-snug m-0"
+                        style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}
+                      >
                         {goal.title}
                       </h3>
                       <span
@@ -211,24 +214,33 @@ export default function DashboardOverview() {
                       </span>
                     </div>
 
-                    <div className="h-1.5 rounded-full mb-3 overflow-hidden" style={{ background: "var(--bg-glass)" }}>
+                    <div
+                      className="h-1.5 rounded-full mb-3 overflow-hidden"
+                      style={{ background: "rgba(124, 111, 255, 0.12)" }}
+                    >
                       <div
                         className="h-full rounded-full transition-all"
                         style={{ width: `${Math.min(100, goal.progress)}%`, background: goalAccent(index) }}
                       />
                     </div>
 
-                    <div className="flex justify-between text-xs" style={{ color: "var(--text-muted)" }}>
-                      <span>
-                        <strong style={{ color: "var(--text-primary)" }}>{goal.progress}%</strong> complete
+                    <div className="flex justify-between items-center">
+                      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: goalAccent(index) }}>
+                        {goal.progress}% complete
                       </span>
-                      <span>
+                      <span
+                        style={{
+                          fontSize: "0.75rem",
+                          color:
+                            goal.remainingDays != null && goal.remainingDays < 7
+                              ? "#f87171"
+                              : "var(--text-muted)",
+                        }}
+                      >
                         {goal.remainingDays != null ? (
-                          <>
-                            <strong style={{ color: "var(--text-primary)" }}>{goal.remainingDays}</strong> days left
-                          </>
+                          <>{goal.remainingDays} days left</>
                         ) : (
-                          "No deadline"
+                          <span style={{ color: "#f59e0b" }}>Add a deadline to unlock planning</span>
                         )}
                       </span>
                     </div>

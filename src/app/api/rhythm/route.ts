@@ -70,18 +70,28 @@ export async function GET() {
 
     // Count tasks due today
     const today = new Date().toISOString().split("T")[0];
-    const { count } = await supabase
-      .from("tasks")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("due_date", today)
-      .in("status", ["pending", "in_progress"]);
+    const [{ count }, goalsRes] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("due_date", today)
+        .in("status", ["pending", "in_progress"]),
+      supabase
+        .from("goals")
+        .select("target_date")
+        .eq("user_id", user.id)
+        .eq("goal_kind", "execution")
+        .eq("status", "active"),
+    ]);
+
+    const hasDeadline = (goalsRes.data ?? []).some((g) => Boolean(g.target_date));
 
     const rhythm: RhythmContext = {
       phase,
       greeting: _buildPhaseGreeting(phase, cogState.maturity_level, cogState.momentum_state),
       focus_prompt: _buildFocusPrompt(phase, cogState),
-      suggested_action: _buildSuggestedAction(phase, cogState),
+      suggested_action: _buildSuggestedAction(phase, cogState, hasDeadline),
       cognitive_summary: {
         direction: dashboardState.direction_text || "",
         momentum: "",
@@ -169,7 +179,12 @@ function _buildFocusPrompt(
 function _buildSuggestedAction(
   phase: RhythmPhase,
   state: import("@/lib/ai/orchestrator/cognition-engine").CognitiveState,
+  hasDeadline = true,
 ): string {
+  if (phase === "morning" && (state.maturity_level === "new" || !hasDeadline)) {
+    return "Set a deadline on your goal and MenAI will generate your plan.";
+  }
+
   if (phase === "morning") {
     if (state.task_pressure_level === "critical") return "Cut 3 tasks. Start with only the most important one.";
     if (state.detected_weaknesses.some(w => w.type === "sleep_deprivation")) return "Lighter day. Protect your energy.";

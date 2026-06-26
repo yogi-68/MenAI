@@ -9,6 +9,7 @@ import { PlanContextInterview } from "@/components/plans/plan-context-interview"
 import { ClayCard } from "@/components/ui";
 import { isLowPlanConfidence } from "@/lib/plans/language-guard";
 import { goalAccent } from "@/lib/goals/goal-colors";
+import { buildTaskWhyLine } from "@/lib/plans/task-why-line";
 
 interface DailyPlanContent {
   daySummary: string;
@@ -432,11 +433,12 @@ export default function DailyPlansPage() {
             {goalTasks.map((planTask, idx) => {
               const dbTask = taskByTitle.get(planTask.title.toLowerCase());
               const isDone = dbTask?.status === "completed";
-              const whyLine =
-                planTask.whyItMatters?.trim() ||
-                (planTask.linkedMilestone
-                  ? `Moves milestone: ${planTask.linkedMilestone}`
-                  : "Tied to your active milestone today.");
+              const whyLine = buildTaskWhyLine({
+                title: planTask.title,
+                whyItMatters: planTask.whyItMatters,
+                linkedMilestone: planTask.linkedMilestone,
+                linkedInitiative: planTask.linkedInitiative,
+              });
 
               return (
                 <div
@@ -526,7 +528,7 @@ export default function DailyPlansPage() {
                               textDecoration: "none",
                             }}
                           >
-                            context-building
+                            First step
                           </span>
                         )}
                       </h3>
@@ -553,77 +555,6 @@ export default function DailyPlansPage() {
                         <Clock size={14} />
                         {formatDuration(planTask.estimatedMinutes)}
                       </div>
-                    </div>
-                  </div>
-
-                  <p
-                    style={{
-                      fontSize: "0.9rem",
-                      color: "var(--text-secondary)",
-                      lineHeight: 1.6,
-                      marginBottom: "12px",
-                      paddingLeft: dbTask ? "36px" : "34px",
-                    }}
-                  >
-                    <span style={{ color: "var(--text-muted)", fontWeight: 500 }}>Why? </span>
-                    {planTask.linkedMilestone ? (
-                      <>
-                        <span style={{ color: "var(--text-primary)" }}>
-                          Milestone: {planTask.linkedMilestone} —{" "}
-                        </span>
-                        {planTask.whyItMatters}
-                      </>
-                    ) : (
-                      planTask.whyItMatters
-                    )}
-                  </p>
-
-                  {(planTask.linkedInitiative || planTask.linkedMilestone) && (
-                    <div
-                      style={{
-                        paddingLeft: dbTask ? "36px" : "34px",
-                        marginBottom: "12px",
-                        fontSize: "0.82rem",
-                        color: "var(--text-muted)",
-                        lineHeight: 1.55,
-                      }}
-                    >
-                      {planTask.linkedInitiative && (
-                        <div>
-                          <span style={{ fontWeight: 500 }}>Supports: </span>
-                          {planTask.linkedInitiative}
-                        </div>
-                      )}
-                      {planTask.linkedMilestone && (
-                        <div>
-                          <span style={{ fontWeight: 500 }}>Current milestone: </span>
-                          {planTask.linkedMilestone}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      paddingLeft: dbTask ? "36px" : "34px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    <div style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
-                      <span style={{ color: "var(--text-muted)" }}>
-                        Deliverable:{" "}
-                      </span>
-                      <span style={{ color: "var(--text-secondary)" }}>
-                        {planTask.deliverable}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: "0.85rem", lineHeight: 1.5 }}>
-                      <span style={{ color: "var(--text-muted)" }}>Success: </span>
-                      <span style={{ color: "var(--text-secondary)" }}>
-                        {planTask.successMetric}
-                      </span>
                     </div>
                   </div>
                 </div>

@@ -48,7 +48,19 @@ export function PerformanceScoreBadge({ compact = false }: PerformanceScoreBadge
       <div className="score-hero__value font-data" data-numeric>
         {isLoading ? "—" : daily}
       </div>
-      {!compact && <div className="score-hero__subtitle">{taskLine}</div>}
+      {!compact && (
+        <div className="score-hero__subtitle">
+          {expected > 0 ? (
+            <>
+              {completed} of {expected}
+              <br />
+              tasks done
+            </>
+          ) : (
+            taskLine
+          )}
+        </div>
+      )}
     </Link>
   );
 }

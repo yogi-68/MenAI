@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { ClayCard } from "@/components/ui";
 import type { UserModel } from "@/lib/user-model/types";
+import { isUserModelStale } from "@/lib/user-model/staleness";
+import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
 
 interface CoachKnowledgePanelProps {
   variant?: "page" | "rail";
@@ -20,15 +22,27 @@ export function CoachKnowledgePanel({ variant = "page" }: CoachKnowledgePanelPro
     queryFn: async () => {
       const res = await fetch("/api/user-model");
       if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ userModel: UserModel }>;
+      return res.json() as Promise<{ userModel: UserModel; updatedAt: string | null }>;
     },
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
   });
 
   const model = data?.userModel;
+  const stale = isUserModelStale(data?.updatedAt, model?.synthesizedAt);
   const narrative = model?.whoAmIAnswer?.trim();
-  const understands = model?.understands?.slice(0, isRail ? 4 : 5) ?? [];
+  const rawUnderstands = model?.understands?.slice(0, isRail ? 6 : 5) ?? [];
+  const understands = isRail
+    ? formatKnowledgeBulletsForRail(
+        rawUnderstands.length > 0
+          ? rawUnderstands
+          : model?.identity.labels?.length
+            ? model.identity.labels
+            : narrative
+              ? narrative.split("\n").filter(Boolean)
+              : []
+      )
+    : rawUnderstands;
   const stillNeeds = model?.stillNeeds?.slice(0, 4) ?? [];
   const evidence = model?.evidence?.slice(0, 5) ?? [];
   const focusTitle = model?.currentFocus?.title;
@@ -49,20 +63,20 @@ export function CoachKnowledgePanel({ variant = "page" }: CoachKnowledgePanelPro
 
   const content = (
     <>
-      <p className="label mb-3">What your coach knows</p>
+      <p className="label mb-3 flex items-center gap-2 flex-wrap">
+        What your coach knows
+        {stale && (
+          <span className="text-xs font-normal normal-case" style={{ color: "var(--text-muted)" }}>
+            updating…
+          </span>
+        )}
+      </p>
 
       {isRail ? (
         <ul className="text-xs space-y-2" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
           {understands.map((item) => (
             <li key={item}>· {item}</li>
           ))}
-          {understands.length === 0 &&
-            narrative &&
-            narrative
-              .split("\n")
-              .filter(Boolean)
-              .slice(0, 4)
-              .map((line) => <li key={line}>· {line}</li>)}
         </ul>
       ) : (
         <>

@@ -129,14 +129,6 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   font-variant-numeric: tabular-nums;
 }
 
-.score-hero {
-  font-family: var(--font-display);
-  font-size: 3rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
 .label,
 .clay-label {
   font-size: 0.75rem;
@@ -452,7 +444,7 @@ html:not(.dark) .border-hairline {
   font-family: var(--font-display);
   font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   opacity: 0.85;
   margin-bottom: 6px;
@@ -471,7 +463,13 @@ html:not(.dark) .border-hairline {
 }
 
 .score-hero__subtitle {
+  font-family: var(--font-jakarta), system-ui, sans-serif;
   font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  word-spacing: normal;
+  white-space: normal;
+  line-height: 1.35;
   opacity: 0.88;
   margin-top: 8px;
 }
