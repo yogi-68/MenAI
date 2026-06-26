@@ -396,8 +396,39 @@ This is message ${msgCount}+ in the conversation. You have enough context to not
     messages.push({ role: msg.role, content: msg.content });
   }
 
+  // === Confidence improvement flow injection ===
+  if (ctx.input.confidenceGoalId) {
+    const confidenceNote = buildConfidenceFlowNote(ctx.input.confidenceGoalId);
+    // Insert as a system note right before the user message
+    messages.push({ role: "system", content: confidenceNote });
+  }
+
   // === Add current user message ===
   messages.push({ role: "user", content: ctx.input.message });
 
   return messages;
+}
+
+/**
+ * System note injected when the confidence improvement flow is active.
+ * Tells the coach to ask structured questions to improve plan precision.
+ */
+export function buildConfidenceFlowNote(goalId: string): string {
+  return `## CONFIDENCE IMPROVEMENT FLOW (active — goalId: ${goalId})
+
+The user wants to improve their plan precision for this goal. Your job: ask ONE question at a time to collect the 5 missing factors below. After each answer, acknowledge what it unlocks ("Got it — that's the deadline. Your tasks just became 3x more specific.") then ask the next question.
+
+QUESTION SEQUENCE (ask in this order, skip already-answered ones):
+1. DEADLINE: "By when do you need this done? Give me a specific date or month — even a rough one is fine."
+2. RESOURCES: "How many hours per week can you actually put into this? Be honest — not the ideal, the real number."
+3. SUCCESS METRIC: "What's the one number or outcome that would prove to you this worked? Money, clients, weight — be specific."
+4. REAL OBSTACLE: "What's the most likely reason you'd fail at this? Not the generic answer — the real one."
+
+After all questions answered, say: "Precision is now at [X]%. Your tasks tomorrow will be significantly more specific. Check your plan in the morning." Then stop asking questions.
+
+RULES:
+- One question per message only.
+- Never ask two questions at once.
+- Name what each answer unlocks: "A specific date means MenAI can count backwards and tell you exactly what to do each day."
+- If the goal sounds vague (e.g. "financial freedom"), provide realistic context: typical timeline, intermediate milestone, then ask the user to confirm or adjust.`;
 }

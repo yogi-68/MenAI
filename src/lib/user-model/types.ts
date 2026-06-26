@@ -1,4 +1,5 @@
 import type { CoachDomain } from "@/lib/plans/coach-insights";
+import type { GoalConfidenceBreakdown } from "@/lib/plans/goal-confidence";
 import type {
   ActivePortfolioEntry,
   AllocationRole,
@@ -90,6 +91,8 @@ export interface UserModel {
   secondaryFocusAreas?: string[];
   /** Pre-computed short bullets for coach rail (max 4, ~8 words each) */
   knowledgeBullets?: string[];
+  /** Per-goal plan precision score (0–100) — keyed by goal ID */
+  goalConfidence?: Record<string, GoalConfidenceBreakdown>;
 }
 
 export interface InitiativeRow {

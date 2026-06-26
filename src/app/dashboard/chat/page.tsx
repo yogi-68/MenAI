@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useAppStore, getChatStore, isRealConversationId, type Message } from "@/lib/store";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   VirtualMessageList,
@@ -42,7 +43,8 @@ function applyPagination(meta: Record<string, PaginationMeta>, convId: string, p
   meta[convId] = { hasMore: page.hasMore, nextBefore: page.nextBefore };
 }
 
-export default function ChatPage() {
+function ChatPageInner() {
+  const searchParams = useSearchParams();
   const currentConversationId = useAppStore((s) => s.currentConversationId);
   const crisisAlert = useAppStore((s) => s.crisisAlert);
   const setCurrentConversationId = useAppStore((s) => s.setCurrentConversationId);
@@ -73,6 +75,10 @@ export default function ChatPage() {
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<string | null>(null);
 
+  const intentGoalId = searchParams.get("goalId") ?? null;
+  const intent = searchParams.get("intent") ?? null;
+  const autoSentRef = useRef(false);
+
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const paginationRef = useRef<Record<string, PaginationMeta>>({});
   const clearedStaleIdsRef = useRef<Set<string>>(new Set());
@@ -80,6 +86,16 @@ export default function ChatPage() {
   const abortRef = useRef<AbortController | null>(null);
   const lastScrollTs = useRef(0);
   const skipScrollToBottomRef = useRef(false);
+
+  // Auto-send opening message when intent=improve_confidence is in the URL
+  useEffect(() => {
+    if (intent !== "improve_confidence" || !intentGoalId || autoSentRef.current) return;
+    if (isSending) return;
+    autoSentRef.current = true;
+    const openingMessage = `I want to improve my plan precision for this goal. What information do you need from me?`;
+    sendMessage(openingMessage, { confidenceGoalId: intentGoalId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent, intentGoalId, isSending]);
 
   const handleMissingConversation = useCallback(
     (convId: string) => {
@@ -299,7 +315,7 @@ export default function ChatPage() {
     }
   };
 
-  const sendMessage = async (overrideText?: string) => {
+  const sendMessage = async (overrideText?: string, opts?: { confidenceGoalId?: string | null }) => {
     const messageText = (overrideText ?? input).trim();
     if (!messageText || isSending) return;
 
@@ -345,6 +361,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: messageText,
           conversationId: convExists ? currentConversationId : null,
+          ...(opts?.confidenceGoalId ? { confidenceGoalId: opts.confidenceGoalId } : {}),
         }),
         signal: controller.signal,
       });
@@ -591,5 +608,13 @@ export default function ChatPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageInner />
+    </Suspense>
   );
 }

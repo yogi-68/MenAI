@@ -6,6 +6,7 @@ import {
 } from "@/lib/plans/coach-insights";
 import { loadPlanContextData } from "@/lib/plans/plan-interview";
 import { loadExecutionContext } from "@/lib/user-model/resolve-context";
+import { computeGoalConfidence } from "@/lib/plans/goal-confidence";
 import type { UserModel, UserModelConfidence } from "@/lib/user-model/types";
 import { USER_MODEL_VERSION } from "@/lib/user-model/types";
 import {
@@ -329,6 +330,49 @@ export async function synthesizeUserModel(
   });
 
   model.knowledgeBullets = buildSynthesisKnowledgeBullets(bundle, model.understands);
+
+  // Compute per-goal confidence scores (rule-based, no LLM)
+  const [allPatternsRes, allSignalsRes] = await Promise.all([
+    supabase
+      .from("execution_patterns")
+      .select("pattern, behavioral_impact")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1),
+    supabase
+      .from("identity_signals")
+      .select("type")
+      .eq("user_id", userId)
+      .eq("status", "active"),
+  ]);
+  const allPatterns = (allPatternsRes.data || []) as Array<{ pattern: string; behavioral_impact: string | null }>;
+  const allSignals = (allSignalsRes.data || []) as Array<{ type: string }>;
+  const hasObstacleCategory = allPatterns.length > 0;
+  const obstacleDescription = allPatterns[0]?.behavioral_impact || null;
+  const hasAvailableHours = allSignals.some((s) => s.type === "available_hours");
+  const hasBudgetOrTools = allSignals.some((s) =>
+    ["budget", "tools", "budget_constraint"].includes(s.type)
+  );
+
+  const goalConfidence: Record<string, import("@/lib/plans/goal-confidence").GoalConfidenceBreakdown> = {};
+  for (const init of ctx.initiatives) {
+    const { count: taskCount } = await supabase
+      .from("tasks")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("goal_id", init.id)
+      .eq("status", "completed");
+    goalConfidence[init.id] = computeGoalConfidence({
+      targetDate: init.target_date,
+      hasObstacleCategory,
+      obstacleDescription,
+      successCriteria: (init as { success_criteria?: string | null }).success_criteria ?? null,
+      hasAvailableHours,
+      hasBudgetOrTools,
+      completedTaskCount: taskCount ?? 0,
+    });
+  }
+  model.goalConfidence = goalConfidence;
 
   await supabase
     .from("profiles")

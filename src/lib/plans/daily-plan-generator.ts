@@ -98,6 +98,8 @@ export interface DailyPlanContent {
   evidence?: string[];
   tasks: DailyPlanTask[];
   planVersion?: number;
+  /** Calibration question injected when a goal lacks deadline + success metric */
+  calibrationQuestion?: string;
 }
 
 export type PlanPhase = "morning" | "afternoon" | "night";
@@ -157,10 +159,12 @@ export interface PlanUserContext {
   yesterdaySkipped: string[];
   milestoneUrgencyLines: string[];
   deadlineUrgencyLines: string[];
+  /** Goals that need calibration (no deadline + no measurable success criteria) */
+  vagueGoalLines: string[];
 }
 
 function buildDomainScopedContextNotes(
-  init: { title: string; description: string | null; life_area: string | null },
+  init: { title: string; description: string | null; life_area: string | null; success_criteria?: string | null },
   planContext: PlanContextData
 ): string[] {
   const notes: string[] = [];
@@ -191,6 +195,10 @@ function buildDomainScopedContextNotes(
   if (planContext.currentMetric?.trim()) {
     notes.push(`Baseline: ${planContext.currentMetric}`);
   }
+  // Always surface success criteria — this is the primary context anchor for Week 1 users
+  if (init.success_criteria?.trim()) {
+    notes.push(`Success looks like: ${init.success_criteria}`);
+  }
 
   return notes;
 }
@@ -203,6 +211,7 @@ async function buildInitiativeContextBlocks(
     title: string;
     description: string | null;
     life_area: string | null;
+    success_criteria?: string | null;
   }>,
   allocationIds: string[]
 ): Promise<string[]> {
@@ -531,6 +540,16 @@ export async function fetchPlanUserContext(
     return [];
   });
 
+  // Detect vague goals: no deadline + no measurable success criteria
+  const vagueGoalLines = initiatives.flatMap((goal) => {
+    const sc = (goal as { success_criteria?: string | null }).success_criteria ?? "";
+    const hasMeasurable = /\d/.test(sc || "");
+    if (!goal.target_date && (!sc.trim() || !hasMeasurable)) {
+      return [`VAGUE GOAL — "${goal.title}": no deadline, no measurable success criteria.`];
+    }
+    return [];
+  });
+
   let currentFocusTitle: string | null = primaryInit?.title ?? null;
   let currentFocusUntil: string | null =
     profileRes.data?.current_focus_until ?? primaryInit?.target_date ?? null;
@@ -703,13 +722,20 @@ export async function fetchPlanUserContext(
       title: i.title,
       description: i.description,
       life_area: i.life_area,
+      success_criteria: (i as { success_criteria?: string | null }).success_criteria ?? null,
     })),
     allocationIds.length > 0 ? allocationIds : primaryInit ? [primaryInit.id] : []
   );
 
   if (primaryInit && initiativeContextBlocks.length === 0) {
     const fallbackContext = await loadPlanContextData(supabase, userId, primaryInit.id);
-    planContextNotes.push(...buildDomainScopedContextNotes(primaryInit, fallbackContext));
+    planContextNotes.push(...buildDomainScopedContextNotes(
+      {
+        ...primaryInit,
+        success_criteria: (primaryInit as { success_criteria?: string | null }).success_criteria ?? null,
+      },
+      fallbackContext
+    ));
   }
 
   const planMode: PlanMode =
@@ -795,6 +821,7 @@ export async function fetchPlanUserContext(
     yesterdaySkipped,
     milestoneUrgencyLines,
     deadlineUrgencyLines,
+    vagueGoalLines,
   };
 }
 
@@ -849,6 +876,7 @@ EXECUTION ALLOCATION (distribute tasks and time proportionally — intelligently
 ${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% to current focus initiative")}
 ${ctx.milestoneUrgencyLines.length > 0 ? `\n⚠️ MILESTONE URGENCY (override routine task selection):\n${ctx.milestoneUrgencyLines.join("\n")}` : ""}
 ${ctx.deadlineUrgencyLines.length > 0 ? `\n🚨 DEADLINE PRESSURE (all tasks become deadline-critical):\n${ctx.deadlineUrgencyLines.join("\n")}` : ""}
+${ctx.vagueGoalLines.length > 0 ? `\n🔴 GOAL REQUIRES CALIBRATION (inject at least 1 clarification task):\n${ctx.vagueGoalLines.join("\n")}\n- These goals lack a deadline and measurable outcome. Include one task that directly asks the user to define either their deadline or their success number. Task title example: "Define your success metric: what does winning look like for [goal]? Write it down (15 min)". Store this as a calibration question in the "whatMattersNow" field.` : ""}
 
 PRIORITY STACK (strict):
 1. URGENT OPPORTUNITIES — time-sensitive events override routine
@@ -940,7 +968,21 @@ Commitments:
 ${listOrFallback(ctx.commitments, "None")}
 
 Interview context (per-initiative — NEVER cross-contaminate domains):
-${ctx.initiativeContextBlocks.length > 0 ? ctx.initiativeContextBlocks.join("\n\n") : listOrFallback(ctx.planContextNotes, "None yet — gaps remain in obstacle/time clarity")}
+${ctx.initiativeContextBlocks.length > 0
+  ? ctx.initiativeContextBlocks.join("\n\n")
+  : ctx.planContextNotes.length > 0
+    ? listOrFallback(ctx.planContextNotes, "None yet — gaps remain in obstacle/time clarity")
+    : `NEW USER — WEEK 1 DISCOVERY MODE:
+  - No interview context loaded yet. Use success_criteria and obstacle from each initiative line above.
+  - Generate DISCOVERY tasks: concrete, completable in under 1 hour, focused on first wins and information gathering.
+  - Each task MUST include: a specific deliverable (a written note, a number, a sent message), duration, and method.
+  - BAD: "Research your target market" (vague, no deliverable)
+  - GOOD: "Write 3 business models you can start under ₹50k — note them in your phone now (30 min)"
+  - BAD: "Create a budget" (no specifics)
+  - GOOD: "Open a spreadsheet and write your current monthly income + 5 largest expenses — exact numbers (30 min)"
+  - No deadline available → generate tasks that build momentum and reveal what is possible before committing to a date.
+  - At least one task should reference the user's stated success criteria directly.`
+}
 
 Vision: ${ctx.vision}
 
@@ -1327,6 +1369,9 @@ export async function generateDailyPlanWithAI(
     evidence,
     tasks,
     planVersion: PLAN_CONTENT_VERSION,
+    calibrationQuestion: ctx.vagueGoalLines.length > 0
+      ? `Your plan includes vague goals. ${ctx.vagueGoalLines[0].replace(/^VAGUE GOAL — /, "")} Coach wants to know: what does winning look like for this goal? Give a specific number, outcome, or date.`
+      : undefined,
   };
 }
 
@@ -1402,6 +1447,39 @@ export async function ensureTodayPlan(
       isPlanContentStale(content, goalTitles);
 
     if (!stale && content.tasks.length > 0) {
+      // Repair: ensure all plan tasks exist in the tasks table (may be missing after failed inserts or DB resets)
+      const { data: todayTasks } = await supabase
+        .from("tasks")
+        .select("title")
+        .eq("user_id", userId)
+        .eq("due_date", today);
+      const existingTitles = new Set(
+        (todayTasks || []).map((t: { title: string }) => t.title.toLowerCase())
+      );
+      const missingTasks = content.tasks.filter(
+        (t) => !existingTitles.has(t.title.toLowerCase())
+      );
+      if (missingTasks.length > 0) {
+        const goalTitleMap = new Map(activeGoals.map((g) => [g.title.toLowerCase(), g.id]));
+        const taskRows = missingTasks.map((t) => {
+          const initiativeId = t.linkedInitiative
+            ? goalTitleMap.get(t.linkedInitiative.toLowerCase())
+            : undefined;
+          return {
+            user_id: userId,
+            title: t.title,
+            description: t.whyItMatters?.trim() || null,
+            status: "pending",
+            due_date: today,
+            estimated_minutes: t.estimatedMinutes,
+            goal_id: initiativeId || null,
+            auto_generated: true,
+            generation_reason: t.isContextBuilding ? "context_building" : "daily_plan",
+          };
+        });
+        await supabase.from("tasks").insert(taskRows);
+        invalidateUserCache(userId, "task repair");
+      }
       return { plan: content, planId: existing.id, created: false };
     }
 
@@ -1469,10 +1547,55 @@ export async function ensureTodayPlan(
     await supabase.from("tasks").insert(newTasks);
   }
 
+  // Generate and store a rule-based daily coach note (no LLM call)
+  const dailyNote = buildDailyCoachNote(ctx, planContent);
+  if (dailyNote) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await supabase
+      .from("mentor_memories")
+      .delete()
+      .eq("user_id", userId)
+      .eq("memory_type", "daily_note");
+    await supabase.from("mentor_memories").insert({
+      user_id: userId,
+      memory_type: "daily_note",
+      text: dailyNote,
+      confidence: 1.0,
+      influence_score: 1.0,
+      status: "active",
+      source: "daily_plan",
+      mention_count: 1,
+      evidence_count: 1,
+      last_mentioned_at: new Date().toISOString(),
+      expires_at: tomorrow.toISOString(),
+    });
+  }
+
   invalidateUserCache(userId, "daily plan generated");
   scheduleUserModelRefresh(supabase, userId);
 
   return { plan: planContent, planId: inserted.id, created: true };
+}
+
+/**
+ * Builds a 1-sentence daily coach note from plan context — rule-based, no LLM.
+ * Picks the most urgent fact from the planner context.
+ */
+function buildDailyCoachNote(ctx: PlanUserContext, plan: DailyPlanContent): string {
+  if (ctx.deadlineUrgencyLines.length > 0) {
+    return ctx.deadlineUrgencyLines[0].slice(0, 140);
+  }
+  if (ctx.milestoneUrgencyLines.length > 0) {
+    return ctx.milestoneUrgencyLines[0].slice(0, 140);
+  }
+  if (ctx.yesterdaySkipped.length > 0) {
+    return `You skipped "${ctx.yesterdaySkipped[0]}" yesterday. It's first on today's list.`.slice(0, 140);
+  }
+  if (plan.topObstacle?.trim()) {
+    return plan.topObstacle.trim().slice(0, 140);
+  }
+  return (plan.whatMattersNow ?? plan.daySummary ?? "").slice(0, 140);
 }
 
 /** Midday replan: keep morning wins, regenerate afternoon tasks. */

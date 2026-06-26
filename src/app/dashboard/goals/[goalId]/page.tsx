@@ -87,6 +87,28 @@ export default function GoalDetailPage() {
     enabled: Boolean(goalId),
   });
 
+  const { data: confidenceData } = useQuery({
+    queryKey: ["goal-confidence", goalId],
+    queryFn: async () => {
+      const res = await fetch(`/api/analytics/confidence?goalId=${goalId}`);
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        confidence: {
+          total: number;
+          deadline: number;
+          obstacle: number;
+          success: number;
+          resources: number;
+          history: number;
+          labels: { deadline: string; obstacle: string; success: string; resources: string; history: string };
+          missingFactors: Array<{ factor: string; question: string; impact: number }>;
+        };
+      }>;
+    },
+    enabled: Boolean(goalId),
+    staleTime: 5 * 60_000,
+  });
+
   if (error) {
     return (
       <div className="page-shell">
@@ -166,6 +188,67 @@ export default function GoalDetailPage() {
         />
         <MetricCard label="Today" value={`${data?.todayCompleted ?? 0}/3`} />
       </div>
+
+      {confidenceData?.confidence && (
+        <ClayCard className="p-4 mb-6" hover={false}>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-medium m-0" style={{ color: "var(--text-primary)" }}>
+                Plan precision
+              </h3>
+              <p className="text-xs mt-0.5 m-0" style={{ color: "var(--text-muted)" }}>
+                How well MenAI can personalise your tasks — {confidenceData.confidence.total}/100
+              </p>
+            </div>
+            {confidenceData.confidence.total < 80 && (
+              <Link
+                href={`/dashboard/chat?intent=improve_confidence&goalId=${goalId}`}
+                className="btn-secondary text-xs no-underline px-3 py-1.5 flex items-center gap-1.5"
+              >
+                <Sparkles size={12} /> Improve precision
+              </Link>
+            )}
+          </div>
+          <div className="grid gap-2">
+            {(
+              [
+                { key: "deadline" as const, label: "Deadline" },
+                { key: "obstacle" as const, label: "Obstacle" },
+                { key: "success" as const, label: "Success criteria" },
+                { key: "resources" as const, label: "Resources" },
+                { key: "history" as const, label: "Execution history" },
+              ] as const
+            ).map(({ key, label }) => {
+              const score = confidenceData.confidence[key];
+              const maxScore = key === "history" ? 20 : 20;
+              const pct = Math.round((score / maxScore) * 100);
+              const factorLabel = confidenceData.confidence.labels[key];
+              return (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-xs w-32 shrink-0" style={{ color: "var(--text-muted)" }}>
+                    {label}
+                  </span>
+                  <div
+                    className="flex-1 rounded-full overflow-hidden"
+                    style={{ height: 4, background: "var(--border-subtle)" }}
+                  >
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${pct}%`,
+                        background: pct >= 50 ? "var(--accent-success)" : "var(--accent-warning)",
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] w-28 shrink-0 text-right truncate" style={{ color: "var(--text-muted)" }}>
+                    {factorLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </ClayCard>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3 mb-6">
         <ClayCard className="p-4" hover={false}>

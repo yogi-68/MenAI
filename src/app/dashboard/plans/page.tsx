@@ -37,6 +37,7 @@ interface DailyPlanContent {
   };
   evidence?: string[];
   tasks: DailyPlanTask[];
+  calibrationQuestion?: string;
 }
 
 interface DailyPlanTask {
@@ -146,6 +147,16 @@ export default function DailyPlansPage() {
     staleTime: 60_000,
   });
 
+  const { data: userModelData } = useQuery({
+    queryKey: ["user-model-confidence"],
+    queryFn: async () => {
+      const res = await fetch("/api/user-model");
+      if (!res.ok) return null;
+      return res.json() as Promise<{ goalConfidence?: Record<string, { total: number }> }>;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   const completeTask = useMutation({
     mutationFn: async ({ id, actualMinutes }: { id: string; actualMinutes?: number }) => {
       const res = await fetch("/api/tasks", {
@@ -221,6 +232,11 @@ export default function DailyPlansPage() {
   const taskByTitle = useMemo(
     () => new Map((tasks || []).map((t) => [t.title.toLowerCase(), t])),
     [tasks]
+  );
+
+  const goalTitleToId = useMemo(
+    () => new Map((goalsPayload?.goals ?? []).map((g) => [g.title.toLowerCase(), g.id])),
+    [goalsPayload?.goals]
   );
 
   const goalRings = useMemo(() => {
@@ -390,14 +406,35 @@ export default function DailyPlansPage() {
           />
         ) : plan?.tasks && plan.tasks.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-            {tasksByGoal.map(([goalTitle, goalTasks], goalIndex) => (
+            {tasksByGoal.map(([goalTitle, goalTasks], goalIndex) => {
+              const goalId = goalTitleToId.get(goalTitle.toLowerCase());
+              const confidenceScore = goalId ? (userModelData?.goalConfidence?.[goalId]?.total ?? null) : null;
+              const isLowConfidence = confidenceScore !== null && confidenceScore < 50;
+              return (
               <div key={goalTitle}>
-                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                   <h3 className="text-sm font-medium m-0" style={{ color: goalAccent(goalIndex) }}>
                     {goalTitle}
                   </h3>
                   <span className="text-xs clay-label">{goalTasks.length}/3 tasks</span>
                 </div>
+                {isLowConfidence && goalId && (
+                  <Link
+                    href={`/dashboard/chat?intent=improve_confidence&goalId=${goalId}`}
+                    className="no-underline flex items-center gap-2 mb-3 text-xs px-3 py-2 rounded-md"
+                    style={{
+                      background: "rgba(245, 158, 11, 0.08)",
+                      border: "0.5px solid rgba(245, 158, 11, 0.3)",
+                      color: "var(--accent-warning)",
+                    }}
+                  >
+                    <Sparkles size={12} />
+                    <span>
+                      Low plan precision ({confidenceScore}%) — answer 2 questions to improve your tasks
+                    </span>
+                    <span className="ml-auto">→</span>
+                  </Link>
+                )}
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {goalTasks.map((planTask, idx) => {
               const dbTask = taskByTitle.get(planTask.title.toLowerCase());
@@ -515,7 +552,8 @@ export default function DailyPlansPage() {
             })}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         ) : (
           <p

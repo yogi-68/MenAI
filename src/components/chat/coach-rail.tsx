@@ -11,6 +11,7 @@ interface CoachSnapshot {
   knows?: string[];
   lastMessage: { content: string; timeLabel: string } | null;
   earlierMessage: { content: string } | null;
+  dailyNote: string | null;
 }
 
 export function CoachRail() {
@@ -52,18 +53,39 @@ export function CoachRail() {
           <div className="skeleton shimmer" style={{ height: 80, borderRadius: 8 }} />
         ) : (
           <>
+            {data?.dailyNote && (
+              <div
+                className="coach-rail__bubble"
+                style={{
+                  borderLeft: "2px solid var(--accent-primary)",
+                  paddingLeft: 10,
+                  marginBottom: 8,
+                  opacity: 0.85,
+                }}
+              >
+                <div
+                  className="flex items-center gap-1 text-[10px] mb-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  <span>Today</span>
+                </div>
+                <p className="text-xs m-0" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  {data.dailyNote}
+                </p>
+              </div>
+            )}
             {data?.lastMessage ? (
               <div className="coach-rail__bubble coach-rail__bubble--coach">
                 <div className="coach-rail__time">{data.lastMessage.timeLabel}</div>
                 <MarkdownContent content={data.lastMessage.content} className="chat-markdown chat-markdown--compact" />
               </div>
-            ) : (
+            ) : !data?.dailyNote ? (
               <div className="coach-rail__bubble coach-rail__bubble--coach">
                 <p style={{ color: "var(--text-secondary)" }}>
                   Your coach will appear here after your first conversation.
                 </p>
               </div>
-            )}
+            ) : null}
             {data?.earlierMessage && (
               <div className="coach-rail__bubble coach-rail__bubble--earlier">
                 <MarkdownContent content={data.earlierMessage.content} className="chat-markdown chat-markdown--compact" />

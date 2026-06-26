@@ -30,13 +30,22 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [userContext, convRes] = await Promise.all([
+  const [userContext, convRes, dailyNoteRes] = await Promise.all([
     getUserContext(supabase, user.id),
     supabase
       .from("conversations")
       .select("id")
       .eq("user_id", user.id)
       .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("mentor_memories")
+      .select("text")
+      .eq("user_id", user.id)
+      .eq("memory_type", "daily_note")
+      .eq("status", "active")
+      .order("last_mentioned_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -71,6 +80,18 @@ export async function GET() {
   const completed = userContext.todayPlan.filter((t) => t.status === "completed").length;
   const expected = userContext.todayPlan.length;
 
+  // Calibration question from today's plan takes priority over daily note
+  const today = new Date().toISOString().split("T")[0];
+  const { data: todayPlan } = await supabase
+    .from("daily_plans")
+    .select("plan_content")
+    .eq("user_id", user.id)
+    .eq("plan_date", today)
+    .maybeSingle();
+  const calibrationQuestion = (todayPlan?.plan_content as { calibrationQuestion?: string } | null)?.calibrationQuestion ?? null;
+
+  const dailyNote = calibrationQuestion ?? dailyNoteRes.data?.text ?? null;
+
   return NextResponse.json({
     score: userContext.scoreToday,
     phase,
@@ -81,5 +102,6 @@ export async function GET() {
     earlierMessage,
     knows: userContext.knowledgeBullets,
     lastAchievement: userContext.lastAchievement,
+    dailyNote,
   });
 }

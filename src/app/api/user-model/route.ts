@@ -46,7 +46,12 @@ export async function GET(req: Request) {
     }
   );
 
-  return NextResponse.json({ userModel: model, updatedAt, executionProfile });
+  return NextResponse.json({
+    userModel: model,
+    updatedAt,
+    executionProfile,
+    goalConfidence: model.goalConfidence ?? {},
+  });
 }
 
 /** POST /api/user-model — force re-synthesis after data changes */

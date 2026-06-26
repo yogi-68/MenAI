@@ -423,6 +423,8 @@ export interface OrchestratorInput {
   userId: string;
   message: string;
   conversationId?: string | null;
+  /** When set, the orchestrator injects a confidence-improvement system note for this goal */
+  confidenceGoalId?: string | null;
 }
 
 export interface OrchestratorOutput {

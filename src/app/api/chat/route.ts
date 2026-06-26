@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { message, conversationId } = await request.json();
+    const { message, conversationId, confidenceGoalId } = await request.json();
 
     if (!message || typeof message !== "string" || message.trim().length === 0) {
       return new Response(JSON.stringify({ error: "Message is required" }), {
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       message: message.trim(),
       conversationId: conversationId || null,
+      confidenceGoalId: confidenceGoalId || null,
     });
 
     return new Response(result.stream, {

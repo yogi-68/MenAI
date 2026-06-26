@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MessageSquare, Plus, Target } from "lucide-react";
+import { MessageSquare, Plus, Target, Zap } from "lucide-react";
 import { BarChartCard } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
 import { MonthlyReviewPanel, WeeklyReviewPanel } from "@/components/dashboard/goal-review-tabs";
@@ -116,6 +116,16 @@ export default function DashboardOverview() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: userModelData } = useQuery({
+    queryKey: ["user-model-confidence"],
+    queryFn: async () => {
+      const res = await fetch("/api/user-model");
+      if (!res.ok) return null;
+      return res.json() as Promise<{ goalConfidence?: Record<string, { total: number; missingFactors: Array<{ factor: string; question: string; impact: number }> }> }>;
+    },
+    staleTime: 5 * 60_000,
+  });
+
   if (checkingOnboarding) {
     return (
       <div className="page-shell flex items-center justify-center min-h-[60vh]">
@@ -207,6 +217,8 @@ export default function DashboardOverview() {
               {goals.map((goal, index) => {
                 const accent = goalAccent(index);
                 const badge = statusBadge(goal.status);
+                const confidenceScore = userModelData?.goalConfidence?.[goal.id]?.total ?? null;
+                const isLowConfidence = confidenceScore !== null && confidenceScore < 60;
                 return (
                   <Link key={goal.id} href={`/dashboard/goals/${goal.id}`} className="no-underline block">
                     <ClayCard className="p-4 h-full gap-2.5" hover>
@@ -238,6 +250,35 @@ export default function DashboardOverview() {
                           style={{ width: `${Math.min(100, goal.progress)}%`, background: accent }}
                         />
                       </div>
+
+                      {confidenceScore !== null && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <div
+                            className="rounded-full overflow-hidden flex-1"
+                            style={{ height: 2, background: "var(--border-subtle)" }}
+                          >
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${confidenceScore}%`,
+                                background: isLowConfidence ? "var(--accent-warning)" : "var(--accent-success)",
+                              }}
+                            />
+                          </div>
+                          <span
+                            className="text-[10px] shrink-0"
+                            style={{ color: isLowConfidence ? "var(--accent-warning)" : "var(--text-muted)" }}
+                          >
+                            {isLowConfidence ? (
+                              <span className="flex items-center gap-0.5">
+                                <Zap size={9} /> Plan precision: {confidenceScore}%
+                              </span>
+                            ) : (
+                              `Precision: ${confidenceScore}%`
+                            )}
+                          </span>
+                        </div>
+                      )}
 
                       <div className="flex justify-between items-center gap-2 text-xs">
                         <span style={{ fontWeight: 500, color: accent }}>
