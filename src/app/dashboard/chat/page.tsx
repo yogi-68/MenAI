@@ -390,17 +390,29 @@ function ChatPageInner() {
 
       const decoder = new TextDecoder();
       let accumulated = "";
+      let serverMessageId: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+
+        // Parse __DONE__ sentinel appended by the orchestrator after DB write
+        const sentinelMatch = chunk.match(/\n__DONE__:([a-f0-9-]{36})\n/);
+        if (sentinelMatch) {
+          serverMessageId = sentinelMatch[1];
+          // Strip sentinel from displayed content
+          accumulated += chunk.replace(/\n__DONE__:[a-f0-9-]{36}\n/, "");
+        } else {
+          accumulated += chunk;
+        }
         setStreamingContent(accumulated);
         throttledScroll();
       }
 
       const aiMessage: Message = {
-        id: crypto.randomUUID(),
+        // Use server-generated ID so subsequent refetches don't duplicate or lose this message
+        id: serverMessageId ?? crypto.randomUUID(),
         role: "assistant",
         content: accumulated || "I'm here. What's blocking execution today?",
         created_at: new Date().toISOString(),

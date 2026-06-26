@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatMessage } from "@/components/chat/chat-message";
+import { ConfidenceQuestionCard } from "@/components/chat/confidence-question-card";
 import type { Message } from "@/lib/store";
 
 interface VirtualMessageListProps {
@@ -57,6 +58,8 @@ export function VirtualMessageList({
       if (index === messages.length && streamingContent) return "__streaming__";
       return "__typing__";
     },
+    // Dynamic measurement so tall markdown/code messages don't overlap
+    measureElement: (el) => el?.getBoundingClientRect().height ?? 0,
   });
 
   const handleScroll = useCallback(() => {
@@ -113,6 +116,7 @@ export function VirtualMessageList({
             <div
               key={virtualRow.key}
               data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
               style={{
                 position: "absolute",
                 top: 0,
@@ -122,7 +126,11 @@ export function VirtualMessageList({
               }}
             >
               {msg ? (
-                <ChatMessage role={msg.role as "user" | "assistant"} content={msg.content} />
+                msg.type === "confidence_question" && msg.confidenceData ? (
+                  <ConfidenceQuestionCard question={msg.confidenceData} />
+                ) : (
+                  <ChatMessage role={msg.role as "user" | "assistant"} content={msg.content} />
+                )
               ) : isStreamingRow ? (
                 <div className="chat-streaming">
                   <div className="chat-bubble-ai">

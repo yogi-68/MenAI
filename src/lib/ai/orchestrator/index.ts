@@ -782,6 +782,8 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     async start(controller) {
       const reader = llmStream.getReader();
       const decoder = new TextDecoder();
+      let validated: ReturnType<typeof validateResponse> | null = null;
+      let styleValidation: ReturnType<typeof validateResponseStyle> | null = null;
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -791,6 +793,36 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           fullResponse += text;
           controller.enqueue(encoder.encode(text));
         }
+
+        // Validate content synchronously before writing
+        validated = validateResponse(fullResponse, {
+          crisisMode: safety.level !== "safe",
+          emotionIntensity: emotion.intensity,
+        });
+
+        styleValidation = validateResponseStyle(validated.content, {
+          lifeContext: null,
+          contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false },
+          userMessage: input.message,
+        });
+
+        // Await the DB write so the message ID is available for the sentinel
+        const { data: savedMsg } = await serviceClient
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            user_id: input.userId,
+            role: "assistant",
+            content: validated.content,
+            emotion_data: emotion,
+          })
+          .select("id")
+          .single();
+
+        // Append sentinel so client can use the real server message ID
+        if (savedMsg?.id) {
+          controller.enqueue(encoder.encode(`\n__DONE__:${savedMsg.id}\n`));
+        }
         controller.close();
       } catch (err) {
         streamErrored = true;
@@ -799,20 +831,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         const durationMs = Date.now() - pipelineStart;
         const ttftMs = firstTokenAt !== null ? firstTokenAt - pipelineStart : null;
 
-        // Post-stream: save response + background tasks
-        const validated = validateResponse(fullResponse, {
-          crisisMode: safety.level !== "safe",
-          emotionIntensity: emotion.intensity,
-        });
-
-        // Style validation (monitoring only for streaming - can't regenerate after stream)
-        const styleValidation = validateResponseStyle(validated.content, {
-          lifeContext: null, // Legacy, replace later if needed
-          contextRichness: { level: contextRichnessLevel, score: 0, hasGoals: false, hasCommitments: false, hasTasks: false, hasRelationships: false },
-          userMessage: input.message,
-        });
-
-        if (!styleValidation.valid) {
+        if (!styleValidation?.valid && styleValidation) {
           console.warn("Style validation issues detected:", {
             score: styleValidation.score,
             violations: styleValidation.violations,
@@ -820,7 +839,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           });
         }
 
-        if (shouldSampleContextConfidence(styleValidation.score)) {
+        if (styleValidation && shouldSampleContextConfidence(styleValidation.score)) {
           Promise.resolve(
             serviceClient.from("context_confidence_log").insert({
               user_id: input.userId,
@@ -834,16 +853,6 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           ).catch(() => {});
         }
 
-        Promise.resolve(
-          serviceClient.from("messages").insert({
-            conversation_id: conversationId,
-            user_id: input.userId,
-            role: "assistant",
-            content: validated.content,
-            emotion_data: emotion,
-          })
-        ).catch(() => {});
-
         const estTokens = Math.ceil(fullResponse.length / 4);
         logAiUsage(
           input.userId,
@@ -854,7 +863,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           {
             ttftMs,
             durationMs: streamErrored || !fullResponse ? null : durationMs,
-            metadata: { claimQuality: scoreClaimQuality(validated.content, userModel) },
+            metadata: { claimQuality: validated ? scoreClaimQuality(validated.content, userModel) : 0 },
           }
         ).catch(() => {});
 

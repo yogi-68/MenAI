@@ -54,6 +54,9 @@ export interface Message {
   created_at: string;
   emotion_data?: Record<string, unknown>;
   crisis?: boolean;
+  /** Set to "confidence_question" to render ConfidenceQuestionCard instead of a chat bubble */
+  type?: "confidence_question";
+  confidenceData?: import("@/components/chat/confidence-question-card").ConfidenceQuestion;
 }
 
 export interface ConversationState {

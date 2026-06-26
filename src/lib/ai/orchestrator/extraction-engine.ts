@@ -23,6 +23,42 @@ import {
   adjustProjectConfidence,
 } from "@/lib/ai/extraction-confidence";
 import { MEMORY_CONFIDENCE } from "@/lib/product/constants";
+import { ensureMilestonesForGoal } from "@/lib/plans/milestone-generator";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+
+/**
+ * Converts relative date strings ("87 days", "3 months", "2 weeks") to ISO date strings.
+ * Falls back to Date.parse for explicit date strings.
+ */
+function parseRelativeDate(value: string): string | null {
+  if (!value?.trim()) return null;
+  const daysMatch = value.match(/(\d+)\s*days?/i);
+  if (daysMatch) {
+    const d = new Date();
+    d.setDate(d.getDate() + parseInt(daysMatch[1], 10));
+    return d.toISOString().split("T")[0];
+  }
+  const weeksMatch = value.match(/(\d+)\s*weeks?/i);
+  if (weeksMatch) {
+    const d = new Date();
+    d.setDate(d.getDate() + parseInt(weeksMatch[1], 10) * 7);
+    return d.toISOString().split("T")[0];
+  }
+  const monthsMatch = value.match(/(\d+)\s*months?/i);
+  if (monthsMatch) {
+    const d = new Date();
+    d.setMonth(d.getMonth() + parseInt(monthsMatch[1], 10));
+    return d.toISOString().split("T")[0];
+  }
+  const yearsMatch = value.match(/(\d+)\s*years?/i);
+  if (yearsMatch) {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + parseInt(yearsMatch[1], 10));
+    return d.toISOString().split("T")[0];
+  }
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString().split("T")[0];
+}
 
 const EMPTY_EXTRACTION: ExtractedLifeData = {
   goals: [],
@@ -285,18 +321,38 @@ export async function persistExtractedData(
           (async () => {
             const { data: existing } = await supabase
               .from("goals")
-              .select("id")
+              .select("id, target_date")
               .eq("user_id", userId)
               .ilike("title", goal.title)
               .limit(1);
-            if (existing?.length) return;
+            if (existing?.length) {
+              // Update target_date on the existing goal if newly provided and not yet set
+              if (goal.targetDate && !existing[0].target_date) {
+                const isoDate = parseRelativeDate(goal.targetDate);
+                if (isoDate) {
+                  await supabase
+                    .from("goals")
+                    .update({ target_date: isoDate })
+                    .eq("id", existing[0].id);
+                  // Regenerate milestones + bust cache (fire-and-forget)
+                  Promise.resolve(
+                    supabase.from("goal_milestones").delete().eq("goal_id", existing[0].id)
+                  ).then(() =>
+                    ensureMilestonesForGoal(supabase, userId, existing[0].id).catch(() => {})
+                  ).catch(() => {});
+                  invalidateUserCache(userId, "deadline extracted");
+                }
+              }
+              return;
+            }
+            const insertDate = goal.targetDate ? parseRelativeDate(goal.targetDate) : null;
             await supabase.from("goals").insert({
               user_id: userId,
               title: goal.title,
               description: goal.description || null,
               category: goal.category,
               priority: goal.priority,
-              target_date: goal.targetDate || null,
+              target_date: insertDate || null,
               source: "chat_extraction",
             });
           })()

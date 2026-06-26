@@ -21,6 +21,8 @@ export interface GoalConfidenceBreakdown {
   };
   /** Which factors are missing and what to do about them */
   missingFactors: Array<{ factor: string; question: string; impact: number }>;
+  /** Tracks which factors have been addressed via Q&A in the current session */
+  answeredFactors?: string[];
 }
 
 export interface GoalConfidenceInput {
