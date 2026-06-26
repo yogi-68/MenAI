@@ -74,6 +74,8 @@ function ChatPageInner() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<string | null>(null);
+  // Rate limit: only one confidence question per page session
+  const sessionConfidenceAskedRef = useRef(false);
 
   const intentGoalId = searchParams.get("goalId") ?? null;
   const intent = searchParams.get("intent") ?? null;
@@ -362,6 +364,7 @@ function ChatPageInner() {
           message: messageText,
           conversationId: convExists ? currentConversationId : null,
           ...(opts?.confidenceGoalId ? { confidenceGoalId: opts.confidenceGoalId } : {}),
+          sessionConfidenceAsked: sessionConfidenceAskedRef.current,
         }),
         signal: controller.signal,
       });
@@ -391,18 +394,28 @@ function ChatPageInner() {
       const decoder = new TextDecoder();
       let accumulated = "";
       let serverMessageId: string | null = null;
+      let confidencePayload: { factor: string; goalId: string; goalTitle: string } | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
 
-        // Parse __DONE__ sentinel appended by the orchestrator after DB write
-        const sentinelMatch = chunk.match(/\n__DONE__:([a-f0-9-]{36})\n/);
-        if (sentinelMatch) {
-          serverMessageId = sentinelMatch[1];
-          // Strip sentinel from displayed content
-          accumulated += chunk.replace(/\n__DONE__:[a-f0-9-]{36}\n/, "");
+        // Parse __DONE__ sentinel: \n__DONE__:{"id":"uuid","cq":...}\n
+        const sentinelIdx = chunk.indexOf("\n__DONE__:{");
+        if (sentinelIdx !== -1) {
+          const endIdx = chunk.indexOf("}\n", sentinelIdx + 10);
+          if (endIdx !== -1) {
+            const jsonStr = chunk.slice(sentinelIdx + "\n__DONE__:".length, endIdx + 1);
+            try {
+              const parsed = JSON.parse(jsonStr) as { id?: string; cq?: { factor: string; goalId: string; goalTitle: string } | null };
+              serverMessageId = parsed.id ?? null;
+              confidencePayload = parsed.cq ?? null;
+            } catch { /* ignore parse errors */ }
+            accumulated += chunk.slice(0, sentinelIdx) + chunk.slice(endIdx + 2);
+          } else {
+            accumulated += chunk;
+          }
         } else {
           accumulated += chunk;
         }
@@ -411,7 +424,6 @@ function ChatPageInner() {
       }
 
       const aiMessage: Message = {
-        // Use server-generated ID so subsequent refetches don't duplicate or lose this message
         id: serverMessageId ?? crypto.randomUUID(),
         role: "assistant",
         content: accumulated || "I'm here. What's blocking execution today?",
@@ -421,6 +433,24 @@ function ChatPageInner() {
 
       addMessage(activeConvId, aiMessage);
       setStreamingContent("");
+
+      // Inject confidence Q&A card as a follow-up message if orchestrator says so
+      if (confidencePayload && activeConvId && !sessionConfidenceAskedRef.current) {
+        sessionConfidenceAskedRef.current = true;
+        const { CONFIDENCE_QUESTIONS } = await import("@/components/chat/confidence-question-card");
+        const template = CONFIDENCE_QUESTIONS[confidencePayload.factor as keyof typeof CONFIDENCE_QUESTIONS];
+        if (template) {
+          const cqMessage: Message = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: "",
+            created_at: new Date().toISOString(),
+            type: "confidence_question",
+            confidenceData: { ...template, goalId: confidencePayload.goalId, goalTitle: confidencePayload.goalTitle },
+          };
+          addMessage(activeConvId, cqMessage);
+        }
+      }
     } catch (error) {
       if ((error as Error).name === "AbortError") return;
       console.error("Chat error:", error);

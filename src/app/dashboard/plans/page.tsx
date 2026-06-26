@@ -49,6 +49,8 @@ interface DailyPlanTask {
   isContextBuilding: boolean;
   linkedInitiative?: string;
   linkedMilestone?: string;
+  /** DB task ID embedded at plan-gen time for direct matching */
+  taskId?: string;
 }
 
 interface Task {
@@ -229,10 +231,19 @@ export default function DailyPlansPage() {
     return [...groups.entries()];
   }, [plan?.tasks]);
 
-  const taskByTitle = useMemo(
-    () => new Map((tasks || []).map((t) => [t.title.toLowerCase(), t])),
+  const taskById = useMemo(
+    () => new Map((tasks || []).map((t) => [t.id, t])),
     [tasks]
   );
+  const taskByTitle = useMemo(
+    () => new Map((tasks || []).map((t) => [t.title.toLowerCase().trim(), t])),
+    [tasks]
+  );
+  // Prefer DB ID match, fall back to normalized title lookup
+  function resolveDbTask(planTask: DailyPlanTask): Task | undefined {
+    if (planTask.taskId) return taskById.get(planTask.taskId);
+    return taskByTitle.get(planTask.title.toLowerCase().trim());
+  }
 
   const goalTitleToId = useMemo(
     () => new Map((goalsPayload?.goals ?? []).map((g) => [g.title.toLowerCase(), g.id])),
@@ -242,7 +253,7 @@ export default function DailyPlansPage() {
   const goalRings = useMemo(() => {
     return tasksByGoal.map(([goalTitle, goalTasks], goalIndex) => {
       const completed = goalTasks.filter((pt) => {
-        const db = taskByTitle.get(pt.title.toLowerCase());
+        const db = pt.taskId ? taskById.get(pt.taskId) : taskByTitle.get(pt.title.toLowerCase().trim());
         return db?.status === "completed";
       }).length;
       return {
@@ -437,7 +448,7 @@ export default function DailyPlansPage() {
                 )}
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {goalTasks.map((planTask, idx) => {
-              const dbTask = taskByTitle.get(planTask.title.toLowerCase());
+              const dbTask = resolveDbTask(planTask);
               const isDone = dbTask?.status === "completed";
               const whyLine = buildTaskWhyLine({
                 title: planTask.title,

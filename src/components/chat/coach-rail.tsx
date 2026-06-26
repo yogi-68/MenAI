@@ -3,16 +3,29 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
-import { MarkdownContent } from "@/components/chat/markdown-content";
+import { Sparkles } from "lucide-react";
+
+interface PrecisionCTA {
+  goalId: string;
+  goalTitle: string;
+  score: number;
+  factor: string;
+}
 
 interface CoachSnapshot {
   score: number;
   statusLabel: string;
   knows?: string[];
-  lastMessage: { content: string; timeLabel: string } | null;
-  earlierMessage: { content: string } | null;
   dailyNote: string | null;
+  precisionCTA: PrecisionCTA | null;
 }
+
+const FACTOR_LABELS: Record<string, string> = {
+  deadline: "Add deadline",
+  success: "Define success metric",
+  obstacle: "Name your obstacle",
+  resources: "Set weekly hours",
+};
 
 export function CoachRail() {
   const { data, isLoading } = useQuery({
@@ -30,6 +43,7 @@ export function CoachRail() {
 
   return (
     <aside className="coach-rail" aria-label="Coach panel">
+      {/* Header */}
       <div className="coach-rail__header">
         <div className="flex items-center justify-between gap-2">
           <h2 className="font-display text-base font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -48,55 +62,76 @@ export function CoachRail() {
         </p>
       </div>
 
-      <div className="coach-rail__messages">
+      <div className="coach-rail__messages" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {isLoading ? (
           <div className="skeleton shimmer" style={{ height: 80, borderRadius: 8 }} />
         ) : (
           <>
-            {data?.dailyNote && (
+            {/* Section 1 — Today's coaching note */}
+            {data?.dailyNote ? (
               <div
-                className="coach-rail__bubble"
                 style={{
                   borderLeft: "2px solid var(--accent-primary)",
                   paddingLeft: 10,
-                  marginBottom: 8,
-                  opacity: 0.85,
+                  paddingTop: 2,
+                  paddingBottom: 2,
                 }}
               >
-                <div
-                  className="flex items-center gap-1 text-[10px] mb-1"
-                  style={{ color: "var(--text-muted)" }}
-                >
-                  <span>Today</span>
-                </div>
+                <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                  Today
+                </p>
                 <p className="text-xs m-0" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
                   {data.dailyNote}
                 </p>
               </div>
-            )}
-            {data?.lastMessage ? (
-              <div className="coach-rail__bubble coach-rail__bubble--coach">
-                <div className="coach-rail__time">{data.lastMessage.timeLabel}</div>
-                <MarkdownContent content={data.lastMessage.content} className="chat-markdown chat-markdown--compact" />
-              </div>
-            ) : !data?.dailyNote ? (
+            ) : null}
+
+            {/* Section 2 — Plan precision CTA */}
+            {data?.precisionCTA ? (
+              <Link
+                href={`/dashboard/chat?intent=improve_confidence&goalId=${data.precisionCTA.goalId}`}
+                className="no-underline"
+              >
+                <div
+                  style={{
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    background: "rgba(245,158,11,0.07)",
+                    border: "0.5px solid rgba(245,158,11,0.25)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Sparkles size={11} style={{ color: "var(--accent-warning)" }} />
+                    <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--accent-warning)" }}>
+                      Plan precision
+                    </span>
+                  </div>
+                  <p className="text-xs m-0 mb-1" style={{ color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                    {data.precisionCTA.score}% — {data.precisionCTA.goalTitle}
+                  </p>
+                  <p className="text-xs m-0 font-medium" style={{ color: "var(--accent-warning)" }}>
+                    {FACTOR_LABELS[data.precisionCTA.factor] ?? "Improve precision"} →
+                  </p>
+                </div>
+              </Link>
+            ) : null}
+
+            {/* Section 3 — What your coach knows (4 bullets max) */}
+            {!data?.dailyNote && !data?.precisionCTA && (
               <div className="coach-rail__bubble coach-rail__bubble--coach">
                 <p style={{ color: "var(--text-secondary)" }}>
                   Your coach will appear here after your first conversation.
                 </p>
-              </div>
-            ) : null}
-            {data?.earlierMessage && (
-              <div className="coach-rail__bubble coach-rail__bubble--earlier">
-                <MarkdownContent content={data.earlierMessage.content} className="chat-markdown chat-markdown--compact" />
               </div>
             )}
           </>
         )}
       </div>
 
+      {/* Footer — 4 knowledge bullets max */}
       <div className="coach-rail__footer">
-        <CoachKnowledgePanel variant="rail" bullets={data?.knows} />
+        <CoachKnowledgePanel variant="rail" bullets={data?.knows?.slice(0, 4)} />
       </div>
     </aside>
   );

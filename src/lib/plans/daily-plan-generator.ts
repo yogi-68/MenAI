@@ -72,6 +72,8 @@ export interface DailyPlanTask {
   lifeArea?: string;
   linkedInitiative?: string;
   linkedMilestone?: string;
+  /** DB task ID — set after insert so the UI can match by ID, not fragile title lookup */
+  taskId?: string;
 }
 
 export interface PlanningContextSummary {
@@ -845,7 +847,31 @@ function planningContextFromSnapshot(
   };
 }
 
+/** Validate the 8 essential context fields needed for personalised tasks — log missing ones */
+function validatePlanContext(ctx: PlanUserContext): void {
+  const primaryGoal = ctx.initiatives[0] as
+    | { title?: string; success_criteria?: string | null; target_date?: string | null }
+    | undefined;
+  const required = {
+    goalTitle: primaryGoal?.title,
+    successCriteria: primaryGoal?.success_criteria,
+    executionPattern: ctx.obstacles[0],
+    lastAchievement: ctx.lastAchievement,
+    workStyle: ctx.identityContext,
+    identityValues: ctx.userModelNarrative,
+    currentMilestone: ctx.initiativeMilestones[0],
+    deadline: primaryGoal?.target_date,
+  };
+  const missing = Object.entries(required)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+  if (missing.length > 0) {
+    console.warn("[Planner] Missing context fields:", missing.join(", "));
+  }
+}
+
 function buildPrompt(ctx: PlanUserContext): string {
+  validatePlanContext(ctx);
   const availableHours = Math.round(ctx.availableMinutes / 60);
 
   const modeInstructions =
@@ -931,6 +957,12 @@ ${ctx.lifeAreaInsight ? `\nBalance insight: ${ctx.lifeAreaInsight}` : ""}
 
 Upcoming deadlines:
 ${listOrFallback(ctx.upcomingDeadlines, "None")}
+
+MANDATORY PERSONALISATION RULES — all 4 apply to every plan generated:
+Rule 1: Every task title must be SPECIFIC to this user's goal, context, and recent history. NEVER write "Send outreach emails" — write "Email [specific contact type] about [specific topic] because [reason tied to their situation]".
+Rule 2: If lastAchievement exists in USER CONTEXT, at least ONE task must build directly on it. Reference the achievement explicitly in whyItMatters.
+Rule 3: Every task must have a CONCRETE DELIVERABLE — a physical output that exists when done. NEVER write "research X" — write "Write a 3-point summary of X" or "Fill column 3 of the spreadsheet with X".
+Rule 4: Fitness tasks MUST include exercise name + duration/reps + plan day number (e.g. "Day 3 of beginner run plan — 20 min easy pace"). NEVER write "Do fitness activities".
 
 TASK FORMAT (mandatory for every task):
 - title: specific action verb + deliverable (NOT "work on X")
@@ -1447,17 +1479,18 @@ export async function ensureTodayPlan(
       isPlanContentStale(content, goalTitles);
 
     if (!stale && content.tasks.length > 0) {
-      // Repair: ensure all plan tasks exist in the tasks table (may be missing after failed inserts or DB resets)
+      // Repair: ensure all plan tasks exist in the tasks table and taskId fields are populated
       const { data: todayTasks } = await supabase
         .from("tasks")
-        .select("title")
+        .select("id, title")
         .eq("user_id", userId)
         .eq("due_date", today);
-      const existingTitles = new Set(
-        (todayTasks || []).map((t: { title: string }) => t.title.toLowerCase())
+      const existingByTitle = new Map(
+        (todayTasks || []).map((t: { id: string; title: string }) => [t.title.toLowerCase().trim(), t.id])
       );
+      const existingTitles = new Set(existingByTitle.keys());
       const missingTasks = content.tasks.filter(
-        (t) => !existingTitles.has(t.title.toLowerCase())
+        (t) => !existingTitles.has(t.title.toLowerCase().trim())
       );
       if (missingTasks.length > 0) {
         const goalTitleMap = new Map(activeGoals.map((g) => [g.title.toLowerCase(), g.id]));
@@ -1467,7 +1500,7 @@ export async function ensureTodayPlan(
             : undefined;
           return {
             user_id: userId,
-            title: t.title,
+            title: t.title.trim(),
             description: t.whyItMatters?.trim() || null,
             status: "pending",
             due_date: today,
@@ -1477,8 +1510,31 @@ export async function ensureTodayPlan(
             generation_reason: t.isContextBuilding ? "context_building" : "daily_plan",
           };
         });
-        await supabase.from("tasks").insert(taskRows);
+        const { data: insertedRepair, error: repairErr } = await supabase
+          .from("tasks")
+          .insert(taskRows)
+          .select("id, title");
+        if (repairErr) {
+          console.error("[Plan] Repair task insert failed:", repairErr.message);
+        } else {
+          (insertedRepair || []).forEach((t: { id: string; title: string }) => {
+            existingByTitle.set(t.title.toLowerCase().trim(), t.id);
+          });
+        }
         invalidateUserCache(userId, "task repair");
+      }
+      // Embed task IDs into plan content for direct ID matching in UI
+      const needsIdUpdate = content.tasks.some((t) => !t.taskId);
+      if (needsIdUpdate) {
+        const enriched = content.tasks.map((t) => ({
+          ...t,
+          taskId: t.taskId ?? existingByTitle.get(t.title.toLowerCase().trim()),
+        }));
+        await supabase
+          .from("daily_plans")
+          .update({ plan_content: { ...content, tasks: enriched } })
+          .eq("id", existing.id);
+        return { plan: { ...content, tasks: enriched }, planId: existing.id, created: false };
       }
       return { plan: content, planId: existing.id, created: false };
     }
@@ -1516,23 +1572,26 @@ export async function ensureTodayPlan(
 
   const { data: existingTodayTasks } = await supabase
     .from("tasks")
-    .select("title")
+    .select("id, title")
     .eq("user_id", userId)
     .eq("due_date", today);
 
   const existingTitles = new Set(
-    (existingTodayTasks || []).map((t) => t.title.toLowerCase())
+    (existingTodayTasks || []).map((t) => (t.title as string).toLowerCase().trim())
+  );
+  const existingByTitle = new Map(
+    (existingTodayTasks || []).map((t) => [(t.title as string).toLowerCase().trim(), t.id as string])
   );
 
   const newTasks = planContent.tasks
-    .filter((t) => !existingTitles.has(t.title.toLowerCase()))
+    .filter((t) => !existingTitles.has(t.title.toLowerCase().trim()))
     .map((t) => {
       const initiativeId = t.linkedInitiative
         ? ctx.initiativeMap.get(t.linkedInitiative.toLowerCase())
         : undefined;
       return {
         user_id: userId,
-        title: t.title,
+        title: t.title.trim(),
         description: t.whyItMatters.trim(),
         status: "pending",
         due_date: today,
@@ -1544,7 +1603,40 @@ export async function ensureTodayPlan(
     });
 
   if (newTasks.length > 0) {
-    await supabase.from("tasks").insert(newTasks);
+    const { data: insertedTasks, error: insertErr } = await supabase
+      .from("tasks")
+      .insert(newTasks)
+      .select("id, title");
+    if (insertErr) {
+      console.error("[Plan] Task insert failed:", insertErr.message);
+    } else {
+      // Embed task IDs back into plan content for reliable UI matching
+      const insertedByTitle = new Map(
+        (insertedTasks || []).map((t) => [(t.title as string).toLowerCase().trim(), t.id as string])
+      );
+      planContent.tasks = planContent.tasks.map((t) => ({
+        ...t,
+        taskId:
+          insertedByTitle.get(t.title.toLowerCase().trim()) ??
+          existingByTitle.get(t.title.toLowerCase().trim()) ??
+          t.taskId,
+      }));
+      // Persist enriched plan content with task IDs
+      await supabase
+        .from("daily_plans")
+        .update({ plan_content: planContent })
+        .eq("id", inserted.id);
+    }
+  } else {
+    // All tasks already existed — embed existing IDs into plan content
+    planContent.tasks = planContent.tasks.map((t) => ({
+      ...t,
+      taskId: existingByTitle.get(t.title.toLowerCase().trim()) ?? t.taskId,
+    }));
+    await supabase
+      .from("daily_plans")
+      .update({ plan_content: planContent })
+      .eq("id", inserted.id);
   }
 
   // Generate and store a rule-based daily coach note (no LLM call)

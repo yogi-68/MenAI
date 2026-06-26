@@ -819,9 +819,36 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           .select("id")
           .single();
 
-        // Append sentinel so client can use the real server message ID
+        // Check if a confidence question should be shown this session (max 1 per session)
+        let confidenceQuestion: { factor: string; goalId: string; goalTitle: string } | null = null;
+        if (!input.sessionConfidenceAsked) {
+          const lowGoal = Object.entries(userModel.goalConfidence ?? {})
+            .filter(([, b]) => b.total < 60 && (b.missingFactors?.length ?? 0) > 0)
+            .sort(([, a], [, b]) => a.total - b.total)[0];
+          if (lowGoal) {
+            const [goalId, breakdown] = lowGoal;
+            const answeredFactors = breakdown.answeredFactors ?? [];
+            const nextFactor = breakdown.missingFactors?.find(
+              (mf) => !answeredFactors.includes(mf.factor)
+            );
+            if (nextFactor) {
+              const { data: goalRow } = await serviceClient
+                .from("goals")
+                .select("title")
+                .eq("id", goalId)
+                .eq("user_id", input.userId)
+                .maybeSingle();
+              if (goalRow?.title) {
+                confidenceQuestion = { factor: nextFactor.factor, goalId, goalTitle: goalRow.title };
+              }
+            }
+          }
+        }
+
+        // Append sentinel so client can use the real server message ID (and optional confidence Q)
         if (savedMsg?.id) {
-          controller.enqueue(encoder.encode(`\n__DONE__:${savedMsg.id}\n`));
+          const sentinelPayload = JSON.stringify({ id: savedMsg.id, cq: confidenceQuestion });
+          controller.enqueue(encoder.encode(`\n__DONE__:${sentinelPayload}\n`));
         }
         controller.close();
       } catch (err) {
@@ -887,34 +914,65 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
         // Mentor signals already ingested before prompt build
 
-        // Extract and persist life data (background — fires after stream)
+        // Extract and persist life data — awaited so downstream cache+plan invalidation runs reliably
         const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));
-        bgExtraction.then((data) => {
-          if (hasExtractedData(data)) {
-            persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
-              // After successful persistence, we no longer need to invalidate old snapshot
-              console.log("[Extraction] Successfully persisted data (streaming)");
-            }).catch(() => {});
-            
-            const extractionSummary = buildExtractionSummary(data);
-            if (extractionSummary) {
-              storeMemory({
-                userId: input.userId,
-                content: extractionSummary,
-                memoryType: data.goals.length > 0 ? "goal" : "commitment",
-                importance: 0.85,
-                metadata: { conversation_id: conversationId, type: "extraction" },
-              }).catch(() => {});
-            }
+        bgExtraction.then(async (data) => {
+          if (!hasExtractedData(data)) return;
 
-            // Evaluate predictions in background
-            evaluatePredictions({
+          try {
+            await persistExtractedData(input.userId, data, conversationId, serviceClient);
+            console.log("[Extraction] Persisted data (streaming)");
+
+            // Step 2: Invalidate user cache immediately
+            const { invalidateUserCache: bustCache } = await import("@/lib/ai/orchestrator/cache-invalidation");
+            bustCache(input.userId, "extraction complete");
+
+            // Step 3: Delete today's daily_plan so plan regenerates on next open
+            const today = new Date().toISOString().split("T")[0];
+            Promise.resolve(
+              serviceClient.from("daily_plans").delete().eq("user_id", input.userId).eq("plan_date", today)
+            ).catch(() => {});
+
+            // Step 4: Recompute confidence for any extracted goals (fire-and-forget)
+            if (data.goals.length > 0) {
+              const { fetchAndComputeGoalConfidence } = await import("@/lib/plans/goal-confidence");
+              const { data: extractedGoalRows } = await serviceClient
+                .from("goals")
+                .select("id, target_date, success_criteria")
+                .eq("user_id", input.userId)
+                .in("title", data.goals.map((g) => g.title))
+                .limit(5);
+              if (extractedGoalRows?.length) {
+                for (const goalRow of extractedGoalRows) {
+                  fetchAndComputeGoalConfidence(serviceClient, input.userId, goalRow.id, {
+                    target_date: goalRow.target_date,
+                    success_criteria: goalRow.success_criteria,
+                  }).catch(() => {});
+                }
+              }
+            }
+          } catch (err) {
+            console.error("[Extraction] Persistence failed:", err);
+          }
+
+          const extractionSummary = buildExtractionSummary(data);
+          if (extractionSummary) {
+            storeMemory({
               userId: input.userId,
-              extractedData: data,
-              conversationId,
-              serviceClient,
+              content: extractionSummary,
+              memoryType: data.goals.length > 0 ? "goal" : "commitment",
+              importance: 0.85,
+              metadata: { conversation_id: conversationId, type: "extraction" },
             }).catch(() => {});
           }
+
+          // Evaluate predictions in background
+          evaluatePredictions({
+            userId: input.userId,
+            extractedData: data,
+            conversationId,
+            serviceClient,
+          }).catch(() => {});
         }).catch(() => {});
 
         if (conversationHistory.length > 0 && conversationHistory.length % 20 === 0) {

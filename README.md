@@ -216,24 +216,70 @@ interface UserContext {
 
 If a goal has no deadline, week-relative milestones (`Week 1: ‚Ä¶`) are used instead of skipping generation.
 
+### Chat ? extraction ? plan pipeline
+
+When a user sends a chat message the correct end-to-end flow is:
+
+`
+POST /api/chat ? orchestrateStreaming()
+  LLM streams tokens to client
+  Await DB write (assistant message) ? get real messageId
+  Check goalConfidence for next missing factor (max 1 card/session)
+  Append __DONE__:{"id":"uuid","cq":null|{factor,goalId,goalTitle}}
+  Stream closes
+
+Client parses sentinel:
+  Stores message with server UUID (no ID mismatch on refetch)
+  If cq != null: injects ConfidenceQuestionCard (1/session)
+
+Background (finally, after stream):
+  await persistExtractedData()   ó writes deadline/goal/obstacle to DB
+  invalidateUserCache()          ó bust Redis 15m cache immediately
+  delete daily_plans today row   ó force plan regeneration on next open
+  recomputeGoalConfidence()      ó update precision score
+`
+
 ### Plan generation pipeline
 
-```
-getUserContext() (Redis 15m)
-  ‚Üí ensureMilestonesForGoal() per active execution goal
-  ‚Üí buildPlanContext() ‚Äî single context assembly
-  ‚Üí daily-plan-generator.ts (PLAN_CONTENT_VERSION=2, gpt-4o-mini)
-  ‚Üí enforce 3 tasks/goal + duplicate why-line guard
-  ‚Üí tasks table + daily_plans.plan_content
-```
+`
+GET /api/plans/generate ? ensureTodayPlan()
+  If plan cached + not stale:
+    repair: insert missing task rows
+    embed: write taskId into plan_content.tasks
+    return enriched plan
+  Otherwise:
+    ensureMilestonesForUser()
+    fetchPlanUserContext() ó validates 8 required context fields
+    generateDailyPlanWithAI() ó gpt-4o-mini, 4 personalization rules
+    insert daily_plans
+    insert tasks + retrieve IDs
+    embed taskId into plan_content (direct ID match, no title fragility)
+    store dailyCoachNote in mentor_memories
+`
 
-Stale cached plans auto-invalidate when task count &lt; 3/goal, why equals title, or plan version &lt; 2.
+**4 mandatory personalization rules in every prompt:**
+1. Task title specific to this user ó never generic
+2. If lastAchievement exists, at least one task references it explicitly
+3. Every task has a CONCRETE DELIVERABLE (never "research X")
+4. Fitness tasks include exercise name + duration + plan day number
 
-Why-line logic: [`src/lib/plans/task-why-line.ts`](src/lib/plans/task-why-line.ts) ‚Äî never exposes ‚ÄúNo milestones yet‚Äù or duplicates task titles.
+Why-line logic: task-why-line.ts ó never "No milestones yet" or duplicates task title.
 
-### Shipped UI fixes (audit)
+### Goal confidence (Plan Precision Score)
 
-Dark mode default, score badge spacing, task card metadata stripped, goal card hierarchy, radial chart empty state, rhythm empty-state copy, coach rail short bullets (no synthesis paragraph fallback).
+Rule-based 0ñ100, no LLM. Factors: Deadline (20), Obstacle (20), Success criteria (20), Resources (20), Execution history (20).
+
+**Confidence Q&A:** Auto-injected as ConfidenceQuestionCard (max 1/session) when score < 60. User clicks a pill ? POST /api/confidence/answer writes to correct table, recomputes, returns next factor. Cards chain automatically.
+
+### Coach rail (3 sections, no truncated synthesis)
+
+1. Today's coaching note ó 1 sentence from plan calibration or daily note memory
+2. Plan precision CTA ó lowest-confidence goal + action link (shown when score < 70)
+3. What your coach knows ó max 4 bullets, ~8 words each
+
+### Shipped UI fixes
+
+Dark mode default, score badge spacing, task card metadata stripped, goal card hierarchy, radial chart empty state, rhythm empty-state copy, coach rail redesigned to 3 action-oriented sections, chat virtualizer `measureElement` for correct row heights, `__DONE__` sentinel for server message ID (prevents disappearing messages), task checkbox resolved by ID not fragile title lookup.
 
 ---
 

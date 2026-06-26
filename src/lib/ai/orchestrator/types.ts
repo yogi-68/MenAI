@@ -425,6 +425,8 @@ export interface OrchestratorInput {
   conversationId?: string | null;
   /** When set, the orchestrator injects a confidence-improvement system note for this goal */
   confidenceGoalId?: string | null;
+  /** Set to true when the client has already shown a confidence question this session — prevents repeat */
+  sessionConfidenceAsked?: boolean;
 }
 
 export interface OrchestratorOutput {

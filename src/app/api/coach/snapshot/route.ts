@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getUserContext } from "@/lib/context/user-context";
+import { getUserModel } from "@/lib/user-model/loader";
 
 export const runtime = "nodejs";
 
@@ -30,15 +31,9 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [userContext, convRes, dailyNoteRes] = await Promise.all([
+  const [userContext, userModel, dailyNoteRes] = await Promise.all([
     getUserContext(supabase, user.id),
-    supabase
-      .from("conversations")
-      .select("id")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    getUserModel(supabase, user.id),
     supabase
       .from("mentor_memories")
       .select("text")
@@ -49,32 +44,6 @@ export async function GET() {
       .limit(1)
       .maybeSingle(),
   ]);
-
-  let lastMessage: { content: string; createdAt: string; timeLabel: string } | null = null;
-  let earlierMessage: { content: string } | null = null;
-
-  if (convRes.data?.id) {
-    const { data: messages } = await supabase
-      .from("messages")
-      .select("role, content, created_at")
-      .eq("conversation_id", convRes.data.id)
-      .eq("role", "assistant")
-      .order("created_at", { ascending: false })
-      .limit(2);
-
-    const latest = messages?.[0];
-    const earlier = messages?.[1];
-    if (latest?.content) {
-      lastMessage = {
-        content: trimAtSentence(latest.content, 500),
-        createdAt: latest.created_at,
-        timeLabel: formatMessageTime(latest.created_at),
-      };
-    }
-    if (earlier?.content) {
-      earlierMessage = { content: trimAtSentence(earlier.content, 400) };
-    }
-  }
 
   const phase = userContext.rhythmPhase;
   const completed = userContext.todayPlan.filter((t) => t.status === "completed").length;
@@ -89,8 +58,31 @@ export async function GET() {
     .eq("plan_date", today)
     .maybeSingle();
   const calibrationQuestion = (todayPlan?.plan_content as { calibrationQuestion?: string } | null)?.calibrationQuestion ?? null;
-
   const dailyNote = calibrationQuestion ?? dailyNoteRes.data?.text ?? null;
+
+  // Find lowest-confidence goal for precision CTA
+  const goalConfidence = userModel.goalConfidence ?? {};
+  let precisionCTA: { goalId: string; goalTitle: string; score: number; factor: string } | null = null;
+  const lowEntries = Object.entries(goalConfidence)
+    .filter(([, b]) => b.total < 70 && b.missingFactors?.length > 0)
+    .sort(([, a], [, b]) => a.total - b.total);
+  if (lowEntries.length > 0) {
+    const [goalId, breakdown] = lowEntries[0];
+    const { data: goalRow } = await supabase
+      .from("goals")
+      .select("title")
+      .eq("id", goalId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (goalRow?.title) {
+      precisionCTA = {
+        goalId,
+        goalTitle: goalRow.title,
+        score: breakdown.total,
+        factor: breakdown.missingFactors[0]?.factor ?? "deadline",
+      };
+    }
+  }
 
   return NextResponse.json({
     score: userContext.scoreToday,
@@ -98,10 +90,9 @@ export async function GET() {
     statusLabel: `Score ${userContext.scoreToday} · ${phase}`,
     tasksCompletedToday: completed,
     tasksDueToday: expected,
-    lastMessage,
-    earlierMessage,
     knows: userContext.knowledgeBullets,
     lastAchievement: userContext.lastAchievement,
     dailyNote,
+    precisionCTA,
   });
 }
