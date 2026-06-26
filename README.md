@@ -2,9 +2,33 @@
 
 MenAI is an **execution OS for ambitious people**: a dark, Linear-style dashboard with a persistent performance score, exactly **3 AI-generated tasks per active goal per day**, and a single execution-focused coach that remembers who you are.
 
-**Stack:** Next.js 16 · Supabase · OpenAI · Recharts · Vercel  
-**Design:** `#0f0f11` shell · `#7c6fff` accent · **Syne** (display) · **Plus Jakarta Sans** (UI) · **JetBrains Mono** (score only)  
+**Stack:** Next.js 16 · Supabase · OpenAI · Upstash Redis · Recharts · Vercel  
+**Design:** `#0f0f11` shell · `#7c6fff` accent · **Syne** (display headings) · **Plus Jakarta Sans** (UI body) · **JetBrains Mono** (numeric score only)  
 **Layout:** 3 columns — sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile)
+
+---
+
+## Table of contents
+
+1. [Launch readiness](#launch-readiness-first-external-user)
+2. [Quick start](#quick-start)
+3. [Environment variables](#environment-variables)
+4. [Onboarding flow (step-by-step)](#onboarding-flow-step-by-step)
+5. [User journey after onboarding](#user-journey-after-onboarding)
+6. [Architecture & data flow](#architecture--data-flow)
+7. [Typography & spacing](#typography--spacing)
+8. [Project structure](#project-structure)
+9. [Feature map](#feature-map)
+10. [Product rules](#product-rules)
+11. [How AI is used](#how-ai-is-used)
+12. [Database reference](#database-reference)
+13. [API routes](#api-routes)
+14. [Key modules (`src/lib`)](#key-modules-srclib)
+15. [UI components (`src/components`)](#ui-components-srccomponents)
+16. [Deploy (Vercel)](#deploy-vercel)
+17. [Scripts & verification](#scripts--verification)
+18. [Testing](#testing)
+19. [Scaling notes](#scaling-notes)
 
 ---
 
@@ -19,7 +43,7 @@ The product is code-complete for a single beta user. Operational blockers:
 | Nightly cron | Schedule `GET /api/cron/nightly` with `Authorization: Bearer $CRON_SECRET` |
 | User path | Signup → onboarding → at least one **execution goal with a deadline** |
 
-Verify schema after migrate: `supabase/scripts/verify-v2-migrations.sql`
+Verify schema after migrate: [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql)
 
 ---
 
@@ -39,6 +63,8 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
+Open `http://localhost:3000` → Sign up → complete onboarding → land on dashboard.
+
 ---
 
 ## Environment variables
@@ -53,11 +79,249 @@ Copy from [`.env.local.example`](.env.local.example):
 | `OPENAI_API_KEY` | Yes | Plans + coach |
 | `OPENAI_FAST_MODEL` | No | Default `gpt-4o-mini` (planner, extraction) |
 | `OPENAI_DEEP_MODEL` | No | Default `gpt-4o` (coach, milestones, reviews) |
-| `UPSTASH_REDIS_REST_URL` | Prod | Cognitive-state cache |
-| `UPSTASH_REDIS_REST_TOKEN` | Prod | Cognitive-state cache |
+| `UPSTASH_REDIS_REST_URL` | Prod | Session + user-context cache |
+| `UPSTASH_REDIS_REST_TOKEN` | Prod | Session + user-context cache |
 | `RESEND_API_KEY` | Yes | Auth emails |
 | `NEXT_PUBLIC_APP_URL` | Yes | Email links |
 | `CRON_SECRET` | Prod | Protects `/api/cron/nightly` |
+
+Without Redis, caching is disabled gracefully — the app still works but rebuilds context from Supabase on every request.
+
+---
+
+## Onboarding flow (step-by-step)
+
+Onboarding is a **one-question-at-a-time** questionnaire. It runs at `/onboarding` and is gated by `onboarding_progress.completed_at` — the dashboard redirects incomplete users back to onboarding.
+
+### Files involved
+
+| File | Role |
+|------|------|
+| [`src/app/onboarding/page.tsx`](src/app/onboarding/page.tsx) | UI: question cards, progress bar, validation |
+| [`src/lib/onboarding/questions.ts`](src/lib/onboarding/questions.ts) | Question definitions + flow order |
+| [`src/app/api/onboarding/answer/route.ts`](src/app/api/onboarding/answer/route.ts) | Saves each answer to `onboarding_responses` |
+| [`src/app/api/onboarding/progress/route.ts`](src/app/api/onboarding/progress/route.ts) | Returns current step / completion |
+| [`src/app/api/onboarding/validate-initiative/route.ts`](src/app/api/onboarding/validate-initiative/route.ts) | Blocks vague goals before continue |
+| [`src/lib/onboarding/finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) | Turns answers into DB records + first plan |
+| [`src/lib/ai/onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) | Optional LLM extraction for selected answers |
+
+### Question flow (4 steps)
+
+Defined in [`questions.ts`](src/lib/onboarding/questions.ts) → `buildQuestionFlow()` returns `["Q2", "Q3", "Q4", "Q7"]`:
+
+| Step | ID | Question | Type | What it creates |
+|------|-----|----------|------|-----------------|
+| 1 | **Q2** | What are you actively trying to achieve in the next 30–90 days? | Text | Raw goal title (validated for concreteness) |
+| 2 | **Q3** | When do you want to achieve this? | Forced choice (30 / 60 / 90 days or custom date) | `target_date` on the goal |
+| 3 | **Q4** | What is the biggest thing slowing you down? | Forced choice (+ optional “other”) | `execution_patterns` row (procrastination, overthinking, etc.) |
+| 4 | **Q7** | What would make the next 30 days successful? | Text | `success_criteria` on the goal |
+
+Name comes from the auth profile — there is no separate name question in the minimal flow.
+
+### What happens on final answer (Q7)
+
+When the user completes Q7, [`finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) runs:
+
+1. **Load** all `onboarding_responses` for the user.
+2. **Validate** Q2 via [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) — vague goals may be saved as “needs sharpening” without a deadline plan.
+3. **Insert execution pattern** from Q4 obstacle map (`OBSTACLE_PATTERN_MAP`).
+4. **Create execution goal** in `goals` (`goal_kind = 'execution'`, `source = 'onboarding'`) if none exists.
+5. **Generate milestones** via [`milestone-generator.ts`](src/lib/plans/milestone-generator.ts).
+6. **Set focus** — `profiles.current_focus_goal_id` + `current_focus_until`.
+7. **Generate today's plan** — `ensureTodayPlan()` in [`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts).
+8. **Refresh user model** — `scheduleUserModelRefresh()` for coach memory.
+9. **Mark complete** — `onboarding_progress.completed_at` + `profiles.onboarding_completed = true`.
+10. **Redirect** → `/dashboard`.
+
+### Onboarding gate in the app
+
+- [`src/middleware.ts`](src/middleware.ts) — auth protection for dashboard routes.
+- [`src/app/dashboard/page.tsx`](src/app/dashboard/page.tsx) — client check on `onboarding_progress.completed_at`; redirects to `/onboarding` if missing.
+
+### Post-onboarding setup checklist
+
+If a user skips a deadline or adds goals later, [`src/components/onboarding/setup-checklist.tsx`](src/components/onboarding/setup-checklist.tsx) on Today's Plan prompts them to add an active goal with a deadline via Coach.
+
+---
+
+## User journey after onboarding
+
+```
+Signup (/signup)
+  → Email confirm
+  → Onboarding (4 questions)
+  → Dashboard Overview (/dashboard)
+       ├── Goals tab — 2×2 goal cards + weekly score chart
+       ├── Weekly tab — AI weekly review
+       └── Monthly tab — monthly review panel
+  → Today's Plan (/dashboard/plans) — 3 tasks × N goals, why lines, checkboxes
+  → Coach (/dashboard/chat) — full streaming conversation
+  → Coach rail (all pages except chat) — last message + memory bullets
+  → Goal analytics (/dashboard/goals/[goalId]) — charts, success forecast
+  → Timeline (/dashboard/timeline) — life events + reflections
+  → Settings (/dashboard/settings)
+```
+
+**Daily rhythm** (morning / afternoon / night) comes from [`/api/rhythm`](src/app/api/rhythm/route.ts) + [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts) and appears on Today's Plan.
+
+---
+
+## Architecture & data flow
+
+### Unified `UserContext` (single source of truth)
+
+[`src/lib/context/user-context.ts`](src/lib/context/user-context.ts) assembles everything the product needs about a user in one object:
+
+```typescript
+interface UserContext {
+  profile: { name, timezone, streakDays }
+  userModel: { identity, values, patterns, currentFocus }
+  activeGoals: Goal[]
+  todayPlan: Task[]
+  recentMemories: Memory[]
+  lastAchievement: string | null
+  rhythmPhase: 'morning' | 'afternoon' | 'night'
+  scoreToday: number
+  knowledgeBullets: string[]  // max 4, ~8 words each — for coach rail
+}
+```
+
+**Cached 15 minutes** in Redis (`menai:user-context:{userId}`). Invalidated via [`invalidateUserCache()`](src/lib/redis/client.ts) when goals/tasks change.
+
+**Consumers:**
+
+| Feature | Reads from |
+|---------|------------|
+| Daily planner | `userContextBlock` + `lastAchievement` injected into GPT prompt |
+| Coach rail snapshot | `/api/coach/snapshot` → `getUserContext()` |
+| Coach chat | Orchestrator (separate path, but same underlying tables) |
+
+### Plan generation pipeline
+
+```
+Supabase (goals, milestones, tasks, memories, patterns)
+  → fetchPlanUserContext() + getUserContext()
+  → daily-plan-generator.ts (gpt-4o-mini)
+  → sanitizePlanTaskFields() — three-tier why-line fallback
+  → tasks table (max 3 per goal per day)
+  → daily_plans.plan_content (cached JSON)
+```
+
+Why-line logic: [`src/lib/plans/task-why-line.ts`](src/lib/plans/task-why-line.ts) — never exposes “No milestones yet” or duplicates task titles.
+
+---
+
+## Typography & spacing
+
+### Design intent
+
+- **Body copy** uses `letter-spacing: normal` and `word-spacing: normal`.
+- **Display headings** (Syne) may use Tailwind `tracking-tight` (`-0.02em`) — scoped to headings only, not body text.
+- **Score block** uses JetBrains Mono for the number only; subtitle uses Plus Jakarta Sans with explicit spacing (see [`performance-score-badge.tsx`](src/components/dashboard/performance-score-badge.tsx)).
+
+### Where spacing was breaking
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `0of6tasksdone` in score badge | Duplicate `.score-hero` rule applied display font to entire block | Removed duplicate rule; subtitle uses body font + `<br/>` |
+| Coach rail text as one block | Plain `<p>{content}</p>` without markdown/newlines | [`MarkdownContent`](src/components/chat/markdown-content.tsx) in rail + chat |
+| Squished letters globally | Inherited tight tracking on nested elements | Global typography block at end of [`globals.css`](src/app/globals.css) |
+
+### CSS locations
+
+| Rule | File | Purpose |
+|------|------|---------|
+| Design tokens (`--bg-primary`, `--accent-primary`, fonts) | `globals.css` `:root` + `html.dark` | Theme |
+| `.chat-bubble-ai`, `.chat-bubble-user` | `globals.css` | Chat message containers |
+| `.chat-markdown`, `.chat-plain-text` | `globals.css` (end of file) | Markdown + user message spacing |
+| `.coach-rail__bubble` | `globals.css` | Rail message typography |
+| `.score-hero*` | `globals.css` | Sidebar score block |
+
+### Chat rendering
+
+| Component | Renders |
+|-----------|---------|
+| [`chat-message.tsx`](src/components/chat/chat-message.tsx) | User = plain text (`white-space: pre-wrap`); Assistant = ReactMarkdown |
+| [`markdown-content.tsx`](src/components/chat/markdown-content.tsx) | Shared markdown renderer for chat + coach rail |
+| [`coach-rail.tsx`](src/components/chat/coach-rail.tsx) | Last 2 coach messages via `MarkdownContent` |
+
+Dark mode default: `<html className="dark">` in [`src/app/layout.tsx`](src/app/layout.tsx) with inline script reading `localStorage` key `menai-theme`.
+
+---
+
+## Project structure
+
+```
+MentalAI/
+├── public/                    # Static assets (logo.png, etc.)
+├── supabase/
+│   ├── migrations/            # SQL migrations 001–041 (run in order)
+│   ├── scripts/               # verify-v2-migrations.sql, memory debug scripts
+│   └── functions/             # Legacy edge functions (email, daily tasks)
+├── tests/
+│   ├── unit/                  # Vitest unit tests
+│   ├── integration/           # Integration tests
+│   └── e2e/                   # End-to-end tests
+├── mobile/                    # Expo React Native app (companion, separate deploy)
+└── src/
+    ├── app/                   # Next.js App Router — pages + API routes
+    ├── components/            # React UI components
+    └── lib/                     # Business logic, AI, data access
+```
+
+### `src/app/` — Pages & API
+
+| Path | Purpose |
+|------|---------|
+| `layout.tsx` | Root layout: fonts, dark theme script, Providers |
+| `globals.css` | All design tokens + component styles |
+| `page.tsx` | Marketing landing page |
+| `login/`, `signup/` | Auth pages |
+| `onboarding/page.tsx` | Onboarding questionnaire UI |
+| `auth/callback/` | Supabase OAuth/email callback |
+| `dashboard/layout.tsx` | 3-column shell: sidebar + main + coach rail |
+| `dashboard/page.tsx` | Overview (Goals / Weekly / Monthly tabs) |
+| `dashboard/plans/page.tsx` | Today's Plan — tasks, rhythm, reflection |
+| `dashboard/chat/page.tsx` | Full coach conversation |
+| `dashboard/goals/[goalId]/page.tsx` | Per-goal analytics + charts |
+| `dashboard/timeline/page.tsx` | Timeline of wins + reflections |
+| `dashboard/settings/page.tsx` | Profile, theme, account |
+| `dashboard/admin/page.tsx` | Internal ops dashboard |
+| `dashboard/reviews/weekly|monthly/` | Standalone review pages (also embedded in Overview tabs) |
+| `api/` | All server routes (see [API routes](#api-routes)) |
+
+### `src/components/` — UI
+
+| Folder | Key files | Purpose |
+|--------|-----------|---------|
+| `auth/` | `resend-confirmation-action.tsx` | Resend signup email |
+| `charts/` | `bar-chart-card.tsx`, `radial-progress-chart.tsx`, etc. | Recharts wrappers for dashboard |
+| `chat/` | `chat-message.tsx`, `coach-rail.tsx`, `coach-knowledge-panel.tsx`, `markdown-content.tsx` | Coach UI |
+| `dashboard/` | `performance-score-badge.tsx`, `sidebar-streak.tsx`, `goal-review-tabs.tsx` | Sidebar score + overview tabs |
+| `onboarding/` | `setup-checklist.tsx` | Post-onboarding nudge when no goals |
+| `plans/` | `plan-context-interview.tsx` | In-app plan context questions |
+| `ui/` | `clay-card.tsx`, `clay-sidebar-link.tsx` | Shared primitives |
+
+### `src/lib/` — Business logic
+
+| Folder | Purpose |
+|--------|---------|
+| `ai/` | OpenAI client, models, orchestrator, onboarding extraction |
+| `ai/orchestrator/` | Chat pipeline: router → prompt → stream → memory write |
+| `analytics/` | Product event tracking |
+| `auth/` | Bootstrap, admin checks, email cooldown |
+| `chat/` | Message fetch helpers |
+| `context/` | **`user-context.ts`** — unified cached user state |
+| `dashboard/` | Briefing, pending tasks |
+| `email/` | Resend + auth email templates |
+| `goals/` | Active goals fetch, quality gate, colors |
+| `mentor/` | Mentor memories, retrieval, weakness engine |
+| `onboarding/` | Questions, finalize flow |
+| `plans/` | Daily plan generator, performance score, rhythm, task why-lines |
+| `redis/` | Upstash client, cache keys, invalidation |
+| `supabase/` | Browser + server Supabase clients |
+| `tasks/` | Task quality / finishable-today checks |
+| `user-model/` | Synthesis engine, loader, staleness, types |
 
 ---
 
@@ -87,13 +351,15 @@ Copy from [`.env.local.example`](.env.local.example):
 2. **Max 3 active execution goals** — direction goals are synthesis-only, never in daily plan UI  
 3. **Single coach persona** — direct, anti-skip guardrails in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts)  
 4. **Transparent memory** — Coach rail shows what MenAI knows; stale synthesis shows **"updating…"** if >26h old  
-5. **Time-aware coach** — rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)
+5. **Time-aware coach** — rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
+6. **Personalized tasks** — planner reads `UserContext` (identity, last achievement, mentor memories) — not generic templates  
+7. **Human why-lines** — three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
 
 ---
 
 ## How AI is used
 
-Model constants live in [`src/lib/ai/models.ts`](src/lib/ai/models.ts):
+Model constants: [`src/lib/ai/models.ts`](src/lib/ai/models.ts)
 
 | Job | Model | Where |
 |-----|-------|-------|
@@ -123,7 +389,7 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 
 ---
 
-## Database
+## Database reference
 
 **Source of truth:** [`supabase/migrations/`](supabase/migrations/) — run in numeric order through **041**.
 
@@ -163,7 +429,7 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 | `identity_signals` | Structured identity facts | Onboarding, extraction | User model synthesis |
 | `execution_patterns` | Procrastination / drift patterns | Onboarding, extraction, chat | Cognition engine, coach |
 | `commitments` | User commitments | Extraction, onboarding | Coach, weekly review |
-| `relationships` | People mentioned in chat | Chat extraction only | *Not yet read in UI — reserved for future coach context* |
+| `relationships` | People mentioned in chat | Chat extraction only | *Reserved for future coach context* |
 | `behavioral_observations` | Detected behaviors | Pattern detector | Cognition |
 | `behavioral_predictions` | Predicted outcomes | Prediction engine | Cognition |
 | `context_confidence_log` | Prompt confidence audit | Orchestrator | Ops only |
@@ -180,8 +446,8 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 
 | Table | Stores | Written by | Read by |
 |-------|--------|------------|---------|
-| `onboarding_progress` | Step completion | Onboarding API | Auth middleware, dashboard gate |
-| `onboarding_responses` | Raw Q&A | Onboarding API | Extraction, plans |
+| `onboarding_progress` | Step completion, `current_question_id` | Onboarding API | Auth middleware, dashboard gate |
+| `onboarding_responses` | Raw Q&A per question | Onboarding API | Finalize, plans, extraction |
 
 #### Operations
 
@@ -204,21 +470,64 @@ Dropped by migrations **020**, **021**, **039**:
 
 - `match_memories(vector, …)` — pgvector semantic search ([`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts))
 
+### Migration 041 (chat + safety)
+
+[`supabase/migrations/041_chat_and_safety_tables.sql`](supabase/migrations/041_chat_and_safety_tables.sql) adds `messages` + `crisis_events` with RLS — required for coach rail message history.
+
 ---
 
-## API routes (selected)
+## API routes
 
-| Route | Purpose |
-|-------|---------|
-| `POST /api/chat` | Stream coach response (orchestrator) |
-| `GET /api/plans/generate` | Generate or return today's plan |
-| `GET /api/coach/snapshot` | Coach rail: score, last message, phase |
-| `GET /api/user-model` | Synthesized profile + `updatedAt` |
-| `GET /api/analytics/overview` | Overview goals + charts |
-| `GET /api/analytics/performance` | Score, streak, task counts |
-| `GET /api/cron/nightly` | Nightly synthesis (cron + `CRON_SECRET`) |
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/chat` | POST | Stream coach response (orchestrator) |
+| `/api/plans/generate` | GET | Generate or return today's plan |
+| `/api/plans/adjust` | POST | Midday plan adjustment |
+| `/api/coach/snapshot` | GET | Coach rail: score, phase, last messages, knowledge bullets |
+| `/api/user-model` | GET | Synthesized profile + `updatedAt` |
+| `/api/rhythm` | GET | Daily rhythm phase + prompts |
+| `/api/onboarding/answer` | POST | Save onboarding step |
+| `/api/onboarding/progress` | GET | Current onboarding state |
+| `/api/analytics/overview` | GET | Overview goals + charts |
+| `/api/analytics/performance` | GET | Score, streak, task counts |
+| `/api/analytics/goals/[goalId]` | GET | Per-goal analytics |
+| `/api/cron/nightly` | GET | Nightly synthesis (cron + `CRON_SECRET`) |
+| `/api/tasks` | GET/PATCH | Today's tasks CRUD |
+| `/api/reflections` | GET/POST | End-of-day reflection |
+| `/api/auth/bootstrap` | POST | First-login profile setup |
 
-Full list: `src/app/api/`
+Full list: browse [`src/app/api/`](src/app/api/)
+
+---
+
+## Key modules (`src/lib`)
+
+| Module | File(s) | What it does |
+|--------|---------|--------------|
+| **User context** | `context/user-context.ts` | Assembles + caches unified user state for planner + rail |
+| **Daily planner** | `plans/daily-plan-generator.ts` | Fetches context, calls GPT, writes tasks + `daily_plans` |
+| **Why lines** | `plans/task-why-line.ts` | Three-tier fallback; rail bullet trimming |
+| **Performance score** | `plans/performance-score.ts` | Daily/weekly/monthly score from task completion |
+| **User model** | `user-model/synthesis-engine.ts`, `loader.ts` | Rule-based “who am I” synthesis, 12h cache |
+| **Orchestrator** | `ai/orchestrator/index.ts` | Full chat turn: classify → retrieve → prompt → stream → extract |
+| **Redis** | `redis/client.ts` | Cache keys: session, cognition, **user-context** (15 min) |
+| **Active goals** | `goals/active-goals.ts` | Fetches execution goals (no legacy initiatives fallback) |
+| **Staleness** | `user-model/staleness.ts` | >26h → show “updating…” in coach UI |
+
+---
+
+## UI components (`src/components`)
+
+| Component | Renders |
+|-----------|---------|
+| `PerformanceScoreBadge` | Purple sidebar score block + “X of Y tasks done” |
+| `SidebarStreak` | Streak count at sidebar bottom |
+| `CoachRail` | Right panel: status, last messages (markdown), knowledge bullets |
+| `CoachKnowledgePanel` | “What your coach knows” — full page or compact rail variant |
+| `ChatMessage` | Single chat bubble — user plain text, assistant markdown |
+| `MarkdownContent` | Shared ReactMarkdown with `.chat-markdown` styles |
+| `RadialProgressChart` | Success probability donut (min arc value, background ring) |
+| `SetupChecklist` | Nudge when no goals/deadline on Today's Plan |
 
 ---
 
@@ -239,23 +548,41 @@ Full list: `src/app/api/`
 
 Set `CRON_SECRET` and send `Authorization: Bearer <CRON_SECRET>` (handled by Vercel cron headers if configured).
 
-4. Verify: signup → onboarding → goal → plan generates → coach chat streams
+4. Verify: signup → onboarding → goal → plan generates → coach chat streams → rail shows memory bullets
 
 ---
 
-## Scripts
+## Scripts & verification
 
 | Script | Purpose |
 |--------|---------|
 | [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039–041 applied |
 | [`supabase/scripts/verify-memory-storage.sql`](supabase/scripts/verify-memory-storage.sql) | Debug mentor memory writes |
 
+```bash
+npm run dev      # Local development
+npm run build    # Production build
+npm test         # Vitest (unit tests in tests/)
+```
+
+---
+
+## Testing
+
+| File | Covers |
+|------|--------|
+| `tests/performance-score.test.ts` | Score calculation |
+| `tests/daily-planner.test.ts` | Planner constraints |
+| `tests/rhythm-phase.test.ts` | Morning/afternoon/night phase |
+| `tests/memory-persistence.test.ts` | Memory write/read |
+
 ---
 
 ## Scaling notes
 
-- **`/api/coach/snapshot`** bundles score + messages + knowledge — split into score-first + lazy knowledge if rail load grows  
+- **`/api/coach/snapshot`** serves from cached `UserContext` — split score-first + lazy knowledge if rail load grows  
 - **User model** refreshes on data changes + nightly cron; UI shows **"updating…"** when synthesis is >26h stale  
+- **Redis** optional in dev; required in prod for acceptable planner/rail latency  
 
 ---
 

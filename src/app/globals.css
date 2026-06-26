@@ -110,12 +110,16 @@ body {
   overflow-x: hidden;
   transition: background 0.4s ease, color 0.4s ease;
   line-height: 1.6;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
 }
 
 /* ===== TYPOGRAPHY ===== */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
   font-weight: 600;
 }
 
@@ -134,7 +138,7 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-muted);
-  letter-spacing: 0;
+  letter-spacing: normal;
   text-transform: none;
 }
 
@@ -231,7 +235,7 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   font-size: 1.75rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
+  letter-spacing: normal;
   color: var(--text-primary);
 }
 
@@ -309,6 +313,8 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   color: var(--text-primary);
   line-height: 1.8;
   font-weight: 300;
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 
 .chat-bubble-user {
@@ -322,6 +328,8 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   line-height: 1.7;
   font-weight: 400;
   transition: all 0.3s ease;
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 
 .chat-bubble-user:hover {
@@ -444,7 +452,7 @@ html:not(.dark) .border-hairline {
   font-family: var(--font-display);
   font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: normal;
   text-transform: uppercase;
   opacity: 0.85;
   margin-bottom: 6px;
@@ -455,7 +463,7 @@ html:not(.dark) .border-hairline {
   font-size: 2.25rem;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
 }
 
 .score-hero--compact .score-hero__value {
@@ -524,7 +532,11 @@ html:not(.dark) .border-hairline {
   padding: 12px 14px;
   border-radius: var(--radius-md);
   font-size: 0.88rem;
-  line-height: 1.55;
+  line-height: 1.65;
+  letter-spacing: normal;
+  word-spacing: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .coach-rail__bubble--coach {
@@ -861,7 +873,7 @@ html:not(.dark) .border-hairline {
   color: var(--text-muted);
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: normal;
 }
 
 .chat-thread-row {
@@ -1163,7 +1175,7 @@ html:not(.dark) .border-hairline {
 .landing-brand-tag {
   font-size: 0.6rem;
   color: var(--text-muted);
-  letter-spacing: 0.08em;
+  letter-spacing: normal;
 }
 
 .landing-nav-actions {
@@ -1351,7 +1363,7 @@ html:not(.dark) .border-hairline {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--accent-primary);
-  letter-spacing: 0.05em;
+  letter-spacing: normal;
   flex-shrink: 0;
 }
 
@@ -1526,4 +1538,129 @@ html:not(.dark) .border-hairline {
     flex-wrap: wrap;
     font-size: 0.8rem;
   }
+}
+
+/* ==========================================
+   GLOBAL TYPOGRAPHY FIX
+   Prevents squished letters / missing word spaces
+   in chat, coach rail, and body copy.
+   ========================================== */
+
+html {
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+p,
+span,
+div,
+li,
+td,
+th,
+button,
+a,
+label,
+input,
+textarea {
+  letter-spacing: inherit;
+  word-spacing: inherit;
+}
+
+p {
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+.chat-plain-text {
+  margin: 0;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: normal;
+  word-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.chat-markdown,
+.chat-markdown * {
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+.chat-markdown__p {
+  margin: 0 0 1rem;
+  font-weight: 300;
+  line-height: 1.8;
+}
+
+.chat-markdown__p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown__strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.chat-markdown__ul,
+.chat-markdown__ol {
+  padding-left: 1.5rem;
+  margin: 1rem 0;
+  font-weight: 300;
+  line-height: 1.8;
+}
+
+.chat-markdown__li {
+  margin-bottom: 0.5rem;
+}
+
+.chat-markdown--compact .chat-markdown__p {
+  margin-bottom: 0.65rem;
+  font-size: inherit;
+  line-height: 1.65;
+}
+
+.chat-messages,
+.chat-main,
+.chat-input-row textarea {
+  letter-spacing: normal;
+  word-spacing: normal;
+  line-height: 1.7;
+}
+
+.prose,
+.prose * {
+  letter-spacing: normal;
+  word-spacing: normal;
+  line-height: 1.8;
+}
+
+.prose p {
+  margin-bottom: 1rem;
+  line-height: 1.8;
+}
+
+.prose ul,
+.prose ol {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+
+/* Display headings may use tighter tracking via Tailwind — body copy never inherits it */
+.font-display.tracking-tight,
+h1.tracking-tight,
+h2.tracking-tight,
+h3.tracking-tight {
+  letter-spacing: -0.02em;
+}
+
+.score-hero,
+.score-hero * {
+  letter-spacing: normal;
+  word-spacing: normal;
+}
+
+.score-hero__value {
+  letter-spacing: -0.02em;
 }

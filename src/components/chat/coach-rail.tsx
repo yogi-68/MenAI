@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
+import { MarkdownContent } from "@/components/chat/markdown-content";
 import { isUserModelStale } from "@/lib/user-model/staleness";
 import type { UserModel } from "@/lib/user-model/types";
 
@@ -76,7 +77,7 @@ export function CoachRail() {
             {data?.lastMessage ? (
               <div className="coach-rail__bubble coach-rail__bubble--coach">
                 <div className="coach-rail__time">{data.lastMessage.timeLabel}</div>
-                <p>{data.lastMessage.content}</p>
+                <MarkdownContent content={data.lastMessage.content} className="chat-markdown chat-markdown--compact" />
               </div>
             ) : (
               <div className="coach-rail__bubble coach-rail__bubble--coach">
@@ -87,7 +88,7 @@ export function CoachRail() {
             )}
             {data?.earlierMessage && (
               <div className="coach-rail__bubble coach-rail__bubble--earlier">
-                <p>{data.earlierMessage.content}</p>
+                <MarkdownContent content={data.earlierMessage.content} className="chat-markdown chat-markdown--compact" />
               </div>
             )}
           </>
