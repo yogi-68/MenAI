@@ -67,11 +67,46 @@ export async function GET(req: NextRequest) {
       value: count,
     }));
 
+  const achievementCategories = new Set([
+    "goal_created",
+    "milestone",
+    "achievement",
+    "completion",
+    "weekly_win",
+    "monthly_win",
+  ]);
+  const eventsByMonth: Array<{ month: string; count: number; achievements: number }> = [];
+  const monthMap = new Map<string, { count: number; achievements: number }>();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    monthMap.set(key, { count: 0, achievements: 0 });
+  }
+  for (const e of events) {
+    const monthKey = e.sortKey.slice(0, 7);
+    if (!monthMap.has(monthKey)) continue;
+    const row = monthMap.get(monthKey)!;
+    row.count += 1;
+    if (achievementCategories.has(e.category)) row.achievements += 1;
+  }
+  for (const [month, row] of monthMap.entries()) {
+    eventsByMonth.push({
+      month: new Date(month + "-01T12:00:00").toLocaleDateString("en-US", {
+        month: "short",
+      }),
+      count: row.count,
+      achievements: row.achievements,
+    });
+  }
+
   return NextResponse.json({
     range,
     total: filtered.length,
     byCategory,
     timeline,
+    eventsByMonth,
     recent: filtered.slice(0, 12).map((e) => ({
       headline: e.headline,
       subline: e.subline,

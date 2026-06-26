@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Circle, Clock, Target, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, Circle, Clock, Target, Sparkles } from "lucide-react";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { PlanContextInterview } from "@/components/plans/plan-context-interview";
-import { DailyCompletionRing } from "@/components/charts/daily-completion-ring";
+import { GoalCompletionRingRow } from "@/components/charts/daily-completion-ring";
 import { ClayCard } from "@/components/ui";
 import { isLowPlanConfidence } from "@/lib/plans/language-guard";
 import { goalAccent } from "@/lib/goals/goal-colors";
@@ -72,7 +72,6 @@ export default function DailyPlansPage() {
   const todayKey = new Date().toISOString().split("T")[0];
   const [timePromptTask, setTimePromptTask] = useState<{ id: string; estimated: number } | null>(null);
   const [actualMinutesInput, setActualMinutesInput] = useState("");
-  const [showContext, setShowContext] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
 
   const hour = new Date().getHours();
@@ -219,10 +218,25 @@ export default function DailyPlansPage() {
     return [...groups.entries()];
   }, [plan?.tasks]);
 
-  // Match plan tasks to DB tasks by title for checkboxes
-  const taskByTitle = new Map(
-    (tasks || []).map((t) => [t.title.toLowerCase(), t])
+  const taskByTitle = useMemo(
+    () => new Map((tasks || []).map((t) => [t.title.toLowerCase(), t])),
+    [tasks]
   );
+
+  const goalRings = useMemo(() => {
+    return tasksByGoal.map(([goalTitle, goalTasks], goalIndex) => {
+      const completed = goalTasks.filter((pt) => {
+        const db = taskByTitle.get(pt.title.toLowerCase());
+        return db?.status === "completed";
+      }).length;
+      return {
+        goalTitle,
+        completed,
+        total: goalTasks.length,
+        color: goalAccent(goalIndex),
+      };
+    });
+  }, [tasksByGoal, taskByTitle]);
 
   return (
     <div className="page-shell">
@@ -268,11 +282,30 @@ export default function DailyPlansPage() {
 
       {!isLoading && hasGoals && <PlanContextInterview hasInitiatives={hasGoals} />}
 
+      {!isLoading && hasGoals && goalRings.length > 0 && (
+        <section style={{ marginBottom: 24 }}>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <span
+              className="text-xs px-2.5 py-1 rounded-md"
+              style={{
+                background: "var(--bg-glass)",
+                border: "0.5px solid var(--border-color)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {planPhase === "morning" ? "Morning" : planPhase === "afternoon" ? "Afternoon" : "Evening"} ·{" "}
+              {totalTasks - completedTasks} tasks remaining
+            </span>
+          </div>
+          <GoalCompletionRingRow goals={goalRings} />
+        </section>
+      )}
+
       {topPriority && !isLoading && (
         <section
           className="glass-card"
           style={{
-            padding: "24px 28px",
+            padding: "16px",
             marginBottom: "24px",
             borderLeft: "3px solid var(--accent-primary)",
           }}
@@ -280,83 +313,20 @@ export default function DailyPlansPage() {
           <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
             Why today matters
           </p>
-          <p style={{ fontSize: "1.15rem", lineHeight: 1.6, color: "var(--text-primary)", fontWeight: 400 }}>
-            {topPriority}
-          </p>
-          {plan?.whyTheseTasks && (
-            <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-secondary)", marginTop: "14px", marginBottom: 0 }}>
-              {plan.whyTheseTasks}
-            </p>
-          )}
-          {totalTasks > 0 && (
-            <div style={{ marginTop: "16px" }}>
-              <DailyCompletionRing completed={completedTasks} total={totalTasks} />
-            </div>
-          )}
-        </section>
-      )}
-
-      {(plan?.whyTheseTasks || plan?.topObstacle) && (
-        <section className="glass-card" style={{ padding: "20px 24px", marginBottom: "24px" }}>
-          <button
-            type="button"
-            onClick={() => setShowContext((v) => !v)}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              padding: 0,
-              fontSize: "0.85rem",
-            }}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <Sparkles size={16} />
-              Why these tasks?
-            </span>
-            {showContext ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-          </button>
-          {showContext && (
-            <div style={{ marginTop: "16px" }}>
-              {plan.evidence && plan.evidence.length > 0 && (
-                <div style={{ marginBottom: "12px" }}>
-                  <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: "6px" }}>
-                    Based on
-                  </p>
-                  <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                    {plan.evidence.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {lowContext && plan?.planningContext?.improvementHints?.length ? (
-                <ul style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5, paddingLeft: "18px" }}>
-                  {plan.planningContext.improvementHints.map((hint) => (
-                    <li key={hint}>{hint}</li>
-                  ))}
-                </ul>
-              ) : lowContext ? (
-                <p style={{ fontSize: "0.85rem", color: "#f59e0b", marginBottom: "12px", lineHeight: 1.5 }}>
-                  Limited context — use the questions above or{" "}
-                  <Link href="/dashboard/chat">add goals with deadlines</Link>.
-                </p>
-              ) : null}
-              {plan.topObstacle && (
-                <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", marginBottom: "8px" }}>
-                  <strong style={{ fontWeight: 500, color: "var(--text-muted)" }}>Blocker: </strong>
-                  {plan.topObstacle}
-                </p>
-              )}
-              {plan.whyTheseTasks && (
-                <p style={{ fontSize: "0.95rem", lineHeight: 1.7, color: "var(--text-primary)" }}>{plan.whyTheseTasks}</p>
-              )}
-            </div>
-          )}
+          <ul className="text-sm m-0 pl-4 space-y-1.5" style={{ color: "var(--text-secondary)" }}>
+            {evidence.slice(0, 2).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+            {plan?.planningContext?.missingLabels?.map((item) => (
+              <li key={item} style={{ color: "var(--accent-warning)" }}>
+                Missing: {item}
+              </li>
+            ))}
+            {!plan?.planningContext?.missingLabels?.length && topPriority && (
+              <li>{topPriority}</li>
+            )}
+            {plan?.whyTheseTasks && <li>{plan.whyTheseTasks}</li>}
+          </ul>
         </section>
       )}
 
@@ -443,14 +413,12 @@ export default function DailyPlansPage() {
                 <div
                   key={`${planTask.title}-${idx}`}
                   style={{
-                    padding: "24px",
+                    padding: "16px",
                     borderRadius: "var(--radius-md)",
-                    border: "0.5px solid rgba(255,255,255,0.07)",
+                    border: "0.5px solid var(--border-color)",
                     borderLeft: `3px solid ${goalAccent(goalIndex)}`,
-                    background: isDone
-                      ? "rgba(124, 111, 255, 0.04)"
-                      : "rgba(255,255,255,0.02)",
-                    opacity: isDone ? 0.75 : 1,
+                    background: "var(--bg-glass)",
+                    opacity: isDone ? 0.45 : 1,
                   }}
                 >
                   <div
@@ -477,7 +445,7 @@ export default function DailyPlansPage() {
                           cursor: "pointer",
                           padding: 0,
                           color: isDone
-                            ? "var(--accent-primary)"
+                            ? goalAccent(goalIndex)
                             : "var(--text-muted)",
                           flexShrink: 0,
                         }}
@@ -501,57 +469,43 @@ export default function DailyPlansPage() {
                     <div style={{ flex: 1 }}>
                       <h3
                         style={{
-                          fontSize: "1.05rem",
+                          fontSize: "0.875rem",
                           fontWeight: 500,
                           lineHeight: 1.4,
                           textDecoration: isDone ? "line-through" : "none",
                           color: isDone
                             ? "var(--text-muted)"
                             : "var(--text-primary)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          flexWrap: "wrap",
+                          margin: 0,
                         }}
                       >
                         {planTask.title}
-                        {planTask.isContextBuilding && (
-                          <span
-                            style={{
-                              fontSize: "0.7rem",
-                              padding: "2px 8px",
-                              borderRadius: "999px",
-                              background: "rgba(245, 158, 11, 0.15)",
-                              color: "#f59e0b",
-                              fontWeight: 500,
-                              textDecoration: "none",
-                            }}
-                          >
-                            First step
-                          </span>
-                        )}
                       </h3>
                       <p
                         style={{
-                          fontSize: "0.88rem",
-                          color: "var(--text-secondary)",
-                          lineHeight: 1.55,
-                          marginTop: "8px",
+                          fontSize: "0.75rem",
+                          color: "var(--text-muted)",
+                          lineHeight: 1.5,
+                          marginTop: "6px",
+                          marginBottom: 0,
                         }}
                       >
                         {whyLine}
                       </p>
                       <div
                         style={{
-                          display: "flex",
+                          display: "inline-flex",
                           alignItems: "center",
-                          gap: "6px",
+                          gap: "4px",
                           marginTop: "8px",
                           color: "var(--text-muted)",
-                          fontSize: "0.85rem",
+                          fontSize: "0.6875rem",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          border: "0.5px solid var(--border-subtle)",
                         }}
                       >
-                        <Clock size={14} />
+                        <Clock size={12} />
                         {formatDuration(planTask.estimatedMinutes)}
                       </div>
                     </div>

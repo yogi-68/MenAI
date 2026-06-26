@@ -63,8 +63,11 @@ export function PerformanceScoreBadge({ compact = false }: PerformanceScoreBadge
               taskLine
             )}
           </div>
-          {!isLoading && data?.trend && data.trend.length > 0 && (
-            <ScoreSparkline points={data.trend.slice(-7).map((p) => ({ value: p.value }))} />
+          {!isLoading && (
+            <ScoreSparkline
+              points={(data?.trend ?? []).slice(-7).map((p) => ({ value: p.value }))}
+              height={18}
+            />
           )}
         </>
       )}

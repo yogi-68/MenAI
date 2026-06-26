@@ -188,7 +188,15 @@ interface UserContext {
 }
 ```
 
-**Cached 15 minutes** in Redis (`menai:user-context:{userId}`). Invalidated via [`invalidateUserCache()`](src/lib/redis/client.ts) when goals/tasks change.
+**Cached 15 minutes** in Redis (`menai:user-context:{userId}`). Invalidated via [`invalidateUserCache()`](src/lib/redis/client.ts) at these sites:
+
+| Event | File |
+|---|---|
+| Task completed / created | `src/app/api/tasks/route.ts` |
+| Goal / milestone changed | `src/app/api/milestones/route.ts` |
+| Mentor memory written | `src/lib/mentor/mentor-memory.ts` — `persistMentorMemories()` |
+| User model synthesized | `src/lib/user-model/synthesis-engine.ts` — after synthesis write |
+| Daily plan generated | `src/lib/plans/daily-plan-generator.ts` — after `insertPlan()` |
 
 **Consumers:**
 
@@ -263,7 +271,13 @@ Dark mode default, score badge spacing, task card metadata stripped, goal card h
 | [`markdown-content.tsx`](src/components/chat/markdown-content.tsx) | Shared markdown renderer for chat + coach rail |
 | [`coach-rail.tsx`](src/components/chat/coach-rail.tsx) | Last 2 coach messages via `MarkdownContent` |
 
-Dark mode default: `<html className="dark">` in [`src/app/layout.tsx`](src/app/layout.tsx) with inline script reading `localStorage` key `menai-theme`.
+Dark mode default: `<html className="dark">` in [`src/app/layout.tsx`](src/app/layout.tsx) with blocking inline script reading `localStorage` key `menai-theme`, SSR `#0f0f11` fallback, and `color-scheme: dark`. Light mode is opt-in via Settings only.
+
+**Design tokens (dark):** shell `#0f0f11` · sidebar/rail `#141416` · cards `#1a1a1e` · accent `#7c6fff`  
+**Layout:** sidebar **220px** · coach rail **240px** · main content max-width **900px** centered (`page-shell__inner` class in `dashboard/layout.tsx`)  
+**Coach rail truncation:** `trimAtSentence(text, 500)` and `trimAtSentence(text, 400)` in `/api/coach/snapshot` — cuts at last sentence boundary before limit, falls back to last word boundary + ellipsis to prevent mid-word cuts.
+
+**Chart data:** aggregate scores use `goal_progress_snapshots` with `tasks` fallback (`computePerformanceScore`); per-goal analytics same path in `computeGoalAnalytics`. Snapshots upsert on task completion + nightly cron backfill.
 
 ---
 
@@ -372,7 +386,7 @@ MentalAI/
 5. **Time-aware coach** — rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
 6. **Personalized tasks** — planner reads `UserContext` (identity, last achievement, mentor memories) — not generic templates  
 7. **Human why-lines** — three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
-8. **Charts** — sidebar score sparkline, daily completion ring on Today's Plan, goal heatmap + weekly WoW bar, coach execution radar  
+8. **Charts** — sidebar score sparkline (always visible, dashed when empty); per-goal rings on Today's Plan; overview weekly bar with ghost empty state; goal analytics heatmap + milestone line chart; timeline 6-month momentum bar; coach execution radar from `/api/user-model` `executionProfile`  
 
 ---
 
@@ -395,17 +409,75 @@ Model constants: [`src/lib/ai/models.ts`](src/lib/ai/models.ts)
 | **User model / "Who am I?"** | **No LLM on request** | Rule-based [`synthesis-engine.ts`](src/lib/user-model/synthesis-engine.ts), 12h cache [`loader.ts`](src/lib/user-model/loader.ts) |
 | Nightly cognitive + user-model refresh | Scheduled (no chat LLM) | [`synthesis-worker.ts`](src/lib/ai/orchestrator/synthesis-worker.ts) · `/api/cron/nightly` |
 
+### Extraction gate
+
+[`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) — `shouldSkipExtraction()`:
+
+```
+skip if message.length < 10   (hard minimum)
+skip if exact casual phrase   (hi, thanks, ok, …)
+skip if message.length < 60 AND no named-entity signals
+  where signals = capitalized noun | any digit | goal/deadline/milestone keyword
+```
+
+This gates ~30% of chat turns from hitting the extraction LLM (gpt-4o-mini) without touching classification.
+
+---
+
 ### Coach prompt context (each chat turn)
 
 Built in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts):
 
-- `MENTOR_EXECUTION_PERSONA` — accountability guardrails  
-- `rhythmBlock` — time of day + tasks done today  
-- `todayPlanBlock` — today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` when available)
-- `userModel` — synthesized profile from `profiles.user_model`  
-- `memoryRetrievalBlock` — mentor memories + vector search  
+- **`MENTOR_EXECUTION_PERSONA`** — time-aware, anti-description coach persona (see below)
+- `rhythmBlock` — time of day + tasks done/expected today
+- `todayPlanBlock` — today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` — no duplicate fetch)
+- `userModel` — synthesized profile from `profiles.user_model`
+- `memoryRetrievalBlock` — mentor memories + vector search
+
+### Coach persona (MENTOR_EXECUTION_PERSONA)
+
+Core rule: **never describe, always act**. Every response must reference something only sayable to this specific user — a date, task title, number, or recent event.
+
+**Time-aware tone** (mandatory — reads `rhythmBlock` before responding):
+
+| Time + state | Opening template |
+|---|---|
+| Morning, 0 tasks done | "Today's plan is set. Start with [task] — it unblocks the others." |
+| Afternoon, 1 of 3 done | "You're behind pace. [N] hours left. Drop [lower-priority] and finish [critical]." |
+| Evening, 0 of 3 done | "This was a lost day. Tell me what got in the way — we adjust tomorrow's plan now." |
+| Evening, 3 of 3 done | "100 today. [X] days from your next milestone. One more like this and you cross it." |
+
+**Guardrails:**
+- Never open with "Great job!" / "Well done!" — open with facts + next action
+- If behind on tasks: name which tasks are undone, name the consequence
+- If excuses detected: name the pattern by label, give one specific counter-action
+- Never agree for comfort; never soften accountability
+- Push for next concrete step, not more planning
 
 Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.md)
+
+---
+
+### Planner context fields
+
+[`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts) — `fetchPlanUserContext()` assembles:
+
+| Field | Source | Purpose |
+|---|---|---|
+| `userModelNarrative` | `UserContext` | Identity, values, top patterns |
+| `userContextBlock` | `formatUserContextForPlanner()` | Identity, recent win, memories |
+| `yesterdayCompleted` | `tasks.completed_at` | Tasks finished yesterday — planner builds next logical step |
+| `yesterdaySkipped` | `tasks.due_date = yesterday, status pending` | Tasks skipped — must address why or reschedule |
+| `initiativeMilestones` | `goal_milestones` | Current milestone per goal |
+| `milestoneUrgencyLines` | computed | "MILESTONE CLOSES IN N DAYS" if ≤ 5 days away |
+| `deadlineUrgencyLines` | computed | "DEADLINE IN N DAYS" if goal deadline ≤ 7 days |
+| `executionAllocationLines` | `UserContext.executionAllocation` | % allocation per initiative |
+| `mentorMemoryBlock` | `mentor_memories` | Long-term mentor signals |
+| `lastAchievement` | `UserContext` | Most recent win for momentum reference |
+
+**Why-line rules (in prompt):** Every `whyItMatters` must contain a deadline reference, a progress number, or a connection to a recent specific event. Never restate the task title. Fitness tasks must include distance/reps/duration and the plan day number.
+
+**Milestone urgency:** if a goal's next incomplete milestone is ≤ 5 days away, a `⚠️ MILESTONE URGENCY` block is prepended to the prompt — all tasks must directly complete that milestone. If goal deadline ≤ 7 days, a `🚨 DEADLINE PRESSURE` block marks all tasks deadline-critical.
 
 ---
 

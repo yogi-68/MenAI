@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { ChartShell } from "@/components/ui";
 import { chartDefaults, dailyScoreBarColor, seriesColor } from "./chart-theme";
+import { ChartEmptyState } from "./chart-empty-state";
 
 export interface BarChartPoint {
   label: string;
@@ -31,6 +32,8 @@ interface BarChartCardProps {
   valueFormatter?: (v: number) => string;
   className?: string;
   hideHeader?: boolean;
+  emptyMessage?: string;
+  forceEmpty?: boolean;
 }
 
 function BarChartBody({
@@ -84,31 +87,34 @@ export function BarChartCard({
   valueFormatter = (v) => String(v),
   className,
   hideHeader = false,
+  emptyMessage,
+  forceEmpty = false,
 }: BarChartCardProps) {
+  const isEmpty =
+    forceEmpty || (data.length > 0 && data.every((d) => d.value === 0));
+
+  const body = isEmpty ? (
+    <ChartEmptyState message={emptyMessage} variant="bars" height={height} />
+  ) : (
+    <BarChartBody
+      data={data}
+      dataKey={dataKey}
+      height={height}
+      valueFormatter={valueFormatter}
+      title={title}
+    />
+  );
+
   if (hideHeader) {
     if (loading) {
       return <div className="skeleton shimmer" style={{ height, borderRadius: "var(--radius-md)" }} />;
     }
-    return (
-      <BarChartBody
-        data={data}
-        dataKey={dataKey}
-        height={height}
-        valueFormatter={valueFormatter}
-        title={title}
-      />
-    );
+    return body;
   }
 
   return (
     <ChartShell title={title} subtitle={subtitle} loading={loading} action={action} className={className}>
-      <BarChartBody
-        data={data}
-        dataKey={dataKey}
-        height={height}
-        valueFormatter={valueFormatter}
-        title={title}
-      />
+      {body}
     </ChartShell>
   );
 }

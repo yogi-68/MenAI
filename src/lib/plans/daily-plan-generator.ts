@@ -153,6 +153,10 @@ export interface PlanUserContext {
   memoryPlanningConstraints: string[];
   lastAchievement: string | null;
   userContextBlock: string;
+  yesterdayCompleted: string[];
+  yesterdaySkipped: string[];
+  milestoneUrgencyLines: string[];
+  deadlineUrgencyLines: string[];
 }
 
 function buildDomainScopedContextNotes(
@@ -400,6 +404,15 @@ export async function fetchPlanUserContext(
   const goals: Array<{ id: string; title: string; description?: string | null; target_date?: string | null; progress?: number | null; parent_goal_id?: string | null }> = [];
   const pendingTasks = pendingTasksRes.data || [];
   const completedTasks = completedTasksRes.data || [];
+
+  const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+  const yesterdayCompleted = completedTasks
+    .filter((t) => t.completed_at && t.completed_at.startsWith(yesterdayStr))
+    .map((t) => t.title);
+  const yesterdaySkipped = pendingTasks
+    .filter((t) => t.due_date === yesterdayStr)
+    .map((t) => t.title);
+
   const patterns = patternsRes.data || [];
   const commitments = commitmentsRes.data || [];
   const profile = profileRes.data;
@@ -479,6 +492,44 @@ export async function fetchPlanUserContext(
     milestonesData || [],
     allocationIds.length > 0 ? allocationIds : primaryInit ? [primaryInit.id] : []
   );
+
+  const goalMilestones = (milestonesData || []) as Array<{
+    goal_id: string;
+    title: string;
+    status: string;
+    sort_order: number;
+    due_date?: string | null;
+    goals: { title?: string } | null;
+  }>;
+
+  const milestoneUrgencyLines = initiatives.flatMap((goal) => {
+    const nextMilestone = goalMilestones.find(
+      (m) => m.goal_id === goal.id && m.status !== "completed"
+    );
+    if (!nextMilestone?.due_date) return [];
+    const daysTo = Math.ceil(
+      (new Date(nextMilestone.due_date).getTime() - Date.now()) / 86400000
+    );
+    if (daysTo <= 5 && daysTo >= 0) {
+      return [
+        `MILESTONE CLOSES IN ${daysTo} DAY${daysTo === 1 ? "" : "S"} — "${nextMilestone.title}" for "${goal.title}". All tasks must directly complete this milestone.`,
+      ];
+    }
+    return [];
+  });
+
+  const deadlineUrgencyLines = initiatives.flatMap((goal) => {
+    if (!goal.target_date) return [];
+    const daysTo = Math.ceil(
+      (new Date(goal.target_date).getTime() - Date.now()) / 86400000
+    );
+    if (daysTo <= 7 && daysTo >= 0) {
+      return [
+        `DEADLINE IN ${daysTo} DAY${daysTo === 1 ? "" : "S"} — "${goal.title}". All tasks are deadline-critical.`,
+      ];
+    }
+    return [];
+  });
 
   let currentFocusTitle: string | null = primaryInit?.title ?? null;
   let currentFocusUntil: string | null =
@@ -740,6 +791,10 @@ export async function fetchPlanUserContext(
     memoryPlanningConstraints,
     lastAchievement: userContext.lastAchievement,
     userContextBlock: formatUserContextForPlanner(userContext),
+    yesterdayCompleted,
+    yesterdaySkipped,
+    milestoneUrgencyLines,
+    deadlineUrgencyLines,
   };
 }
 
@@ -792,6 +847,8 @@ ${ctx.lastAchievement ? `\nBuild on this momentum: ${ctx.lastAchievement}` : ""}
 
 EXECUTION ALLOCATION (distribute tasks and time proportionally — intelligently mixed day):
 ${listOrFallback(ctx.executionAllocationLines, "Single focus — allocate 100% to current focus initiative")}
+${ctx.milestoneUrgencyLines.length > 0 ? `\n⚠️ MILESTONE URGENCY (override routine task selection):\n${ctx.milestoneUrgencyLines.join("\n")}` : ""}
+${ctx.deadlineUrgencyLines.length > 0 ? `\n🚨 DEADLINE PRESSURE (all tasks become deadline-critical):\n${ctx.deadlineUrgencyLines.join("\n")}` : ""}
 
 PRIORITY STACK (strict):
 1. URGENT OPPORTUNITIES — time-sensitive events override routine
@@ -849,11 +906,24 @@ ${listOrFallback(ctx.upcomingDeadlines, "None")}
 
 TASK FORMAT (mandatory for every task):
 - title: specific action verb + deliverable (NOT "work on X")
-- whyItMatters: ONE sentence separate from title — never repeat or paraphrase the task title; reference milestone, recent win, recent memory, or identity value
+- whyItMatters: ONE coaching sentence — NOT a goal description
 - whyItMatters MUST NOT copy the title or description field
 - If lastAchievement or recent memories exist in USER CONTEXT, at least one task must reference that momentum
 - successMetric: concrete done criteria — verifiable yes/no today (e.g. "Complete signup → onboarding → dashboard without errors")
 - deliverable: what exists when finished
+
+TASK FORMAT — WHY_LINE RULES (mandatory):
+- whyItMatters must be a coaching statement, not a goal description
+- BAD: "This contributes to your business goal by building client relationships." (generic, applies to anyone)
+- GOOD: "18 days to deadline, 0 clients in. This call is your fastest path to proof."
+- GOOD: "Building on the client you secured last week — this expands that momentum."
+- Must contain: a deadline reference, a progress number, OR a connection to a recent specific event.
+- Never restate the task title. Never describe the goal in general terms.
+
+FITNESS TASKS — if goal contains "fitness", "health", "body fat", "weight", "run", "gym":
+- Include: distance/weight/reps/duration, specific phase of the plan (Day N of X), or calorie target
+- BAD: "Do fitness activities" / "Work on your routine" / "Improve fitness"
+- GOOD: "Complete Day 3 of your beginner run plan — 20 min easy, no stopping (yesterday was Day 2)"
 
 BAD: "Track expenses", "Work on onboarding", "Improve fitness"
 GOOD: "Complete onboarding testing" / Why: "Removes biggest blocker before launch" / Success: "Signup through dashboard works without errors"
@@ -876,6 +946,12 @@ Vision: ${ctx.vision}
 
 Unfinished tasks:
 ${listOrFallback(ctx.unfinishedTasks, "None")}
+
+Yesterday's completed tasks (build the NEXT logical step — not a repeat):
+${ctx.yesterdayCompleted.length > 0 ? ctx.yesterdayCompleted.map((t) => `  - ${t}`).join("\n") : "  None"}
+
+Yesterday's skipped tasks (if skipped, today's plan must address why and reschedule or drop):
+${ctx.yesterdaySkipped.length > 0 ? ctx.yesterdaySkipped.map((t) => `  - ${t}`).join("\n") : "  None"}
 
 Recent progress (last 7 days):
 ${listOrFallback(ctx.recentProgress, "No completed tasks logged recently")}

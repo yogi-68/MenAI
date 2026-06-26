@@ -9,6 +9,19 @@ function formatMessageTime(iso: string): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
 }
 
+function trimAtSentence(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars);
+  const lastPeriod = Math.max(
+    cut.lastIndexOf(". "),
+    cut.lastIndexOf("! "),
+    cut.lastIndexOf("? ")
+  );
+  if (lastPeriod > maxChars * 0.6) return cut.slice(0, lastPeriod + 1);
+  const lastSpace = cut.lastIndexOf(" ");
+  return lastSpace > 0 ? cut.slice(0, lastSpace) + "\u2026" : cut + "\u2026";
+}
+
 /** GET /api/coach/snapshot — lightweight data for persistent coach rail */
 export async function GET() {
   const supabase = await createServerSupabaseClient();
@@ -44,13 +57,13 @@ export async function GET() {
     const earlier = messages?.[1];
     if (latest?.content) {
       lastMessage = {
-        content: latest.content.slice(0, 500),
+        content: trimAtSentence(latest.content, 500),
         createdAt: latest.created_at,
         timeLabel: formatMessageTime(latest.created_at),
       };
     }
     if (earlier?.content) {
-      earlierMessage = { content: earlier.content.slice(0, 400) };
+      earlierMessage = { content: trimAtSentence(earlier.content, 400) };
     }
   }
 

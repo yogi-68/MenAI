@@ -12,6 +12,9 @@ export interface PerformanceScore {
   completionPct: number;
   streak: number;
   missedDays: number;
+  weekAvg: number;
+  prevWeekAvg: number;
+  weekDelta: number;
   goalScores: Array<{
     goalId: string;
     title: string;
@@ -44,9 +47,8 @@ export async function computePerformanceScore(
 ): Promise<PerformanceScore> {
   const today = dateStr(referenceDate);
   const since30 = dateStr(daysAgo(30));
-  const since7 = dateStr(daysAgo(7));
 
-  const [goals, tasksRes] = await Promise.all([
+  const [goals, tasksRes, snapshotsRes] = await Promise.all([
     fetchActiveExecutionGoals(supabase, userId, 50),
     supabase
       .from("tasks")
@@ -55,13 +57,45 @@ export async function computePerformanceScore(
       .eq("auto_generated", true)
       .gte("due_date", since30)
       .lte("due_date", today),
+    supabase
+      .from("goal_progress_snapshots")
+      .select("goal_id, snapshot_date, tasks_completed_count")
+      .eq("user_id", userId)
+      .gte("snapshot_date", since30)
+      .lte("snapshot_date", today),
   ]);
 
   const tasks = tasksRes.data || [];
   const activeGoalIds = new Set(goals.map((g) => g.id));
+  const snapshotByGoalDate = new Map<string, number>();
+  for (const s of snapshotsRes.data || []) {
+    if (!activeGoalIds.has(s.goal_id)) continue;
+    snapshotByGoalDate.set(`${s.goal_id}:${s.snapshot_date}`, s.tasks_completed_count ?? 0);
+  }
+
+  const completedForGoalDate = (goalId: string, date: string): number => {
+    const snapKey = `${goalId}:${date}`;
+    if (snapshotByGoalDate.has(snapKey)) {
+      return snapshotByGoalDate.get(snapKey)!;
+    }
+    const dayTasks = tasks.filter(
+      (t) => t.due_date === date && t.goal_id === goalId
+    );
+    return dayTasks.filter((t) => t.status === "completed").length;
+  };
 
   const tasksForDate = (date: string) =>
     tasks.filter((t) => t.due_date === date && t.goal_id && activeGoalIds.has(t.goal_id));
+
+  const scoreForDate = (date: string): number => {
+    if (goals.length === 0) return 0;
+    let dayTotal = 0;
+    for (const goal of goals) {
+      const completed = completedForGoalDate(goal.id, date);
+      dayTotal += scoreFromCompletion(completed);
+    }
+    return Math.round(dayTotal / goals.length);
+  };
 
   const dailyGoalScores = goals.map((goal) => {
     const dayTasks = tasksForDate(today).filter((t) => t.goal_id === goal.id);
@@ -92,14 +126,7 @@ export async function computePerformanceScore(
     const dayTasks = tasksForDate(d);
     if (goals.length === 0) continue;
 
-    let dayTotal = 0;
-    for (const goal of goals) {
-      const gt = dayTasks.filter((t) => t.goal_id === goal.id);
-      const completed = gt.filter((t) => t.status === "completed").length;
-      const planned = gt.length > 0 ? Math.min(TASKS_PER_GOAL, gt.length) : TASKS_PER_GOAL;
-      dayTotal += scoreFromCompletion(completed, planned);
-    }
-    const dayScore = Math.round(dayTotal / goals.length);
+    const dayScore = scoreForDate(d);
     dailyScores.push(dayScore);
     trend.push({ date: d, score: dayScore });
 
@@ -112,9 +139,20 @@ export async function computePerformanceScore(
     }
   }
 
+  if (goals.length > 0 && !trend.some((t) => t.date === today)) {
+    const todayScore = scoreForDate(today);
+    dailyScores.push(todayScore);
+    trend.push({ date: today, score: todayScore });
+  }
+
   const last7 = dailyScores.slice(-7);
+  const prev7 = dailyScores.slice(-14, -7);
   const weekly =
     last7.length > 0 ? Math.round(last7.reduce((a, b) => a + b, 0) / last7.length) : 0;
+  const weekAvg = weekly;
+  const prevWeekAvg =
+    prev7.length > 0 ? Math.round(prev7.reduce((a, b) => a + b, 0) / prev7.length) : 0;
+  const weekDelta = weekAvg - prevWeekAvg;
   const monthly =
     dailyScores.length > 0
       ? Math.round(dailyScores.reduce((a, b) => a + b, 0) / dailyScores.length)
@@ -139,6 +177,9 @@ export async function computePerformanceScore(
     completionPct,
     streak,
     missedDays,
+    weekAvg,
+    prevWeekAvg,
+    weekDelta,
     goalScores: dailyGoalScores,
     trend: trend.slice(-14),
   };
@@ -244,10 +285,35 @@ export async function computeGoalAnalytics(
 
   const tasksCompletedTotal = tasks.filter((t) => t.status === "completed").length;
 
+  let heatmapTrend = dailyTrend.slice(-30);
+  const hasHeatmapData = heatmapTrend.some((d) => d.completed > 0);
+  if (!hasHeatmapData) {
+    const byCompletedDate = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.status !== "completed") continue;
+      const d = t.completed_at
+        ? String(t.completed_at).split("T")[0]
+        : t.due_date;
+      if (!d) continue;
+      byCompletedDate.set(d, (byCompletedDate.get(d) || 0) + 1);
+    }
+    heatmapTrend = heatmapTrend.map((d) => {
+      const completed = byCompletedDate.get(d.date) ?? 0;
+      return { ...d, completed, score: scoreFromCompletion(completed) };
+    });
+  }
+
+  const milestones = milestonesRes.data || [];
+  const currentMilestone =
+    milestones.find((m) => m.status === "in_progress")?.title ??
+    milestones.find((m) => m.status === "pending")?.title ??
+    null;
+
   return {
     goal,
-    milestones: milestonesRes.data || [],
-    dailyTrend: dailyTrend.slice(-30),
+    milestones,
+    currentMilestone,
+    dailyTrend: heatmapTrend,
     weeklyTrend: aggregateWeekly(dailyTrend),
     monthlyTrend: aggregateMonthly(dailyTrend),
     streak,

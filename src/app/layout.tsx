@@ -44,11 +44,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="dark"
+      suppressHydrationWarning
+      style={{ background: "#0f0f11", color: "#eceef2" }}
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='light')document.documentElement.classList.remove('dark');else document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('menai-theme');if(t==='light'){document.documentElement.classList.remove('dark');document.documentElement.style.background='#f4f5f7';document.documentElement.style.color='#0f1117';}else{document.documentElement.classList.add('dark');document.documentElement.style.background='#0f0f11';document.documentElement.style.color='#eceef2';}}catch(e){document.documentElement.classList.add('dark');}})();`,
           }}
         />
       </head>

@@ -154,7 +154,7 @@ export default function DashboardLayout({
 
         <SidebarStreak />
 
-        <div style={{ paddingTop: "8px", borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
+        <div style={{ paddingTop: "8px", borderTop: "0.5px solid var(--border-color)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "8px" }}>
             <div
               className="clay-card-inset"
@@ -222,6 +222,7 @@ export default function DashboardLayout({
         </div>
 
         <div
+          className={isFullCoachPage ? undefined : "page-shell__inner"}
           style={{
             flex: 1,
             display: "flex",

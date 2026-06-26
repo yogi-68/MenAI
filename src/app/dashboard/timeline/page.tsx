@@ -51,6 +51,42 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 const FILTERS = ["all", "goal_created", "milestone", "habit", "reflection", "weekly_win", "achievement", "failure"];
 
+function TimelineEventCard({ event }: { event: TimelineEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const headline = event.headline;
+  const truncated = headline.length > 120 && !expanded;
+  const displayHeadline = truncated ? `${headline.slice(0, 120)}…` : headline;
+
+  return (
+    <ClayCard className="p-4" hover>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span className="clay-label" style={{ color: CATEGORY_COLOR[event.category] }}>
+          {CATEGORY_LABEL[event.category] || event.category}
+        </span>
+        {event.dayLabel && (
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{event.dayLabel}</span>
+        )}
+      </div>
+      <p style={{ marginTop: 8, fontWeight: 500, lineHeight: 1.5, marginBottom: 0 }}>{displayHeadline}</p>
+      {truncated && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="text-xs mt-2"
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "var(--accent-primary)" }}
+        >
+          Read more
+        </button>
+      )}
+      {event.subline && (
+        <p style={{ marginTop: 6, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 0 }}>
+          {event.subline}
+        </p>
+      )}
+    </ClayCard>
+  );
+}
+
 export default function TimelinePage() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -68,11 +104,20 @@ export default function TimelinePage() {
   const { data: analytics } = useQuery({
     queryKey: ["analytics-timeline"],
     queryFn: async () => {
-      const res = await fetch("/api/analytics/timeline");
-      if (!res.ok) return { categories: [] };
-      return res.json();
+      const res = await fetch("/api/analytics/timeline?range=90d");
+      if (!res.ok) return { eventsByMonth: [] };
+      return res.json() as Promise<{
+        eventsByMonth?: Array<{ month: string; count: number; achievements: number }>;
+        byCategory?: Array<{ label: string; category: string; value: number }>;
+      }>;
     },
   });
+
+  const monthlyBarData = (analytics?.eventsByMonth ?? []).map((m) => ({
+    label: m.month,
+    value: m.count,
+    fill: m.achievements > 0 ? "var(--accent-primary)" : "rgba(124, 111, 255, 0.45)",
+  }));
 
   const filteredMonths = useMemo(() => {
     if (!data?.months) return [];
@@ -120,14 +165,14 @@ export default function TimelinePage() {
         </p>
       </header>
 
-      {analytics?.categories?.length > 0 && (
+      {monthlyBarData.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <BarChartCard
-            title="Events by category"
-            data={analytics.categories.map((c: { category: string; count: number }) => ({
-              label: CATEGORY_LABEL[c.category] || c.category,
-              value: c.count,
-            }))}
+            title="Momentum"
+            subtitle="Events per month — last 6 months"
+            data={monthlyBarData}
+            height={60}
+            emptyMessage="Complete tasks to build your timeline"
           />
         </div>
       )}
@@ -214,22 +259,7 @@ export default function TimelinePage() {
                         boxShadow: "var(--shadow-clay-outer)",
                       }}
                     />
-                    <ClayCard className="p-4" hover>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                        <span className="clay-label" style={{ color: CATEGORY_COLOR[event.category] }}>
-                          {CATEGORY_LABEL[event.category] || event.category}
-                        </span>
-                        {event.dayLabel && (
-                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{event.dayLabel}</span>
-                        )}
-                      </div>
-                      <p style={{ marginTop: 8, fontWeight: 500, lineHeight: 1.5 }}>{event.headline}</p>
-                      {event.subline && (
-                        <p style={{ marginTop: 6, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                          {event.subline}
-                        </p>
-                      )}
-                    </ClayCard>
+                    <TimelineEventCard event={event} />
                   </motion.div>
                 ))}
               </motion.section>

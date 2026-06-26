@@ -6,13 +6,26 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { ClayCard } from "@/components/ui";
 import { ExecutionProfileRadar } from "@/components/charts/execution-profile-radar";
 import type { UserModel } from "@/lib/user-model/types";
+import type { ExecutionProfileScores } from "@/lib/user-model/execution-profile-scores";
 import { isUserModelStale } from "@/lib/user-model/staleness";
 import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
 
 interface CoachKnowledgePanelProps {
   variant?: "page" | "rail";
-  /** Pre-trimmed bullets from UserContext / coach snapshot — preferred for rail */
   bullets?: string[];
+}
+
+function trimBullet(text: string, maxWords = 8): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) return text.trim();
+  return words.slice(0, maxWords).join(" ");
+}
+
+function isCompleteBullet(text: string): boolean {
+  const t = text.trim();
+  if (t.endsWith("…") || t.endsWith("...")) return false;
+  if (/\.\.\.$/.test(t)) return false;
+  return t.length >= 4;
 }
 
 /** Persistent coach memory — visible trust panel, not chat-only. */
@@ -25,7 +38,11 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
     queryFn: async () => {
       const res = await fetch("/api/user-model");
       if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ userModel: UserModel; updatedAt: string | null }>;
+      return res.json() as Promise<{
+        userModel: UserModel;
+        updatedAt: string | null;
+        executionProfile?: ExecutionProfileScores;
+      }>;
     },
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
@@ -34,7 +51,6 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
 
   const model = data?.userModel;
   const stale = isUserModelStale(data?.updatedAt, model?.synthesizedAt);
-  const narrative = model?.whoAmIAnswer?.trim();
   const rawUnderstands = model?.understands?.slice(0, isRail ? 6 : 5) ?? [];
 
   const railBullets =
@@ -46,11 +62,15 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
             rawUnderstands.length > 0 ? rawUnderstands : model?.identity.labels ?? []
           );
 
-  const understands = isRail ? railBullets : rawUnderstands;
+  const understands = (isRail ? railBullets : rawUnderstands)
+    .map((item) => trimBullet(item))
+    .filter((item) => !stale || isCompleteBullet(item));
+
   const stillNeeds = model?.stillNeeds?.slice(0, 4) ?? [];
   const evidence = model?.evidence?.slice(0, 5) ?? [];
   const focusTitle = model?.currentFocus?.title;
   const milestone = model?.currentMilestone;
+  const profileScores = data?.executionProfile;
 
   if (isLoading && !bullets?.length) {
     if (isRail) {
@@ -64,21 +84,24 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
   }
 
   if (isRail && understands.length === 0) return null;
-  if (!isRail && !narrative && understands.length === 0 && !focusTitle) return null;
+  if (!isRail && understands.length === 0 && !focusTitle && !profileScores) return null;
 
   const content = (
     <>
-      <p className="label mb-3 flex items-center gap-2 flex-wrap">
-        What your coach knows
+      <div className="label mb-3 flex items-center gap-2 flex-wrap">
+        <span>What your coach knows</span>
         {stale && (
-          <span className="text-xs font-normal normal-case" style={{ color: "var(--text-muted)" }}>
+          <span
+            className="text-[10px] font-normal normal-case px-1.5 py-0.5 rounded"
+            style={{ color: "var(--text-muted)", background: "var(--bg-glass)", border: "0.5px solid var(--border-subtle)" }}
+          >
             updating…
           </span>
         )}
-      </p>
+      </div>
 
       {isRail ? (
-        <ul className="text-xs space-y-2" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+        <ul className="text-xs space-y-2 m-0 pl-0 list-none" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
           {understands.map((item) => (
             <li key={item}>· {item}</li>
           ))}
@@ -86,54 +109,33 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
       ) : (
         <>
           {focusTitle && (
-            <div className="mb-3 pb-3" style={{ borderBottom: "0.5px solid var(--border-subtle)" }}>
-              <p className="text-xs label mb-1">Current focus</p>
-              <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                {focusTitle}
-              </p>
-              {milestone && (
-                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                  Milestone: {milestone}
-                </p>
-              )}
-            </div>
-          )}
-
-          {narrative && (
-            <p className="text-sm leading-relaxed mb-3" style={{ color: "var(--text-secondary)" }}>
-              {narrative}
-            </p>
+            <ul className="text-sm space-y-1 mb-3 m-0 pl-4" style={{ color: "var(--text-secondary)" }}>
+              <li>Focus: {focusTitle}</li>
+              {milestone && <li>Milestone: {milestone}</li>}
+            </ul>
           )}
 
           {understands.length > 0 && (
-            <ul className="text-sm space-y-1 mb-3" style={{ color: "var(--text-secondary)" }}>
+            <ul className="text-sm space-y-1 mb-3 m-0 pl-4" style={{ color: "var(--text-secondary)" }}>
               {understands.map((item) => (
-                <li key={item}>· {item}</li>
+                <li key={item}>{item}</li>
               ))}
             </ul>
           )}
 
-          {!isRail && model && (
+          {profileScores && (
             <div className="mb-4">
               <p className="label mb-2">Your execution profile</p>
-              <ExecutionProfileRadar
-                scores={{
-                  focus: model.currentFocus?.title ? 82 : 55,
-                  consistency: model.obstacles.some((o) => /inconsist/i.test(o)) ? 45 : 72,
-                  clarity: model.confidence === "high" ? 85 : model.confidence === "moderate" ? 68 : 50,
-                  momentum: model.recentActivity ? 70 : 40,
-                  openness: model.stillNeeds.length <= 2 ? 78 : 58,
-                }}
-              />
+              <ExecutionProfileRadar scores={profileScores} />
             </div>
           )}
 
           {stillNeeds.length > 0 && (
             <div className="mb-2">
               <p className="label mb-1">Still learning</p>
-              <ul className="text-sm space-y-1" style={{ color: "var(--text-muted)" }}>
+              <ul className="text-sm space-y-1 m-0 pl-4" style={{ color: "var(--text-muted)" }}>
                 {stillNeeds.map((item) => (
-                  <li key={item}>· {item}</li>
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             </div>
@@ -150,9 +152,9 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
                 Evidence {showEvidence ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
               {showEvidence && (
-                <ul className="text-xs mt-2 space-y-1" style={{ color: "var(--text-muted)" }}>
+                <ul className="text-xs mt-2 space-y-1 m-0 pl-4" style={{ color: "var(--text-muted)" }}>
                   {evidence.map((item) => (
-                    <li key={item}>· {item}</li>
+                    <li key={item}>{item}</li>
                   ))}
                 </ul>
               )}

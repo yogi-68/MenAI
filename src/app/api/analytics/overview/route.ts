@@ -46,6 +46,7 @@ export async function GET() {
         health: health.health,
         healthLabel: health.label,
         sparkline: (analytics?.dailyTrend ?? []).slice(-7).map((d) => d.score),
+        currentMilestone: analytics?.currentMilestone ?? null,
       };
     })
   );

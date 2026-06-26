@@ -3,13 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Sparkles, Flame, Calendar, Target } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 import {
   LineChartCard,
-  AreaChartCard,
   BarChartCard,
   CompletionHeatmap,
   RadialProgressChart,
+  GhostRadial,
 } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
 import { healthColor } from "@/lib/plans/goal-health";
@@ -26,7 +26,7 @@ interface GoalAnalyticsPayload {
     target_date: string | null;
     life_area: string;
   };
-  milestones: Array<{ id: string; title: string; status: string }>;
+  milestones: Array<{ id: string; title: string; status: string; completed_at?: string | null }>;
   dailyTrend: Array<{ date: string; score: number; completed: number }>;
   weeklyTrend: Array<{ week: string; score: number }>;
   monthlyTrend: Array<{ month: string; score: number }>;
@@ -52,23 +52,25 @@ interface GoalAnalyticsPayload {
   };
 }
 
-function MetricPill({ icon: Icon, label, value }: { icon: typeof Flame; label: string; value: string }) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <ClayCard className="p-4 flex items-center gap-3" hover={false}>
+    <ClayCard className="p-4 flex flex-col items-start gap-1" hover={false}>
       <div
-        className="clay-card-inset flex items-center justify-center"
-        style={{ width: 36, height: 36, borderRadius: "50%" }}
+        className="font-data"
+        data-numeric
+        style={{ fontSize: "1.75rem", fontWeight: 500, color: "var(--text-primary)", lineHeight: 1.1 }}
       >
-        <Icon size={16} style={{ color: "var(--accent-primary)" }} />
+        {value}
       </div>
-      <div>
-        <div className="text-xs clay-label">{label}</div>
-        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-          {value}
-        </div>
+      <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {label}
       </div>
     </ClayCard>
   );
+}
+
+function filterInternalLabels(text: string): boolean {
+  return !/^initiative:/i.test(text.trim());
 }
 
 export default function GoalDetailPage() {
@@ -99,21 +101,33 @@ export default function GoalDetailPage() {
   const dailyChart = (data?.dailyTrend ?? []).map((d) => ({
     label: new Date(d.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
     value: d.score,
+    date: d.date,
   }));
 
-  const weeklyChart = (data?.weeklyTrend ?? []).map((w) => ({
-    label: w.week.replace("-W", " W"),
-    value: w.score,
-  }));
+  const milestoneRefs = (data?.milestones ?? [])
+    .filter((m) => m.status === "completed" && m.completed_at)
+    .map((m) => ({
+      at: String(m.completed_at).split("T")[0],
+      label: m.title.length > 14 ? `${m.title.slice(0, 12)}…` : m.title,
+    }));
 
   const monthlyChart = (data?.monthlyTrend ?? []).map((m) => ({
     label: m.month,
     value: m.score,
   }));
 
+  const streakLabel =
+    (data?.streak ?? 0) === 0 ? "Day 1 — start your streak" : `${data?.streak} days`;
+
+  const coachingBullets = [
+    ...(data?.coaching.knownFacts ?? []).filter(filterInternalLabels),
+    ...(data?.coaching.onceKnown ?? []).filter(filterInternalLabels),
+    data?.coaching.coachInsight,
+  ].filter(Boolean) as string[];
+
   return (
     <div className="page-shell">
-      <header className="mb-8">
+      <header className="mb-6">
         <Link
           href="/dashboard"
           className="inline-flex items-center gap-2 text-sm mb-4"
@@ -126,69 +140,68 @@ export default function GoalDetailPage() {
         ) : (
           <>
             <p className="clay-label mb-2">Goal analytics</p>
-            <h1 className="text-2xl md:text-3xl font-medium tracking-tight">{data?.goal.title}</h1>
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{data?.goal.title}</h1>
             <div className="flex flex-wrap gap-2 mt-3">
               <span
                 className="text-xs px-2.5 py-1 rounded-full"
                 style={{
                   background: "var(--bg-glass)",
                   color: healthColor(data?.health.health ?? "on_track"),
-                  border: "1px solid var(--border-color)",
+                  border: "0.5px solid var(--border-color)",
                 }}
               >
                 {data?.health.label}
-              </span>
-              <span className="text-xs px-2.5 py-1 rounded-full clay-card-inset" style={{ color: "var(--text-muted)" }}>
-                {data?.goal.priority} priority
-              </span>
-              <span className="text-xs px-2.5 py-1 rounded-full clay-card-inset" style={{ color: "var(--text-muted)" }}>
-                {data?.goal.status}
               </span>
             </div>
           </>
         )}
       </header>
 
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-4 mb-8">
-        <MetricPill icon={Target} label="Progress" value={`${data?.progress ?? 0}%`} />
-        <MetricPill icon={Flame} label="Streak" value={`${data?.streak ?? 0} days`} />
-        <MetricPill icon={Calendar} label="Remaining" value={data?.remainingDays != null ? `${data.remainingDays}d` : "—"} />
-        <MetricPill icon={Sparkles} label="Today" value={`${data?.todayCompleted ?? 0}/3 tasks`} />
+      <div className="grid gap-2.5 grid-cols-2 md:grid-cols-4 mb-6">
+        <MetricCard label="Progress" value={`${data?.progress ?? 0}%`} />
+        <MetricCard label="Streak" value={streakLabel} />
+        <MetricCard
+          label="Days remaining"
+          value={data?.remainingDays != null ? `${data.remainingDays}` : "—"}
+        />
+        <MetricCard label="Today" value={`${data?.todayCompleted ?? 0}/3`} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3 mb-8">
-        {(data?.tasksCompletedTotal ?? 0) > 0 ? (
-          <RadialProgressChart
-            title="Success probability"
-            subtitle="Forecast"
-            value={data?.successProbability ?? 0}
-            loading={isLoading}
-            label="Likelihood"
-          />
-        ) : (
-          <ClayCard className="p-5 md:p-6 flex flex-col justify-center" hover={false}>
-            <h3 className="text-base font-medium mb-2" style={{ color: "var(--text-primary)" }}>
-              Success probability
-            </h3>
-            <p className="text-sm m-0" style={{ color: "var(--text-muted)", lineHeight: 1.6 }}>
-              Complete some tasks to see your forecast.
-            </p>
-          </ClayCard>
-        )}
+      <div className="grid gap-6 lg:grid-cols-3 mb-6">
+        <ClayCard className="p-4" hover={false}>
+          <h3 className="text-sm font-medium mb-2 m-0" style={{ color: "var(--text-primary)" }}>
+            Success probability
+          </h3>
+          {(data?.tasksCompletedTotal ?? 0) > 0 ? (
+            <RadialProgressChart
+              title=""
+              subtitle=""
+              value={data?.successProbability ?? 0}
+              loading={isLoading}
+              label="Likelihood"
+              hideHeader
+              height={160}
+            />
+          ) : (
+            <GhostRadial />
+          )}
+        </ClayCard>
         <div className="lg:col-span-2">
-          <AreaChartCard
+          <LineChartCard
             title="Daily performance"
             subtitle="Last 30 days"
             data={dailyChart}
             loading={isLoading}
             valueFormatter={(v) => `${v}%`}
+            referenceLines={milestoneRefs}
+            emptyMessage="Complete tasks to build your trend"
           />
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 mb-8">
-        <ClayCard className="p-5 md:p-6" hover={false}>
-          <h3 className="text-base font-medium mb-4" style={{ color: "var(--text-primary)" }}>
+      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+        <ClayCard className="p-4" hover={false}>
+          <h3 className="text-sm font-medium mb-4 m-0" style={{ color: "var(--text-primary)" }}>
             Completion heatmap
           </h3>
           <CompletionHeatmap
@@ -198,94 +211,74 @@ export default function GoalDetailPage() {
             }))}
           />
         </ClayCard>
-        <LineChartCard
-          title="Weekly trend"
-          subtitle="Goal analytics"
-          data={weeklyChart}
-          loading={isLoading}
-          valueFormatter={(v) => `${v}%`}
-        />
         <BarChartCard
           title="Monthly trend"
           subtitle="Goal analytics"
           data={monthlyChart}
           loading={isLoading}
           valueFormatter={(v) => `${v}%`}
+          emptyMessage="Complete tasks to build your history"
         />
       </div>
 
-      <section className="grid gap-6 lg:grid-cols-2 mb-8">
-        <ClayCard className="p-5 md:p-6" hover={false}>
-          <div className="flex items-center gap-2 mb-4">
+      <section className="grid gap-6 lg:grid-cols-2 mb-6">
+        <ClayCard className="p-4" hover={false}>
+          <div className="flex items-center gap-2 mb-3">
             <Sparkles size={16} style={{ color: "var(--accent-primary)" }} />
-            <h3 className="text-base font-medium" style={{ color: "var(--text-primary)" }}>
+            <h3 className="text-sm font-medium m-0" style={{ color: "var(--text-primary)" }}>
               AI coaching insights
             </h3>
           </div>
           {isLoading ? (
             <div className="skeleton shimmer" style={{ height: 120, borderRadius: "var(--radius-md)" }} />
+          ) : coachingBullets.length > 0 ? (
+            <ul className="text-sm space-y-2 m-0 pl-4" style={{ color: "var(--text-secondary)" }}>
+              {coachingBullets.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
           ) : (
-            <>
-              <p className="text-sm font-medium mb-2" style={{ color: "var(--text-primary)" }}>
-                {data?.coaching.headline}
-              </p>
-              <p className="text-sm leading-relaxed mb-4" style={{ color: "var(--text-secondary)" }}>
-                {data?.coaching.coachInsight}
-              </p>
-              {(data?.coaching.knownFacts?.length ?? 0) > 0 && (
-                <div className="mb-3">
-                  <div className="clay-label mb-2">What we know</div>
-                  <ul className="text-sm space-y-1" style={{ color: "var(--text-secondary)" }}>
-                    {data?.coaching.knownFacts.map((f) => (
-                      <li key={f}>· {f}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {(data?.coaching.onceKnown?.length ?? 0) > 0 && (
-                <div>
-                  <div className="clay-label mb-2">Once clarified</div>
-                  <ul className="text-sm space-y-1" style={{ color: "var(--text-secondary)" }}>
-                    {data?.coaching.onceKnown.map((f) => (
-                      <li key={f}>· {f}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
+            <p className="text-sm m-0" style={{ color: "var(--text-muted)" }}>
+              Complete tasks to unlock coaching insights.
+            </p>
           )}
         </ClayCard>
 
-        <ClayCard className="p-5 md:p-6" hover={false}>
-          <div className="clay-label mb-2">Details</div>
-          <h3 className="text-base font-medium mb-4" style={{ color: "var(--text-primary)" }}>
-            Execution summary
-          </h3>
+        <ClayCard className="p-4" hover={false}>
+          <div className="clay-label mb-2">Execution summary</div>
           {isLoading ? (
             <div className="skeleton shimmer" style={{ height: 100, borderRadius: "var(--radius-md)" }} />
           ) : (
-            <dl className="space-y-3 text-sm">
-              <div className="flex justify-between">
+            <dl className="space-y-3 text-sm m-0">
+              <div className="flex justify-between gap-4">
                 <dt style={{ color: "var(--text-muted)" }}>Days completed (66%+)</dt>
-                <dd style={{ color: "var(--text-primary)" }}>{data?.daysCompleted}</dd>
+                <dd className="font-data m-0" style={{ color: "var(--text-primary)" }}>
+                  {data?.daysCompleted}
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <dt style={{ color: "var(--text-muted)" }}>Today score</dt>
-                <dd style={{ color: "var(--text-primary)" }}>{data?.todayScore}%</dd>
+                <dd className="font-data m-0" style={{ color: "var(--text-primary)" }}>
+                  {data?.todayScore}%
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <dt style={{ color: "var(--text-muted)" }}>Daily progress needed</dt>
-                <dd style={{ color: "var(--text-primary)" }}>
+                <dd className="font-data m-0" style={{ color: "var(--text-primary)" }}>
                   {data?.dailyProgressNeeded != null ? `${data.dailyProgressNeeded.toFixed(1)}%/day` : "—"}
                 </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <dt style={{ color: "var(--text-muted)" }}>Est. completion</dt>
-                <dd style={{ color: "var(--text-primary)" }}>{data?.estimatedCompletionDate ?? "—"}</dd>
+                <dd className="m-0" style={{ color: "var(--text-primary)" }}>
+                  {data?.estimatedCompletionDate ?? "—"}
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-4">
                 <dt style={{ color: "var(--text-muted)" }}>Health</dt>
-                <dd style={{ color: healthColor(data?.health.health ?? "on_track") }}>{data?.health.reason}</dd>
+                <dd className="m-0 truncate max-w-[55%] text-right" style={{ color: healthColor(data?.health.health ?? "on_track") }}>
+                  {data?.health.reason}
+                </dd>
               </div>
             </dl>
           )}
@@ -293,14 +286,14 @@ export default function GoalDetailPage() {
       </section>
 
       {(data?.milestones ?? []).length > 0 && (
-        <ClayCard className="p-5 md:p-6" hover={false}>
+        <ClayCard className="p-4" hover={false}>
           <div className="clay-label mb-2">Milestones</div>
-          <ul className="space-y-2">
+          <ul className="space-y-2 m-0 p-0 list-none">
             {data?.milestones.map((m) => (
               <li
                 key={m.id}
-                className="flex justify-between text-sm py-2 border-b last:border-0"
-                style={{ borderColor: "var(--border-color)", color: "var(--text-primary)" }}
+                className="flex justify-between text-sm py-2"
+                style={{ borderBottom: "0.5px solid var(--border-subtle)", color: "var(--text-primary)" }}
               >
                 <span>{m.title}</span>
                 <span style={{ color: "var(--text-muted)" }}>{m.status}</span>

@@ -229,21 +229,37 @@ function extractLifeAreaInterest(message: string): ExtractedLifeData | null {
 }
 
 /**
- * Determine if a message is too short or casual to extract from
+ * Detect named-entity signals: capitalized names, numbers, goal/deadline keywords.
+ * Used to allow extraction on short messages that contain real content.
+ */
+function hasNamedEntitySignals(message: string): boolean {
+  return (
+    /[A-Z][a-z]{2,}/.test(message) ||
+    /\d+/.test(message) ||
+    /\b(goal|deadline|milestone|client|business|revenue|launch|kg|km|lbs|lb|%|startup|project|weight|fitness|run|gym|sales|hire|raise|fund)\b/i.test(message)
+  );
+}
+
+/**
+ * Determine if a message is too short or casual to extract from.
+ * Saves ~30% of extraction LLM calls for acknowledgements and short replies.
  */
 function shouldSkipExtraction(message: string): boolean {
   const lower = message.trim().toLowerCase();
 
-  // Too short (lowered from 15 to 10 to catch "I need to build a SaaS" etc.)
+  // Too short — hard minimum
   if (lower.length < 10) return true;
 
-  // Casual patterns
+  // Casual patterns — exact matches
   const casualPatterns = [
     /^(hi|hey|hello|yo|sup|hola|good morning|good night|gm|gn)[\s!.]*$/,
     /^(thanks|thank you|thx|ty|cool|ok|okay|got it|makes sense|yeah|yep|nah|nope)[\s!.]*$/,
     /^(how are you|what's up|whats up)[\s?!.]*$/,
   ];
   if (casualPatterns.some((p) => p.test(lower))) return true;
+
+  // Medium-length acknowledgement — skip unless named entities present
+  if (lower.length < 60 && !hasNamedEntitySignals(message)) return true;
 
   return false;
 }
