@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computePerformanceScore } from "@/lib/plans/performance-score";
 import { fetchExecutionMetrics } from "@/lib/plans/execution-rate";
 import { computeMomentumScore } from "@/lib/plans/momentum-score";
+import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
 
 export const runtime = "nodejs";
 
@@ -32,10 +33,11 @@ export async function GET(req: NextRequest) {
   const range = parseRange(new URL(req.url).searchParams.get("range"));
   const days = rangeDays(range);
 
-  const [performance, execution, momentum] = await Promise.all([
+  const [performance, execution, momentum, taskStats] = await Promise.all([
     computePerformanceScore(supabase, user.id),
     fetchExecutionMetrics(supabase, user.id),
     computeMomentumScore(supabase, user.id),
+    fetchTodayTaskStats(supabase, user.id),
   ]);
 
   const trend = performance.trend.slice(-days).map((row) => ({
@@ -74,6 +76,8 @@ export async function GET(req: NextRequest) {
       executionRate: executionSnapshot.rate,
       executionCompleted: executionSnapshot.completed,
       executionTotal: executionSnapshot.total,
+      tasksCompletedToday: taskStats.tasksCompletedToday,
+      tasksDueToday: taskStats.tasksDueToday,
     },
     trend,
     goalBreakdown,

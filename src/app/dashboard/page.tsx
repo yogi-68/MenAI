@@ -6,20 +6,12 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Flame, Calendar, Target, MessageSquare } from "lucide-react";
-import {
-  AreaChartCard,
-  LineChartCard,
-  BarChartCard,
-  PieChartCard,
-  DonutChartCard,
-  RadarChartCard,
-  RadialProgressChart,
-} from "@/components/charts";
+import { MessageSquare, Plus, Target } from "lucide-react";
+import { BarChartCard } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
-import { GoalReviewTabs } from "@/components/dashboard/goal-review-tabs";
-import { healthColor } from "@/lib/plans/goal-health";
-import type { GoalHealth } from "@/lib/plans/goal-health";
+import { MonthlyReviewPanel, WeeklyReviewPanel } from "@/components/dashboard/goal-review-tabs";
+import { goalAccent } from "@/lib/goals/goal-colors";
+import { dailyScoreBarColor } from "@/components/charts/chart-theme";
 
 interface GoalCard {
   id: string;
@@ -34,7 +26,7 @@ interface GoalCard {
   daysCompleted: number;
   todayCompletion: number;
   todayScore: number;
-  health: GoalHealth;
+  health: string;
   healthLabel: string;
   sparkline: number[];
 }
@@ -61,17 +53,15 @@ interface OverviewPayload {
   charts: OverviewCharts;
 }
 
-function priorityColor(priority: string): string {
-  switch (priority) {
-    case "critical":
-      return "#ef4444";
-    case "high":
-      return "#f59e0b";
-    case "low":
-      return "var(--text-muted)";
-    default:
-      return "var(--accent-primary)";
-  }
+type OverviewTab = "goals" | "weekly" | "monthly";
+
+function formatHeaderDate(): string {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export default function DashboardOverview() {
@@ -79,6 +69,7 @@ export default function DashboardOverview() {
   const supabase = createClient();
   const router = useRouter();
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [tab, setTab] = useState<OverviewTab>("goals");
 
   useEffect(() => {
     const checkOnboarding = async () => {
@@ -123,234 +114,151 @@ export default function DashboardOverview() {
     );
   }
 
-  const firstName = user?.full_name?.split(" ")[0] || "there";
-  const charts = data?.charts;
-  const trendLine = (charts?.trend ?? []).map((t) => ({ label: t.label, value: t.score }));
-  const trendArea = trendLine;
+  const goals = data?.goals?.slice(0, 3) ?? [];
+  const weeklyTrend = (data?.charts?.trend ?? []).slice(-7).map((t) => ({
+    label: t.label,
+    value: t.score,
+    fill: dailyScoreBarColor(t.score),
+  }));
 
   return (
     <div className="page-shell">
-      <header className="animate-fade-in mb-8">
-        <p className="clay-label mb-2">Overview</p>
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-          {firstName}&apos;s execution
-        </h1>
-        <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>
-          Goals, performance score, and reviews — tap any goal for deep analytics
-        </p>
-      </header>
-
-      <div className="grid gap-6 lg:grid-cols-3 mb-8">
-        <RadialProgressChart
-          title="This week"
-          subtitle="Performance"
-          value={data?.performance.weekly ?? 0}
-          loading={isLoading}
-          label="Weekly"
-        />
-        <RadialProgressChart
-          title="This month"
-          subtitle="Performance"
-          value={data?.performance.monthly ?? 0}
-          loading={isLoading}
-          label="Monthly"
-        />
-        <ClayCard className="p-5 flex flex-col justify-center gap-3" hover={false}>
-          <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
-            <Flame size={16} style={{ color: "var(--accent-primary)" }} />
-            <span>
-              <strong style={{ color: "var(--text-primary)" }}>{data?.performance.streak ?? 0}</strong> day streak
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
-            <Target size={16} style={{ color: "var(--accent-primary)" }} />
-            <span>
-              <strong style={{ color: "var(--text-primary)" }}>{data?.performance.completionPct ?? 0}%</strong> task completion
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
-            <Calendar size={16} style={{ color: "var(--accent-primary)" }} />
-            <span>
-              Score formula: <strong style={{ color: "var(--text-primary)" }}>3 tasks/goal/day = 100</strong>
-            </span>
-          </div>
-        </ClayCard>
-      </div>
-
-      <section className="mb-8">
-        <h2 className="clay-label mb-4">Analytics</h2>
-        <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-          <div className="xl:col-span-2">
-            <AreaChartCard
-              title="Performance trend"
-              subtitle="14-day area chart"
-              data={trendArea}
-              loading={isLoading}
-              valueFormatter={(v) => `${v}%`}
-            />
-          </div>
-          <LineChartCard
-            title="Daily scores"
-            subtitle="Line chart"
-            data={trendLine}
-            loading={isLoading}
-            valueFormatter={(v) => `${v}%`}
-          />
-          <BarChartCard
-            title="Score by goal"
-            subtitle="Today"
-            data={(charts?.goalScores ?? []).map((g) => ({ label: g.label, value: g.value }))}
-            loading={isLoading}
-            valueFormatter={(v) => `${v}%`}
-          />
-          <PieChartCard
-            title="Life areas"
-            subtitle="Active goals"
-            data={charts?.lifeAreas ?? []}
-            loading={isLoading}
-          />
-          <DonutChartCard
-            title="Today completion"
-            subtitle="Daily split"
-            data={charts?.completionSplit ?? []}
-            loading={isLoading}
-          />
-          <RadarChartCard
-            title="Goal balance"
-            subtitle="Today's scores"
-            data={charts?.radar ?? []}
-            loading={isLoading}
-          />
-        </div>
-      </section>
-
-      <section className="mb-4">
-        <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h2 className="clay-label">Your goals</h2>
+      <header
+        className="animate-fade-in mb-6 flex flex-wrap items-center justify-between gap-4"
+        style={{ borderBottom: "0.5px solid rgba(255,255,255,0.07)", paddingBottom: 16 }}
+      >
+        <h1 className="font-display text-2xl font-semibold tracking-tight">Overview</h1>
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+            {formatHeaderDate()}
+          </span>
           <Link
-            href="/dashboard/plans"
-            className="text-sm inline-flex items-center gap-1 no-underline"
-            style={{ color: "var(--accent-primary)" }}
+            href="/dashboard/goals"
+            className="btn-primary inline-flex items-center gap-1.5 text-sm no-underline px-3 py-2"
           >
-            Today&apos;s plan <ArrowRight size={14} />
+            <Plus size={14} /> Add goal
           </Link>
         </div>
+      </header>
 
-        {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {[1, 2].map((i) => (
-              <div key={i} className="skeleton shimmer" style={{ height: 180, borderRadius: "var(--radius-md)" }} />
-            ))}
-          </div>
-        ) : !data?.hasGoals ? (
-          <ClayCard className="p-6" hover={false}>
-            <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 16 }}>
-              Add an active goal with a deadline (30–90 days). MenAI plans{" "}
-              <strong style={{ color: "var(--text-primary)" }}>3 coach tasks per goal per day</strong> tied to
-              milestones and your recent activity.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link
-                href="/dashboard/chat"
-                className="btn-primary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
-              >
-                <MessageSquare size={14} /> Talk to your coach
-              </Link>
-              <Link
-                href="/onboarding"
-                className="btn-secondary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
-              >
-                <Target size={14} /> Set up via onboarding
-              </Link>
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {(
+          [
+            { id: "goals" as const, label: "Goals" },
+            { id: "weekly" as const, label: "Weekly review" },
+            { id: "monthly" as const, label: "Monthly" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`overview-tab${tab === t.id ? " active" : ""}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "goals" && (
+        <>
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="skeleton shimmer" style={{ height: 160, borderRadius: "var(--radius-md)" }} />
+              ))}
             </div>
-          </ClayCard>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {data.goals.map((goal) => (
-              <Link
-                key={goal.id}
-                href={`/dashboard/goals/${goal.id}`}
-                className="no-underline block"
-              >
-                <ClayCard className="p-5 h-full" hover>
-                  <div className="flex justify-between items-start gap-2 mb-3">
-                    <h3 className="text-base font-medium leading-snug" style={{ color: "var(--text-primary)" }}>
-                      {goal.title}
-                    </h3>
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full shrink-0"
-                      style={{
-                        color: healthColor(goal.health),
-                        background: "var(--bg-glass)",
-                        border: "1px solid var(--border-color)",
-                      }}
-                    >
-                      {goal.healthLabel}
-                    </span>
-                  </div>
-
-                  <div className="h-1.5 rounded-full mb-4 overflow-hidden" style={{ background: "var(--bg-glass)" }}>
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${Math.min(100, goal.progress)}%`, background: "var(--gradient-primary)" }}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-4" style={{ color: "var(--text-muted)" }}>
-                    <span>
-                      Progress: <strong style={{ color: "var(--text-primary)" }}>{goal.progress}%</strong>
-                    </span>
-                    <span>
-                      Priority:{" "}
-                      <strong style={{ color: priorityColor(goal.priority) }}>{goal.priority}</strong>
-                    </span>
-                    <span>
-                      Streak: <strong style={{ color: "var(--text-primary)" }}>{goal.streak}d</strong>
-                    </span>
-                    <span>
-                      Remaining:{" "}
-                      <strong style={{ color: "var(--text-primary)" }}>
-                        {goal.remainingDays != null ? `${goal.remainingDays}d` : "—"}
-                      </strong>
-                    </span>
-                    <span>
-                      Days done: <strong style={{ color: "var(--text-primary)" }}>{goal.daysCompleted}</strong>
-                    </span>
-                    <span>
-                      Today:{" "}
-                      <strong style={{ color: "var(--text-primary)" }}>
-                        {goal.todayCompletion}/3 · {goal.todayScore}%
-                      </strong>
-                    </span>
-                  </div>
-
-                  {goal.sparkline.length > 0 && (
-                    <div className="h-10 flex items-end gap-0.5">
-                      {goal.sparkline.map((s, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 rounded-sm"
-                          style={{
-                            height: `${Math.max(8, s)}%`,
-                            background: "var(--gradient-primary)",
-                            opacity: 0.35 + (s / 100) * 0.65,
-                          }}
-                        />
-                      ))}
+          ) : !data?.hasGoals ? (
+            <ClayCard className="p-6" hover={false}>
+              <p style={{ color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 16 }}>
+                Add an active goal with a deadline (30–90 days). MenAI plans{" "}
+                <strong style={{ color: "var(--text-primary)" }}>3 coach tasks per goal per day</strong> tied to
+                milestones and your recent activity.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/dashboard/chat"
+                  className="btn-primary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
+                >
+                  <MessageSquare size={14} /> Talk to your coach
+                </Link>
+                <Link
+                  href="/onboarding"
+                  className="btn-secondary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
+                >
+                  <Target size={14} /> Set up via onboarding
+                </Link>
+              </div>
+            </ClayCard>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {goals.map((goal, index) => (
+                <Link key={goal.id} href={`/dashboard/goals/${goal.id}`} className="no-underline block">
+                  <ClayCard className="p-5 h-full" hover>
+                    <div className="flex justify-between items-start gap-2 mb-3">
+                      <h3 className="text-base font-medium leading-snug" style={{ color: "var(--text-primary)" }}>
+                        {goal.title}
+                      </h3>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full shrink-0"
+                        style={{
+                          color: goalAccent(index),
+                          background: "var(--bg-glass)",
+                          border: "0.5px solid rgba(255,255,255,0.07)",
+                        }}
+                      >
+                        Active
+                      </span>
                     </div>
-                  )}
 
-                  <div className="mt-4 text-xs inline-flex items-center gap-1" style={{ color: "var(--accent-primary)" }}>
-                    Open analytics <ArrowRight size={12} />
-                  </div>
-                </ClayCard>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+                    <div className="h-1.5 rounded-full mb-3 overflow-hidden" style={{ background: "var(--bg-glass)" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${Math.min(100, goal.progress)}%`, background: goalAccent(index) }}
+                      />
+                    </div>
 
-      <GoalReviewTabs />
+                    <div className="flex justify-between text-xs" style={{ color: "var(--text-muted)" }}>
+                      <span>
+                        <strong style={{ color: "var(--text-primary)" }}>{goal.progress}%</strong> complete
+                      </span>
+                      <span>
+                        {goal.remainingDays != null ? (
+                          <>
+                            <strong style={{ color: "var(--text-primary)" }}>{goal.remainingDays}</strong> days left
+                          </>
+                        ) : (
+                          "No deadline"
+                        )}
+                      </span>
+                    </div>
+                  </ClayCard>
+                </Link>
+              ))}
+
+              <ClayCard className="p-5 h-full" hover={false}>
+                <h3 className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
+                  Performance this week
+                </h3>
+                <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+                  Daily score — last 7 days
+                </p>
+                <BarChartCard
+                  title=""
+                  subtitle=""
+                  data={weeklyTrend}
+                  loading={isLoading}
+                  valueFormatter={(v) => `${v}%`}
+                  hideHeader
+                />
+              </ClayCard>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "weekly" && <WeeklyReviewPanel />}
+      {tab === "monthly" && <MonthlyReviewPanel />}
     </div>
   );
 }

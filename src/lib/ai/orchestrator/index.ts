@@ -16,7 +16,7 @@
  * 12. Data Persistence     → Persist extracted life data
  */
 
-import { FAST_MODEL } from "@/lib/ai/models";
+import { COACH_CHAT_MODEL, FAST_MODEL } from "@/lib/ai/models";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/ai/usage-guard";
 import { runSafetyPipeline } from "./safety-engine";
@@ -33,6 +33,7 @@ import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import { buildRhythmContext, formatRhythmBlockForPrompt } from "@/lib/plans/rhythm-phase";
 import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
+import { loadTodayPlanBlockForPrompt } from "@/lib/plans/today-plan-context";
 import {
   formatMemoryRetrievalForPrompt,
   formatPinnedMemoriesForPrompt,
@@ -271,6 +272,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     state,
     messageLength: input.message.length,
   });
+  modelConfig.model = COACH_CHAT_MODEL;
 
   // ===== STEP 7: Build Pipeline Context =====
 
@@ -287,6 +289,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
+  const todayPlanBlock = await loadTodayPlanBlockForPrompt(serviceClient, input.userId);
 
   const ctx: PipelineContext = {
     input,
@@ -303,6 +306,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     modelConfig,
     memoryRetrievalBlock,
     rhythmBlock,
+    todayPlanBlock,
   };
 
   // ===== STEP 8: Build Prompt & Call LLM =====
@@ -705,6 +709,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   });
 
   const modelConfig = selectModel({ emotion, safety, state, messageLength: input.message.length });
+  modelConfig.model = COACH_CHAT_MODEL;
 
   // Session Context Injection - Log for observability (streaming path)
   if (process.env.NODE_ENV !== "production") {
@@ -719,6 +724,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
+  const todayPlanBlock = await loadTodayPlanBlockForPrompt(serviceClient, input.userId);
 
   const ctx: PipelineContext = {
     input,
@@ -735,6 +741,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     modelConfig,
     memoryRetrievalBlock,
     rhythmBlock,
+    todayPlanBlock,
   };
 
   const promptMessages = buildPrompt(ctx);

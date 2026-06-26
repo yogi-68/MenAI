@@ -3,7 +3,7 @@ import type { UserModel } from "@/lib/user-model/types";
 import { USER_MODEL_VERSION } from "@/lib/user-model/types";
 import { synthesizeUserModel } from "@/lib/user-model/synthesis-engine";
 
-const DEFAULT_MAX_AGE_MS = 5 * 60_000;
+const DEFAULT_MAX_AGE_MS = 12 * 60 * 60_000;
 
 function isValidUserModel(raw: unknown): raw is UserModel {
   if (!raw || typeof raw !== "object") return false;

@@ -8,6 +8,7 @@ import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { PlanContextInterview } from "@/components/plans/plan-context-interview";
 import { ClayCard } from "@/components/ui";
 import { isLowPlanConfidence } from "@/lib/plans/language-guard";
+import { goalAccent } from "@/lib/goals/goal-colors";
 
 interface DailyPlanContent {
   daySummary: string;
@@ -419,10 +420,10 @@ export default function DailyPlansPage() {
           />
         ) : plan?.tasks && plan.tasks.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-            {tasksByGoal.map(([goalTitle, goalTasks]) => (
+            {tasksByGoal.map(([goalTitle, goalTasks], goalIndex) => (
               <div key={goalTitle}>
                 <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                  <h3 className="text-sm font-medium m-0" style={{ color: "var(--text-primary)" }}>
+                  <h3 className="text-sm font-medium m-0" style={{ color: goalAccent(goalIndex) }}>
                     {goalTitle}
                   </h3>
                   <span className="text-xs clay-label">{goalTasks.length}/3 tasks</span>
@@ -431,6 +432,11 @@ export default function DailyPlansPage() {
             {goalTasks.map((planTask, idx) => {
               const dbTask = taskByTitle.get(planTask.title.toLowerCase());
               const isDone = dbTask?.status === "completed";
+              const whyLine =
+                planTask.whyItMatters?.trim() ||
+                (planTask.linkedMilestone
+                  ? `Moves milestone: ${planTask.linkedMilestone}`
+                  : "Tied to your active milestone today.");
 
               return (
                 <div
@@ -438,9 +444,10 @@ export default function DailyPlansPage() {
                   style={{
                     padding: "24px",
                     borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--border-color)",
+                    border: "0.5px solid rgba(255,255,255,0.07)",
+                    borderLeft: `3px solid ${goalAccent(goalIndex)}`,
                     background: isDone
-                      ? "rgba(59, 130, 246, 0.04)"
+                      ? "rgba(124, 111, 255, 0.04)"
                       : "rgba(255,255,255,0.02)",
                     opacity: isDone ? 0.75 : 1,
                   }}
@@ -523,6 +530,16 @@ export default function DailyPlansPage() {
                           </span>
                         )}
                       </h3>
+                      <p
+                        style={{
+                          fontSize: "0.88rem",
+                          color: "var(--text-secondary)",
+                          lineHeight: 1.55,
+                          marginTop: "8px",
+                        }}
+                      >
+                        {whyLine}
+                      </p>
                       <div
                         style={{
                           display: "flex",

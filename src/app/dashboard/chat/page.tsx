@@ -492,7 +492,9 @@ export default function ChatPage() {
       </aside>
 
       <div className="chat-main">
-        <CoachKnowledgePanel />
+        <div className="coach-knowledge-mobile-only">
+          <CoachKnowledgePanel />
+        </div>
         {crisisAlert && (
           <div className="chat-crisis-banner">
             <AlertTriangle size={18} />

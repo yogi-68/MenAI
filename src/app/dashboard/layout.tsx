@@ -18,11 +18,13 @@ import {
 } from "lucide-react";
 import { ClaySidebarLink, PageTransition } from "@/components/ui";
 import { PerformanceScoreBadge } from "@/components/dashboard/performance-score-badge";
+import { SidebarStreak } from "@/components/dashboard/sidebar-streak";
+import { CoachRail } from "@/components/chat/coach-rail";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
-  { href: "/dashboard/chat", icon: MessageSquare, label: "Coach" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
+  { href: "/dashboard/chat", icon: MessageSquare, label: "Coach" },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
@@ -41,6 +43,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const supabase = createClient();
   const userLoadedRef = useRef(false);
+  const isFullCoachPage = pathname.startsWith("/dashboard/chat");
 
   useEffect(() => {
     if (userLoadedRef.current) return;
@@ -94,7 +97,7 @@ export default function DashboardLayout({
   }, [mobileMenuOpen]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div className="dashboard-shell">
       <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
         <div
           style={{
@@ -107,7 +110,7 @@ export default function DashboardLayout({
         >
           <Link href="/dashboard" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
             <span className="font-display" style={{ fontSize: "1.1rem", fontWeight: 600, color: "var(--text-primary)" }}>
-              MenAI
+              Men<span style={{ color: "var(--accent-primary)" }}>AI</span>
             </span>
           </Link>
           <button
@@ -149,7 +152,9 @@ export default function DashboardLayout({
           )}
         </nav>
 
-        <div style={{ paddingTop: "16px", marginTop: "16px" }}>
+        <SidebarStreak />
+
+        <div style={{ paddingTop: "8px", borderTop: "0.5px solid rgba(255,255,255,0.07)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "8px" }}>
             <div
               className="clay-card-inset"
@@ -200,7 +205,7 @@ export default function DashboardLayout({
 
       <main className="dashboard-main">
         <div
-          className={`dashboard-mobile-header ${pathname.startsWith("/dashboard/chat") ? "mobile-header-hidden" : ""}`}
+          className={`dashboard-mobile-header ${isFullCoachPage ? "mobile-header-hidden" : ""}`}
         >
           <button
             type="button"
@@ -210,7 +215,9 @@ export default function DashboardLayout({
           >
             <Menu size={24} />
           </button>
-          <span className="font-display" style={{ fontWeight: 600, fontSize: "0.95rem" }}>MenAI</span>
+          <span className="font-display" style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+            Men<span style={{ color: "var(--accent-primary)" }}>AI</span>
+          </span>
           <PerformanceScoreBadge compact />
         </div>
 
@@ -220,12 +227,14 @@ export default function DashboardLayout({
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            overflow: pathname.startsWith("/dashboard/chat") ? "hidden" : undefined,
+            overflow: isFullCoachPage ? "hidden" : undefined,
           }}
         >
           <PageTransition>{children}</PageTransition>
         </div>
       </main>
+
+      {!isFullCoachPage && <CoachRail />}
 
       {mobileMenuOpen && (
         <button

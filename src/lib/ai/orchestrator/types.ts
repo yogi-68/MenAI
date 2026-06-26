@@ -455,4 +455,5 @@ export interface PipelineContext {
   modelConfig: ModelConfig;
   memoryRetrievalBlock?: string;
   rhythmBlock?: string;
+  todayPlanBlock?: string | null;
 }

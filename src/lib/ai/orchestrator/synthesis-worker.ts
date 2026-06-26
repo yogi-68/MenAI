@@ -18,6 +18,7 @@
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { refreshUserModel } from "@/lib/user-model/loader";
 import { rebuildAndPersistCognitiveState, type CognitiveState } from "./cognition-engine";
 
 export interface SynthesisResult {
@@ -45,6 +46,9 @@ export async function runDeepSynthesis(
   console.log(`[SynthesisWorker] Starting deep synthesis for ${userId} (trigger: ${trigger})`);
 
   const cognitiveState = await rebuildAndPersistCognitiveState(userId);
+
+  const supabase = await createServiceRoleClient();
+  await refreshUserModel(supabase, userId);
 
   console.log(`[SynthesisWorker] Completed for ${userId}:`, {
     maturity: cognitiveState.maturity_level,

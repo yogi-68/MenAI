@@ -1,19 +1,21 @@
-/** Recharts theme tokens — restrained 2-tone palette */
+/** Recharts theme tokens — restrained purple + muted palette */
 
 export const chartColors = {
-  primary: "var(--accent-on-track)",
+  primary: "var(--accent-primary)",
   secondary: "var(--accent-muted)",
   muted: "var(--text-muted)",
   text: "var(--text-secondary)",
   grid: "var(--border-color)",
   surface: "var(--bg-surface)",
   missed: "var(--accent-missed)",
+  highScore: "var(--accent-primary)",
+  lowScore: "rgba(255,255,255,0.12)",
 } as const;
 
 export const chartSeries = [
-  "var(--accent-on-track)",
-  "var(--accent-muted)",
-  "var(--accent-missed)",
+  "var(--accent-primary)",
+  "var(--goal-accent-1)",
+  "var(--goal-accent-2)",
 ] as const;
 
 export const chartDefaults = {
@@ -31,7 +33,7 @@ export const chartDefaults = {
   tooltip: {
     contentStyle: {
       background: "var(--bg-elevated)",
-      border: "1px solid var(--border-color)",
+      border: "0.5px solid var(--border-color)",
       borderRadius: "var(--radius-sm)",
       color: "var(--text-primary)",
       fontSize: 12,
@@ -42,4 +44,9 @@ export const chartDefaults = {
 
 export function seriesColor(index: number): string {
   return chartSeries[index % chartSeries.length];
+}
+
+/** Bar color for daily score — purple when strong, grey when low */
+export function dailyScoreBarColor(value: number): string {
+  return value >= 50 ? chartColors.highScore : chartColors.lowScore;
 }
