@@ -91,8 +91,6 @@ html.dark {
 
 /* ===== GLOBAL STYLES ===== */
 * {
-  margin: 0;
-  padding: 0;
   box-sizing: border-box;
 }
 
@@ -213,6 +211,10 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+  padding: clamp(16px, 3vw, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   transition: border-color var(--transition-soft), background var(--transition-soft);
 }
 
@@ -227,6 +229,7 @@ h2 { font-size: 1rem; font-family: var(--font-sans); font-weight: 600; }
   background: var(--bg-tertiary);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+  padding: 16px;
 }
 
 .clay-stat-value,
