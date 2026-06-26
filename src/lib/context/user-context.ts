@@ -12,6 +12,7 @@ import {
   setInCache,
 } from "@/lib/redis/client";
 import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
+import type { ExecutionAllocationEntry } from "@/lib/user-model/execution-allocation";
 import type { UserModel } from "@/lib/user-model/types";
 
 export interface UserContextGoal {
@@ -53,6 +54,9 @@ export interface UserContext {
   rhythmPhase: ReturnType<typeof getCurrentPhase>;
   scoreToday: number;
   knowledgeBullets: string[];
+  userModelNarrative: string;
+  executionAllocation: ExecutionAllocationEntry[];
+  currentFocusInitiativeId: string | null;
 }
 
 function daysUntil(dateStr: string): number {
@@ -197,7 +201,12 @@ async function assembleUserContext(
     lastAchievement,
     rhythmPhase: getCurrentPhase(),
     scoreToday: performance.daily,
-    knowledgeBullets: buildKnowledgeBullets(userModel),
+    knowledgeBullets: userModel.knowledgeBullets?.length
+      ? userModel.knowledgeBullets
+      : buildKnowledgeBullets(userModel),
+    userModelNarrative: userModel.narrative,
+    executionAllocation: userModel.executionAllocation,
+    currentFocusInitiativeId: userModel.currentFocus.initiativeId,
   };
 }
 
@@ -220,6 +229,11 @@ export async function getUserContext(
 }
 
 export function formatUserContextForPlanner(context: UserContext): string {
+  const memoryLines = context.recentMemories
+    .slice(0, 3)
+    .map((m) => m.text.trim())
+    .filter(Boolean);
+
   const lines = [
     `Identity: ${context.userModel.identity.join("; ") || "building"}`,
     `Values / coach knows: ${context.userModel.values.join("; ") || "still learning"}`,
@@ -227,8 +241,11 @@ export function formatUserContextForPlanner(context: UserContext): string {
     context.lastAchievement
       ? `Recent win: ${context.lastAchievement}`
       : "Recent win: none logged yet — tie tasks to stated values",
+    memoryLines.length > 0
+      ? `Recent memories (use in task titles and whyItMatters): ${memoryLines.join(" | ")}`
+      : "",
     `Today's score: ${context.scoreToday}`,
     `Active goals: ${context.activeGoals.map((g) => g.title).join(", ") || "none"}`,
-  ];
+  ].filter(Boolean);
   return lines.join("\n");
 }

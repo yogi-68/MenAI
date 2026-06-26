@@ -1,3 +1,5 @@
+import { getOpenAI } from "@/lib/ai/openai";
+import { FAST_MODEL } from "@/lib/ai/models";
 import {
   assessGoalInput,
   isConcreteGoalTitle,
@@ -133,4 +135,55 @@ export function assessGoalQuality(
   }
 
   return { ...base, quality: "strong", needsSharpening: false };
+}
+
+/** Optional LLM sharpen when heuristic gate flags a vague goal (onboarding). */
+export async function assessGoalWithLLM(
+  raw: string
+): Promise<{ sharpenPrompt: string; sharpenOptions: SharpenOption[] } | null> {
+  try {
+    const openai = getOpenAI();
+    const response = await openai.chat.completions.create({
+      model: FAST_MODEL,
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            'Return JSON: { "sharpenPrompt": string, "options": [{ "value": string, "label": string, "resultTitle": string }] }. resultTitle must be a concrete 90-day outcome. Reject vague goals like "build a business" unless sharpened.',
+        },
+        {
+          role: "user",
+          content: `Goal title: "${raw.trim()}"`,
+        },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content) as {
+      sharpenPrompt?: string;
+      options?: Array<{ value?: string; label?: string; resultTitle?: string }>;
+    };
+
+    const sharpenOptions = (parsed.options ?? [])
+      .filter((o) => o.resultTitle?.trim())
+      .slice(0, 5)
+      .map((o, i) => ({
+        value: o.value?.trim() || `opt_${i}`,
+        label: o.label?.trim() || o.resultTitle!.trim(),
+        resultTitle: o.resultTitle!.trim(),
+      }));
+
+    if (sharpenOptions.length === 0) return null;
+
+    return {
+      sharpenPrompt: parsed.sharpenPrompt?.trim() || "What specific outcome are you trying to reach?",
+      sharpenOptions,
+    };
+  } catch {
+    return null;
+  }
 }

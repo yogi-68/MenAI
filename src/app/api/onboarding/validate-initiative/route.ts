@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { assessGoalQuality } from "@/lib/goals/goal-quality-gate";
+import { assessGoalQuality, assessGoalWithLLM } from "@/lib/goals/goal-quality-gate";
 
 export const runtime = "nodejs";
 
@@ -22,10 +22,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "title required" }, { status: 400 });
   }
 
-  const assessment = assessGoalQuality(title, {
+  let assessment = assessGoalQuality(title, {
     directions,
     buildingWhat: buildingWhat || null,
   });
+
+  if (assessment.needsSharpening) {
+    const llmSharpen = await assessGoalWithLLM(title);
+    if (llmSharpen) {
+      assessment = {
+        ...assessment,
+        sharpenPrompt: llmSharpen.sharpenPrompt,
+        sharpenOptions: llmSharpen.sharpenOptions,
+      };
+    }
+  }
 
   return NextResponse.json({
     valid: assessment.valid,

@@ -240,3 +240,124 @@ function fitnessBodyFatDefaults(corpus: string): string[] | null {
 function areaKey(lifeArea: string): keyof typeof DEFAULTS_BY_AREA {
   return lifeArea in DEFAULTS_BY_AREA ? (lifeArea as keyof typeof DEFAULTS_BY_AREA) : "personal";
 }
+
+/** Week-relative milestones when no deadline is set — keeps planner from stalling. */
+export function buildWeekRelativeMilestones(
+  title: string,
+  lifeArea = "personal"
+): string[] {
+  const area = areaKey(lifeArea);
+  const shortTitle = title.trim().slice(0, 40) || "this goal";
+  const areaActions: Record<string, [string, string, string]> = {
+    business: [
+      "Week 1: Define offer and list 10 prospects",
+      "Week 2: Run 5 outreach conversations",
+      "Week 3: Close first paying outcome",
+    ],
+    finance: [
+      "Week 1: Map income sources and one revenue lever",
+      "Week 2: Execute one revenue-generating action",
+      "Week 3: Review progress and adjust plan",
+    ],
+    health: [
+      "Week 1: Baseline metrics and 3 workouts",
+      "Week 2: Hit nutrition target 5 of 7 days",
+      "Week 3: Measurable fitness checkpoint",
+    ],
+    learning: [
+      "Week 1: Syllabus map and first study block",
+      "Week 2: Complete first practice set",
+      "Week 3: Mock test or skill checkpoint",
+    ],
+    career: [
+      "Week 1: Target roles and updated profile",
+      "Week 2: Send 10 tailored applications",
+      "Week 3: Complete 2 interviews or calls",
+    ],
+    personal: [
+      `Week 1: First concrete step on ${shortTitle}`,
+      `Week 2: Build momentum with daily action`,
+      `Week 3: Midpoint checkpoint on ${shortTitle}`,
+    ],
+    relationships: [
+      "Week 1: Schedule 2 meaningful conversations",
+      "Week 2: One shared activity or check-in ritual",
+      "Week 3: Clear next step on relationship goal",
+    ],
+  };
+  return areaActions[area] ?? areaActions.personal;
+}
+
+/** Create milestones if missing — never skip generation for active goals. */
+export async function ensureMilestonesForGoal(
+  supabase: SupabaseClient,
+  userId: string,
+  goalId: string
+): Promise<boolean> {
+  const { count } = await supabase
+    .from("goal_milestones")
+    .select("id", { count: "exact", head: true })
+    .eq("goal_id", goalId);
+
+  if ((count ?? 0) > 0) return false;
+
+  const { data: goal } = await supabase
+    .from("goals")
+    .select("id, title, description, life_area, success_criteria, goal_kind, status, target_date")
+    .eq("id", goalId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!goal || goal.status !== "active" || goal.goal_kind !== "execution") {
+    return false;
+  }
+
+  const description = goal.description || goal.success_criteria || null;
+  const lifeArea = goal.life_area || "personal";
+
+  if (!goal.target_date) {
+    const weekTitles = buildWeekRelativeMilestones(goal.title, lifeArea);
+    await supabase.from("goal_milestones").insert(
+      weekTitles.map((t, i) => ({
+        user_id: userId,
+        goal_id: goalId,
+        title: t.slice(0, 200),
+        sort_order: i,
+        status: i === 0 ? "in_progress" : "pending",
+      }))
+    );
+    return true;
+  }
+
+  await generateMilestonesForGoal(
+    supabase,
+    userId,
+    goalId,
+    goal.title,
+    description,
+    lifeArea,
+    false,
+    null
+  );
+  return true;
+}
+
+/** Backfill milestones for all active execution goals missing them. */
+export async function ensureMilestonesForUser(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ ensured: number; goalIds: string[] }> {
+  const { data: goals } = await supabase
+    .from("goals")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("goal_kind", "execution")
+    .eq("status", "active");
+
+  const goalIds: string[] = [];
+  for (const g of goals || []) {
+    const created = await ensureMilestonesForGoal(supabase, userId, g.id);
+    if (created) goalIds.push(g.id);
+  }
+  return { ensured: goalIds.length, goalIds };
+}

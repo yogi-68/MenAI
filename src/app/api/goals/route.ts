@@ -7,7 +7,7 @@ import { trackProductEventOnce } from "@/lib/analytics/track-event";
 import { assertCanActivateGoal } from "@/lib/ai/memory-confidence";
 import { MAX_ACTIVE_GOALS } from "@/lib/product/constants";
 import { assessGoalQuality } from "@/lib/goals/goal-quality-gate";
-import { generateMilestonesForGoal } from "@/lib/plans/milestone-generator";
+import { generateMilestonesForGoal, ensureMilestonesForGoal } from "@/lib/plans/milestone-generator";
 import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
 
 async function invalidatePlanForUser(userId: string) {
@@ -191,6 +191,10 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (data.goal_kind === "execution") {
+    await ensureMilestonesForGoal(supabase, user.id, data.id);
+  }
 
   invalidateUserCache(user.id, "goal created");
   scheduleUserModelRefresh(supabase, user.id);

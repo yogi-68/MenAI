@@ -64,18 +64,13 @@ SELECT
   life_area_weights,
   life_area_last_mentioned,
   user_model_updated_at,
-  current_focus_initiative_id
+  current_focus_goal_id
 FROM public.profiles
 WHERE id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1);
 
--- --- Active goals & initiatives ---
-SELECT 'goal' AS kind, title, status, category, created_at
+-- --- Active goals (execution + direction) ---
+SELECT goal_kind AS kind, title, status, category, life_area, created_at
 FROM public.goals
-WHERE user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1)
-  AND status = 'active'
-UNION ALL
-SELECT 'initiative', title, status, life_area, created_at
-FROM public.initiatives
 WHERE user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1)
   AND status = 'active'
 ORDER BY created_at DESC;
@@ -110,11 +105,9 @@ SELECT 'messages', COUNT(*) FROM public.messages m
 JOIN public.conversations c ON c.id = m.conversation_id
 WHERE c.user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1)
 UNION ALL
-SELECT 'goals active', COUNT(*) FROM public.goals
-WHERE user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1) AND status = 'active'
-UNION ALL
-SELECT 'initiatives active', COUNT(*) FROM public.initiatives
-WHERE user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1) AND status = 'active';
+SELECT 'goals execution active', COUNT(*) FROM public.goals
+WHERE user_id = (SELECT id FROM public.profiles ORDER BY updated_at DESC NULLS LAST LIMIT 1)
+  AND status = 'active' AND goal_kind = 'execution';
 
 -- =============================================================================
 -- Option B: If you have your UUID, use it directly (replace the example UUID)

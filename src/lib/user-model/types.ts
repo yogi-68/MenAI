@@ -88,6 +88,8 @@ export interface UserModel {
   /** Ranked memory graph summary for chat retrieval */
   memoryGraphSummary?: string;
   secondaryFocusAreas?: string[];
+  /** Pre-computed short bullets for coach rail (max 4, ~8 words each) */
+  knowledgeBullets?: string[];
 }
 
 export interface InitiativeRow {

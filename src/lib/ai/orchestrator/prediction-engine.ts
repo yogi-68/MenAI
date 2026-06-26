@@ -26,6 +26,10 @@ export async function evaluatePredictions({
   conversationId,
   serviceClient,
 }: PredictionGenerationParams): Promise<void> {
+  if (process.env.ENABLE_PREDICTIONS !== "true") {
+    return;
+  }
+
   try {
     // 1. Fetch existing execution patterns and active predictions
     const { data: patterns } = await serviceClient

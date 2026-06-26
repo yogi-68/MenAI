@@ -19,7 +19,7 @@
 import { COACH_CHAT_MODEL, FAST_MODEL } from "@/lib/ai/models";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/ai/usage-guard";
-import { runSafetyPipeline } from "./safety-engine";
+import { runCrisisSafetyCheck, scheduleAsyncModeration } from "./safety-engine";
 import { detectEmotion } from "./emotion-engine";
 import { determineState, classifyIntent } from "./state-machine";
 import { getMemoryContext, storeMemory, summarizeConversation, compressMemories } from "./memory-engine";
@@ -33,6 +33,7 @@ import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import { buildRhythmContext, formatRhythmBlockForPrompt } from "@/lib/plans/rhythm-phase";
 import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
+import { getUserContext } from "@/lib/context/user-context";
 import { loadTodayPlanBlockForPrompt } from "@/lib/plans/today-plan-context";
 import {
   formatMemoryRetrievalForPrompt,
@@ -106,6 +107,10 @@ function getGracefulFallback(userMessage: string): string {
   return GRACEFUL_FALLBACKS[Math.floor(Math.random() * GRACEFUL_FALLBACKS.length)];
 }
 
+function shouldSampleContextConfidence(styleScore: number): boolean {
+  return styleScore < 70 || Math.random() < 0.1;
+}
+
 // Removed unused legacy context richness code
 
 /**
@@ -133,8 +138,8 @@ export async function orchestrate(input: OrchestratorInput): Promise<Orchestrato
 async function _orchestrateInternal(input: OrchestratorInput): Promise<OrchestratorOutput> {
   const serviceClient = await createServiceRoleClient();
 
-  // ===== STEP 1: Safety Check (fastest, runs first) =====
-  const safety = await runSafetyPipeline(input.message);
+  // ===== STEP 1: Crisis check (sync — moderation runs after response) =====
+  const safety = runCrisisSafetyCheck(input.message);
 
   // If critical crisis — respond immediately, don't continue pipeline
   if (safety.requiresEscalation && safety.crisisResponse) {
@@ -286,10 +291,17 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     });
   }
 
-  const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
+  const [taskStats, userContext] = await Promise.all([
+    fetchTodayTaskStats(serviceClient, input.userId),
+    getUserContext(serviceClient, input.userId),
+  ]);
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
-  const todayPlanBlock = await loadTodayPlanBlockForPrompt(serviceClient, input.userId);
+  const todayPlanBlock = await loadTodayPlanBlockForPrompt(
+    serviceClient,
+    input.userId,
+    userContext
+  );
 
   const ctx: PipelineContext = {
     input,
@@ -356,20 +368,24 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
     llmResult.content = revalidated.content;
   }
 
-  // Log context confidence (fire-and-forget, non-critical)
-  try {
-    await serviceClient.from("context_confidence_log").insert({
-      user_id: input.userId,
-      conversation_id: conversationId,
-      richness_level: contextRichnessLevel,
-      goals_count: cognitiveState.active_goals.length,
-      tasks_count: 0, // tasks count isn't directly exposed in the array, only computed metrics
-      commitments_count: cognitiveState.unfinished_commitments.length,
-      sufficient_for_planning: styleValidation.score >= 70,
-    });
-  } catch {
-    // Non-critical logging — silently ignore
+  // Log context confidence (sampled — always when style score is low)
+  if (shouldSampleContextConfidence(styleValidation.score)) {
+    try {
+      await serviceClient.from("context_confidence_log").insert({
+        user_id: input.userId,
+        conversation_id: conversationId,
+        richness_level: contextRichnessLevel,
+        goals_count: cognitiveState.active_goals.length,
+        tasks_count: 0,
+        commitments_count: cognitiveState.unfinished_commitments.length,
+        sufficient_for_planning: styleValidation.score >= 70,
+      });
+    } catch {
+      // Non-critical logging — silently ignore
+    }
   }
+
+  scheduleAsyncModeration(input.message);
 
   // ===== STEP 10: Save AI Response =====
   await serviceClient.from("messages").insert({
@@ -579,8 +595,8 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const serviceClient = await createServiceRoleClient();
   const pipelineStart = Date.now();
 
-  // ===== STEP 1: Safety Check =====
-  const safety = await runSafetyPipeline(input.message);
+  // ===== STEP 1: Crisis check (sync — moderation runs after stream starts) =====
+  const safety = runCrisisSafetyCheck(input.message);
 
   if (safety.requiresEscalation && safety.crisisResponse) {
     try {
@@ -721,10 +737,17 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     });
   }
 
-  const taskStats = await fetchTodayTaskStats(serviceClient, input.userId);
+  const [taskStats, userContext] = await Promise.all([
+    fetchTodayTaskStats(serviceClient, input.userId),
+    getUserContext(serviceClient, input.userId),
+  ]);
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
-  const todayPlanBlock = await loadTodayPlanBlockForPrompt(serviceClient, input.userId);
+  const todayPlanBlock = await loadTodayPlanBlockForPrompt(
+    serviceClient,
+    input.userId,
+    userContext
+  );
 
   const ctx: PipelineContext = {
     input,
@@ -748,6 +771,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
 
   // ===== STEP 6: Stream LLM + collect for post-processing =====
   const { stream: llmStream, model } = await callLLMStreaming(promptMessages, modelConfig, emotion, state);
+  scheduleAsyncModeration(input.message);
 
   let fullResponse = "";
   const encoder = new TextEncoder();
@@ -794,8 +818,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
             violations: styleValidation.violations,
             conversationId,
           });
-          
-          // Log to database for monitoring
+        }
+
+        if (shouldSampleContextConfidence(styleValidation.score)) {
           Promise.resolve(
             serviceClient.from("context_confidence_log").insert({
               user_id: input.userId,

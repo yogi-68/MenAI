@@ -28,8 +28,23 @@ import {
   loadMemoryRetrievalContext,
 } from "@/lib/mentor/memory-retrieval";
 import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
+import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
+import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { loadIdentityProfile } from "@/lib/plans/identity-profile-store";
+
+function buildSynthesisKnowledgeBullets(
+  bundle: EvidenceBundle,
+  understands: string[]
+): string[] {
+  const ACHIEVEMENT = /\b(secured|landed|closed|completed|achieved|client|milestone)\b/i;
+  const sources = [
+    ...bundle.identitySignals.map((s) => s.description).filter(Boolean),
+    ...bundle.mentorMemories.filter((m) => ACHIEVEMENT.test(m.text)).map((m) => m.text),
+    ...understands,
+  ];
+  return formatKnowledgeBulletsForRail(sources);
+}
 
 function computeConfidence(input: {
   hasPrimary: boolean;
@@ -294,6 +309,8 @@ export async function synthesizeUserModel(
     stillNeeds: model.stillNeeds,
     recentActivity,
   });
+
+  model.knowledgeBullets = buildSynthesisKnowledgeBullets(bundle, model.understands);
 
   await supabase
     .from("profiles")

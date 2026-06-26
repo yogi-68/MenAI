@@ -10,10 +10,12 @@ import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
 
 interface CoachKnowledgePanelProps {
   variant?: "page" | "rail";
+  /** Pre-trimmed bullets from UserContext / coach snapshot — preferred for rail */
+  bullets?: string[];
 }
 
 /** Persistent coach memory — visible trust panel, not chat-only. */
-export function CoachKnowledgePanel({ variant = "page" }: CoachKnowledgePanelProps) {
+export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledgePanelProps) {
   const [showEvidence, setShowEvidence] = useState(false);
   const isRail = variant === "rail";
 
@@ -26,29 +28,30 @@ export function CoachKnowledgePanel({ variant = "page" }: CoachKnowledgePanelPro
     },
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: true,
+    enabled: !isRail || !bullets?.length,
   });
 
   const model = data?.userModel;
   const stale = isUserModelStale(data?.updatedAt, model?.synthesizedAt);
   const narrative = model?.whoAmIAnswer?.trim();
   const rawUnderstands = model?.understands?.slice(0, isRail ? 6 : 5) ?? [];
-  const understands = isRail
-    ? formatKnowledgeBulletsForRail(
-        rawUnderstands.length > 0
-          ? rawUnderstands
-          : model?.identity.labels?.length
-            ? model.identity.labels
-            : narrative
-              ? narrative.split("\n").filter(Boolean)
-              : []
-      )
-    : rawUnderstands;
+
+  const railBullets =
+    bullets && bullets.length > 0
+      ? bullets
+      : model?.knowledgeBullets?.length
+        ? model.knowledgeBullets
+        : formatKnowledgeBulletsForRail(
+            rawUnderstands.length > 0 ? rawUnderstands : model?.identity.labels ?? []
+          );
+
+  const understands = isRail ? railBullets : rawUnderstands;
   const stillNeeds = model?.stillNeeds?.slice(0, 4) ?? [];
   const evidence = model?.evidence?.slice(0, 5) ?? [];
   const focusTitle = model?.currentFocus?.title;
   const milestone = model?.currentMilestone;
 
-  if (isLoading) {
+  if (isLoading && !bullets?.length) {
     if (isRail) {
       return <div className="skeleton shimmer" style={{ height: 64, borderRadius: 6 }} />;
     }
@@ -59,7 +62,8 @@ export function CoachKnowledgePanel({ variant = "page" }: CoachKnowledgePanelPro
     );
   }
 
-  if (!narrative && understands.length === 0 && !focusTitle) return null;
+  if (isRail && understands.length === 0) return null;
+  if (!isRail && !narrative && understands.length === 0 && !focusTitle) return null;
 
   const content = (
     <>

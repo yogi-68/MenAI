@@ -4,12 +4,11 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
 import { MarkdownContent } from "@/components/chat/markdown-content";
-import { isUserModelStale } from "@/lib/user-model/staleness";
-import type { UserModel } from "@/lib/user-model/types";
 
 interface CoachSnapshot {
   score: number;
   statusLabel: string;
+  knows?: string[];
   lastMessage: { content: string; timeLabel: string } | null;
   earlierMessage: { content: string } | null;
 }
@@ -26,28 +25,7 @@ export function CoachRail() {
     refetchOnWindowFocus: true,
   });
 
-  const { data: userModelData } = useQuery({
-    queryKey: ["user-model-coach"],
-    queryFn: async () => {
-      const res = await fetch("/api/user-model");
-      if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ userModel: UserModel; updatedAt: string | null }>;
-    },
-    staleTime: 5 * 60_000,
-  });
-
-  const memoryStale = isUserModelStale(
-    userModelData?.updatedAt,
-    userModelData?.userModel?.synthesizedAt
-  );
-
-  const statusLabel = isLoading
-    ? "Loading…"
-    : data?.statusLabel
-      ? `${data.statusLabel}${memoryStale ? " · updating" : ""}`
-      : memoryStale
-        ? "Score — · updating"
-        : "Score —";
+  const statusLabel = isLoading ? "Loading…" : data?.statusLabel ?? "Score —";
 
   return (
     <aside className="coach-rail" aria-label="Coach panel">
@@ -96,7 +74,7 @@ export function CoachRail() {
       </div>
 
       <div className="coach-rail__footer">
-        <CoachKnowledgePanel variant="rail" />
+        <CoachKnowledgePanel variant="rail" bullets={data?.knows} />
       </div>
     </aside>
   );

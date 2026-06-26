@@ -38,7 +38,7 @@ The product is code-complete for a single beta user. Operational blockers:
 
 | Blocker | Action |
 |---------|--------|
-| Database | Run Supabase migrations **001 through 041** on production |
+| Database | Run Supabase migrations **001 through 042** on production |
 | Env vars | Set Supabase, OpenAI, Redis (prod cache), Resend, `CRON_SECRET` on Vercel |
 | Nightly cron | Schedule `GET /api/cron/nightly` with `Authorization: Bearer $CRON_SECRET` |
 | User path | Signup → onboarding → at least one **execution goal with a deadline** |
@@ -79,6 +79,7 @@ Copy from [`.env.local.example`](.env.local.example):
 | `OPENAI_API_KEY` | Yes | Plans + coach |
 | `OPENAI_FAST_MODEL` | No | Default `gpt-4o-mini` (planner, extraction) |
 | `OPENAI_DEEP_MODEL` | No | Default `gpt-4o` (coach, milestones, reviews) |
+| `ENABLE_PREDICTIONS` | No | Set `true` to write `behavioral_predictions` (default off) |
 | `UPSTASH_REDIS_REST_URL` | Prod | Session + user-context cache |
 | `UPSTASH_REDIS_REST_TOKEN` | Prod | Session + user-context cache |
 | `RESEND_API_KEY` | Yes | Auth emails |
@@ -192,22 +193,38 @@ interface UserContext {
 
 | Feature | Reads from |
 |---------|------------|
-| Daily planner | `userContextBlock` + `lastAchievement` injected into GPT prompt |
-| Coach rail snapshot | `/api/coach/snapshot` → `getUserContext()` |
-| Coach chat | Orchestrator (separate path, but same underlying tables) |
+| Daily planner | `getUserContext()` first → `formatUserContextForPlanner()` (identity, values, top 3 `recentMemories`, last achievement) |
+| Coach rail snapshot | `/api/coach/snapshot` → `getUserContext().knowledgeBullets` |
+| Coach chat today block | Orchestrator passes cached `UserContext` into [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (no duplicate goal/task fetch) |
+
+### Milestones (always ensured)
+
+[`ensureMilestonesForGoal()`](src/lib/plans/milestone-generator.ts) runs when:
+
+- A new execution goal is created (goals API)
+- Before daily plan generation (`ensureTodayPlan`)
+- Missing milestones backfill via `POST /api/admin/backfill-milestones` (admin) + [`diagnose-and-backfill-milestones.sql`](supabase/scripts/diagnose-and-backfill-milestones.sql)
+
+If a goal has no deadline, week-relative milestones (`Week 1: …`) are used instead of skipping generation.
 
 ### Plan generation pipeline
 
 ```
-Supabase (goals, milestones, tasks, memories, patterns)
-  → fetchPlanUserContext() + getUserContext()
-  → daily-plan-generator.ts (gpt-4o-mini)
-  → sanitizePlanTaskFields() — three-tier why-line fallback
-  → tasks table (max 3 per goal per day)
-  → daily_plans.plan_content (cached JSON)
+getUserContext() (Redis 15m)
+  → ensureMilestonesForGoal() per active execution goal
+  → buildPlanContext() — single context assembly
+  → daily-plan-generator.ts (PLAN_CONTENT_VERSION=2, gpt-4o-mini)
+  → enforce 3 tasks/goal + duplicate why-line guard
+  → tasks table + daily_plans.plan_content
 ```
 
+Stale cached plans auto-invalidate when task count &lt; 3/goal, why equals title, or plan version &lt; 2.
+
 Why-line logic: [`src/lib/plans/task-why-line.ts`](src/lib/plans/task-why-line.ts) — never exposes “No milestones yet” or duplicates task titles.
+
+### Shipped UI fixes (audit)
+
+Dark mode default, score badge spacing, task card metadata stripped, goal card hierarchy, radial chart empty state, rhythm empty-state copy, coach rail short bullets (no synthesis paragraph fallback).
 
 ---
 
@@ -371,7 +388,8 @@ Model constants: [`src/lib/ai/models.ts`](src/lib/ai/models.ts)
 | Onboarding extraction (selected Qs) | `FAST_MODEL` | [`onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) |
 | Chat classification / extraction | `FAST_MODEL` | [`router.ts`](src/lib/ai/orchestrator/router.ts), [`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) |
 | Memory embeddings | `text-embedding-3-small` | [`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts) |
-| Moderation | `omni-moderation-latest` | [`openai.ts`](src/lib/ai/openai.ts) |
+| Onboarding goal sharpen (vague titles) | `FAST_MODEL` | [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) · `/api/onboarding/validate-initiative` |
+| Moderation | `omni-moderation-latest` (async, post-stream) | [`safety-engine.ts`](src/lib/ai/orchestrator/safety-engine.ts) — crisis keywords still sync |
 | **User model / "Who am I?"** | **No LLM on request** | Rule-based [`synthesis-engine.ts`](src/lib/user-model/synthesis-engine.ts), 12h cache [`loader.ts`](src/lib/user-model/loader.ts) |
 | Nightly cognitive + user-model refresh | Scheduled (no chat LLM) | [`synthesis-worker.ts`](src/lib/ai/orchestrator/synthesis-worker.ts) · `/api/cron/nightly` |
 
@@ -381,7 +399,7 @@ Built in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts):
 
 - `MENTOR_EXECUTION_PERSONA` — accountability guardrails  
 - `rhythmBlock` — time of day + tasks done today  
-- `todayPlanBlock` — today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts)  
+- `todayPlanBlock` — today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` when available)
 - `userModel` — synthesized profile from `profiles.user_model`  
 - `memoryRetrievalBlock` — mentor memories + vector search  
 
@@ -391,7 +409,7 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 
 ## Database reference
 
-**Source of truth:** [`supabase/migrations/`](supabase/migrations/) — run in numeric order through **041**.
+**Source of truth:** [`supabase/migrations/`](supabase/migrations/) — run in numeric order through **042**.
 
 ### Active tables (by domain)
 
@@ -406,6 +424,7 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 | Table | Stores | Written by | Read by |
 |-------|--------|------------|---------|
 | `goals` | Execution + direction goals (`goal_kind`), progress, deadlines | Onboarding, goals API, chat extraction | Overview, plans, coach, analytics |
+| `goal_progress_snapshots` | Daily progress % + tasks completed per goal | Nightly synthesis cron | Goal analytics charts |
 | `goal_milestones` | Sequential milestones per goal | Milestone generator, goals API | Daily planner, coach context |
 | `tasks` | Daily coach tasks (max 3/goal/day) | Daily plan generator, user completion | Today's Plan, performance score |
 | `daily_plans` | Cached plan JSON per day | Plan generator | Plans page, coach today-plan block |
@@ -429,10 +448,10 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 | `identity_signals` | Structured identity facts | Onboarding, extraction | User model synthesis |
 | `execution_patterns` | Procrastination / drift patterns | Onboarding, extraction, chat | Cognition engine, coach |
 | `commitments` | User commitments | Extraction, onboarding | Coach, weekly review |
-| `relationships` | People mentioned in chat | Chat extraction only | *Reserved for future coach context* |
+| `relationships` | People mentioned in chat | Chat extraction | Coach memory retrieval (top 3 names) |
 | `behavioral_observations` | Detected behaviors | Pattern detector | Cognition |
-| `behavioral_predictions` | Predicted outcomes | Prediction engine | Cognition |
-| `context_confidence_log` | Prompt confidence audit | Orchestrator | Ops only |
+| `behavioral_predictions` | Predicted outcomes | Prediction engine (gated: `ENABLE_PREDICTIONS=true`) | Cognition |
+| `context_confidence_log` | Prompt confidence audit | Orchestrator (10% sample + low style score) | Ops only |
 
 #### Reflections & reviews
 
@@ -556,7 +575,8 @@ Set `CRON_SECRET` and send `Authorization: Bearer <CRON_SECRET>` (handled by Ver
 
 | Script | Purpose |
 |--------|---------|
-| [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039–041 applied |
+| [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039–042 applied |
+| [`supabase/scripts/diagnose-and-backfill-milestones.sql`](supabase/scripts/diagnose-and-backfill-milestones.sql) | Find goals missing milestones + stale plans |
 | [`supabase/scripts/verify-memory-storage.sql`](supabase/scripts/verify-memory-storage.sql) | Debug mentor memory writes |
 
 ```bash

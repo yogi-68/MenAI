@@ -29,6 +29,7 @@ import {
 } from "@/lib/mentor/weakness-engine";
 import { formatMentorMemoriesForPrompt, loadMentorMemories } from "@/lib/mentor/mentor-memory";
 import { fetchActiveExecutionGoals, countActiveExecutionGoals } from "@/lib/goals/active-goals";
+import { ensureMilestonesForUser } from "@/lib/plans/milestone-generator";
 import { loadMemoryRetrievalContext } from "@/lib/mentor/memory-retrieval";
 import { TASK_QUALITY_PROMPT, passesTaskQualityGate } from "@/lib/plans/task-quality";
 import {
@@ -41,7 +42,6 @@ import {
   loadExecutionContext,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
-import { getUserModel } from "@/lib/user-model/loader";
 import { formatExecutionAllocationForPrompt } from "@/lib/user-model/execution-allocation";
 import type { PlanContextData } from "@/lib/plans/plan-interview";
 import {
@@ -55,7 +55,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
 import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
 import { getUserContext, formatUserContextForPlanner } from "@/lib/context/user-context";
-import { sanitizePlanTaskFields } from "@/lib/plans/task-why-line";
+import { sanitizePlanTaskFields, buildTaskWhyLine } from "@/lib/plans/task-why-line";
+
+export const PLAN_CONTENT_VERSION = 2;
 
 export type PlanMode = "context_building" | "normal" | "aggressive";
 
@@ -94,6 +96,7 @@ export interface DailyPlanContent {
   executionRate7d?: number;
   evidence?: string[];
   tasks: DailyPlanTask[];
+  planVersion?: number;
 }
 
 export type PlanPhase = "morning" | "afternoon" | "night";
@@ -265,6 +268,8 @@ export async function fetchPlanUserContext(
   userId: string,
   options: FetchPlanOptions = {}
 ): Promise<PlanUserContext> {
+  const userContext = await getUserContext(supabase, userId);
+
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const since = sevenDaysAgo.toISOString();
@@ -379,10 +384,9 @@ export async function fetchPlanUserContext(
       : { data: [] as Array<{ goal_id: string; title: string; status: string; sort_order: number; goals: { title?: string } | null }> };
 
   const execCtx = await loadExecutionContext(supabase, userId);
-  const userModel = await getUserModel(supabase, userId);
-  const allocationIds = userModel.executionAllocation.map((a) => a.initiativeId);
+  const allocationIds = userContext.executionAllocation.map((a) => a.initiativeId);
   const primaryId =
-    userModel.currentFocus.initiativeId ?? execCtx.primaryInitiative?.id ?? null;
+    userContext.currentFocusInitiativeId ?? execCtx.primaryInitiative?.id ?? null;
   const initiatives = primaryId
     ? [
         ...initiativesRaw.filter((i) => i.id === primaryId),
@@ -673,16 +677,14 @@ export async function fetchPlanUserContext(
   }
 
   const executionAllocationLines =
-    userModel.executionAllocation.length > 0
+    userContext.executionAllocation.length > 0
       ? formatExecutionAllocationForPrompt(
-          userModel.executionAllocation,
+          userContext.executionAllocation,
           availableMinutesAdjusted
         )
       : primaryInit
         ? [`[FOCUS — 100%] ${primaryInit.title}: current focus only`]
         : [];
-
-  const userContext = await getUserContext(supabase, userId);
 
   return {
     initiatives: initiativeLines,
@@ -729,7 +731,7 @@ export async function fetchPlanUserContext(
     timeEstimationInsight: timeProfile.insight ?? undefined,
     planPhase,
     middayCompleted,
-    userModelNarrative: userModel.narrative,
+    userModelNarrative: userContext.userModelNarrative,
     executionAllocationLines,
     initiativeContextBlocks,
     lifeAreaWeightPlan,
@@ -815,7 +817,7 @@ URGENT OPPORTUNITIES (override allocation — rearrange day around these):
 ${listOrFallback(ctx.urgentOpportunities, "None — proceed with allocated initiative blocks")}
 
 Initiative milestones (one CURRENT milestone per initiative — tasks advance that milestone):
-${listOrFallback(ctx.initiativeMilestones, "No milestones yet — include one context-building task per initiative missing milestones")}
+${listOrFallback(ctx.initiativeMilestones, "No current milestone on file — omit linkedMilestone; reference identity or recent win in whyItMatters")}
 
 Every non-context-building task MUST include linkedInitiative AND linkedMilestone matching its initiative's CURRENT milestone.
 Task estimatedMinutes should roughly fit the allocation percentages above.
@@ -846,7 +848,9 @@ ${listOrFallback(ctx.upcomingDeadlines, "None")}
 
 TASK FORMAT (mandatory for every task):
 - title: specific action verb + deliverable (NOT "work on X")
-- whyItMatters: one sentence — why this moves the CURRENT FOCUS initiative today
+- whyItMatters: ONE sentence separate from title — never repeat or paraphrase the task title; reference milestone, recent win, recent memory, or identity value
+- whyItMatters MUST NOT copy the title or description field
+- If lastAchievement or recent memories exist in USER CONTEXT, at least one task must reference that momentum
 - successMetric: concrete done criteria — verifiable yes/no today (e.g. "Complete signup → onboarding → dashboard without errors")
 - deliverable: what exists when finished
 
@@ -922,7 +926,7 @@ Return JSON only:
   "assumptions": ["only in normal mode if needed"],
   "tasks": [{
     "title": "Concrete action",
-    "whyItMatters": "Why this task? — cite pattern, delay, milestone, or opportunity",
+    "whyItMatters": "Separate from title — cite milestone, recent win, memory, or identity (never repeat title)",
     "estimatedMinutes": 60,
     "deliverable": "Exact output",
     "successMetric": "Measurable done criteria",
@@ -975,17 +979,134 @@ function fitTasksToTimeBudget(
   maxMinutes: number,
   maxTasks: number
 ): DailyPlanTask[] {
-  let total = 0;
-  const fitted: DailyPlanTask[] = [];
+  const capped = tasks.slice(0, maxTasks);
+  if (capped.length === 0) return capped;
 
-  for (const task of tasks) {
-    if (fitted.length >= maxTasks) break;
-    if (total + task.estimatedMinutes > maxMinutes) continue;
-    fitted.push(task);
-    total += task.estimatedMinutes;
+  let total = capped.reduce((sum, t) => sum + t.estimatedMinutes, 0);
+  if (total <= maxMinutes) return capped;
+
+  const scale = maxMinutes / total;
+  return capped.map((task) => ({
+    ...task,
+    estimatedMinutes: Math.max(30, Math.round(task.estimatedMinutes * scale)),
+  }));
+}
+
+function countTasksForGoal(tasks: DailyPlanTask[], goalTitle: string): number {
+  const key = goalTitle.toLowerCase();
+  return tasks.filter((t) => t.linkedInitiative?.trim().toLowerCase() === key).length;
+}
+
+async function generateTasksForGoal(
+  ctx: PlanUserContext,
+  goalTitle: string,
+  count: number,
+  userId: string
+): Promise<DailyPlanTask[]> {
+  if (count <= 0) return [];
+
+  const openai = getOpenAI();
+  const completion = await openai.chat.completions.create({
+    model: PLANNER_MODEL,
+    temperature: 0.35,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "Generate exactly N finishable tasks for ONE goal. JSON only. Personalize using USER CONTEXT.",
+      },
+      {
+        role: "user",
+        content: `Goal: ${goalTitle}
+Generate exactly ${count} tasks (linkedInitiative must be "${goalTitle}").
+
+USER CONTEXT:
+${ctx.userContextBlock}
+${ctx.lastAchievement ? `Recent win: ${ctx.lastAchievement}` : ""}
+
+${ctx.mentorMemoryBlock}
+
+Return: {"tasks":[{"title":"...","whyItMatters":"...","estimatedMinutes":60,"deliverable":"...","successMetric":"...","linkedInitiative":"${goalTitle}","linkedMilestone":"..."}]}`,
+      },
+    ],
+  });
+
+  if (userId) {
+    logAiUsage(
+      userId,
+      "daily_plan_gap_fill",
+      PLANNER_MODEL,
+      completion.usage?.prompt_tokens ?? 0,
+      completion.usage?.completion_tokens ?? 0
+    ).catch(() => {});
   }
 
-  return fitted.length > 0 ? fitted : tasks.slice(0, Math.min(maxTasks, 3));
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) return [];
+
+  const parsed = JSON.parse(raw) as { tasks?: DailyPlanTask[] };
+  return (parsed.tasks || [])
+    .filter((t) => t.title && passesTaskQualityGate(t.title))
+    .slice(0, count)
+    .map((t) =>
+      sanitizePlanTaskFields(
+        {
+          title: t.title.trim(),
+          whyItMatters: t.whyItMatters?.trim() || "",
+          estimatedMinutes: Math.min(180, Math.max(30, Number(t.estimatedMinutes) || 60)),
+          deliverable: t.deliverable?.trim() || "Completed output",
+          successMetric: t.successMetric?.trim() || "Clear yes/no",
+          isContextBuilding: false,
+          linkedInitiative: goalTitle,
+          linkedMilestone: t.linkedMilestone?.trim(),
+        },
+        { momentumHook: ctx.lastAchievement }
+      )
+    );
+}
+
+async function fillMissingTasksPerGoal(
+  tasks: DailyPlanTask[],
+  ctx: PlanUserContext,
+  userId?: string
+): Promise<DailyPlanTask[]> {
+  let result = [...tasks];
+
+  for (const goalTitle of ctx.activeGoalTitles) {
+    let missing = TASKS_PER_GOAL - countTasksForGoal(result, goalTitle);
+    while (missing > 0 && userId) {
+      const generated = await generateTasksForGoal(ctx, goalTitle, missing, userId);
+      if (generated.length === 0) break;
+      result = [...result, ...generated];
+      missing = TASKS_PER_GOAL - countTasksForGoal(result, goalTitle);
+    }
+  }
+
+  return enforceThreeTasksPerGoal(result, ctx.activeGoalTitles, ctx.maxTasks);
+}
+
+export function isPlanContentStale(
+  content: DailyPlanContent,
+  goalTitles: string[]
+): boolean {
+  if ((content.planVersion ?? 0) < PLAN_CONTENT_VERSION) return true;
+
+  const expectedTasks = goalTitles.length * TASKS_PER_GOAL;
+  if (goalTitles.length > 0 && content.tasks.length !== expectedTasks) return true;
+
+  for (const title of goalTitles) {
+    if (countTasksForGoal(content.tasks, title) < TASKS_PER_GOAL) return true;
+  }
+
+  return content.tasks.some(
+    (t) =>
+      isVagueTask(t.title) ||
+      !t.deliverable ||
+      !t.successMetric ||
+      /no milestones yet/i.test(t.whyItMatters || "") ||
+      (t.whyItMatters || "").trim().toLowerCase() === t.title.trim().toLowerCase()
+  );
 }
 
 export async function generateDailyPlanWithAI(
@@ -1057,6 +1178,10 @@ export async function generateDailyPlanWithAI(
         linkedMilestone: t.linkedMilestone?.trim(),
       };
       return sanitizePlanTaskFields(base, { momentumHook: ctx.lastAchievement });
+    })
+    .map((t) => {
+      const why = buildTaskWhyLine(t, { momentumHook: ctx.lastAchievement });
+      return { ...t, whyItMatters: why };
     });
 
   if (ctx.planMode === "context_building" && ctx.initiatives.length === 0) {
@@ -1076,6 +1201,7 @@ export async function generateDailyPlanWithAI(
   }
 
   tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
+  tasks = await fillMissingTasksPerGoal(tasks, ctx, userId);
   tasks = fitTasksToTimeBudget(tasks, ctx.availableMinutes, ctx.maxTasks);
   tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
 
@@ -1127,6 +1253,7 @@ export async function generateDailyPlanWithAI(
     executionRate7d: ctx.executionRate7d,
     evidence,
     tasks,
+    planVersion: PLAN_CONTENT_VERSION,
   };
 }
 
@@ -1192,15 +1319,14 @@ export async function ensureTodayPlan(
 
   if (existing?.plan_content) {
     const content = normalizePlanContent(existing.plan_content);
-    const expectedTasks = goalCount * TASKS_PER_GOAL;
+    const activeGoals = await fetchActiveExecutionGoals(supabase, userId, 12);
+    const goalTitles = activeGoals.map((g) => g.title);
     const stale =
-      content.tasks.some((t) => isVagueTask(t.title)) ||
-      content.tasks.some((t) => !t.deliverable || !t.successMetric) ||
       !content.whyTheseTasks ||
       !content.confidence ||
       !content.planMode ||
       !content.planningContext ||
-      (expectedTasks > 0 && content.tasks.length !== expectedTasks);
+      isPlanContentStale(content, goalTitles);
 
     if (!stale && content.tasks.length > 0) {
       return { plan: content, planId: existing.id, created: false };
@@ -1208,6 +1334,8 @@ export async function ensureTodayPlan(
 
     await supabase.from("daily_plans").delete().eq("id", existing.id);
   }
+
+  await ensureMilestonesForUser(supabase, userId);
 
   const ctx = await fetchPlanUserContext(supabase, userId);
 
@@ -1254,7 +1382,7 @@ export async function ensureTodayPlan(
       return {
         user_id: userId,
         title: t.title,
-        description: `${t.whyItMatters}\n\nDeliverable: ${t.deliverable}\nSuccess: ${t.successMetric}`,
+        description: t.whyItMatters.trim(),
         status: "pending",
         due_date: today,
         estimated_minutes: t.estimatedMinutes,
@@ -1353,7 +1481,7 @@ export async function adjustMiddayPlan(
       return {
         user_id: userId,
         title: t.title,
-        description: `${t.whyItMatters}\n\nDeliverable: ${t.deliverable}\nSuccess: ${t.successMetric}`,
+        description: t.whyItMatters.trim(),
         status: "pending",
         due_date: today,
         estimated_minutes: t.estimatedMinutes,
@@ -1403,5 +1531,6 @@ function normalizePlanContent(raw: unknown): DailyPlanContent {
     executionRate7d: content.executionRate7d as number | undefined,
     evidence: (content.evidence as string[]) || [],
     tasks,
+    planVersion: (content.planVersion as number) || 1,
   };
 }

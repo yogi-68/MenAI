@@ -61,7 +61,7 @@ export async function loadMemoryRetrievalContext(
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [weights, patternsRes, reflectionsRes, goalsRes, signalsRes, initiativesRes, profileRes, priorDirRes] =
+  const [weights, patternsRes, reflectionsRes, goalsRes, signalsRes, initiativesRes, profileRes, priorDirRes, relationshipsRes] =
     await Promise.all([
       computeLifeAreaWeights(supabase, userId),
       supabase
@@ -111,6 +111,12 @@ export async function loadMemoryRetrievalContext(
         .in("status", ["superseded", "archived"])
         .order("archived_at", { ascending: false })
         .limit(5),
+      supabase
+        .from("relationships")
+        .select("name, role, context")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false })
+        .limit(3),
     ]);
 
   const mentorMemories = bundle?.mentorMemories ?? (await loadMentorMemories(supabase, userId, 15));
@@ -169,9 +175,21 @@ export async function loadMemoryRetrievalContext(
     .filter((t) => t.recent && t.key !== primaryArea && t.mentions >= 1)
     .map((t) => t.theme);
 
-  const relationshipNotes = mentorMemories
-    .filter((m) => m.memoryType === "relationship_note" || /\b(girlfriend|boyfriend|partner|wife|husband)\b/i.test(m.text))
-    .map((m) => m.text);
+  const relationshipNotesFromDb = (relationshipsRes.data || []).map((r) => {
+    const ctx = r.context?.trim();
+    return ctx ? `${r.name} (${r.role}): ${ctx}` : `${r.name} (${r.role})`;
+  });
+
+  const relationshipNotes = [
+    ...relationshipNotesFromDb,
+    ...mentorMemories
+      .filter(
+        (m) =>
+          m.memoryType === "relationship_note" ||
+          /\b(girlfriend|boyfriend|partner|wife|husband)\b/i.test(m.text)
+      )
+      .map((m) => m.text),
+  ].slice(0, 5);
 
   const corpus = [
     ...mentorMemories.map((m) => m.text),

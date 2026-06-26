@@ -152,7 +152,7 @@ export async function computeGoalAnalytics(
   const since90 = dateStr(daysAgo(90));
   const today = dateStr(new Date());
 
-  const [goalRes, tasksRes, milestonesRes] = await Promise.all([
+  const [goalRes, tasksRes, milestonesRes, snapshotsRes] = await Promise.all([
     supabase
       .from("goals")
       .select("*")
@@ -171,12 +171,21 @@ export async function computeGoalAnalytics(
       .select("*")
       .eq("goal_id", goalId)
       .order("sort_order"),
+    supabase
+      .from("goal_progress_snapshots")
+      .select("snapshot_date, progress_pct, tasks_completed_count")
+      .eq("goal_id", goalId)
+      .eq("user_id", userId)
+      .gte("snapshot_date", since90),
   ]);
 
   const goal = goalRes.data;
   if (!goal) return null;
 
   const tasks = tasksRes.data || [];
+  const snapshotByDate = new Map(
+    (snapshotsRes.data || []).map((s) => [s.snapshot_date, s])
+  );
   const dailyTrend: Array<{ date: string; score: number; completed: number }> = [];
   const missedDays: string[] = [];
   let streak = 0;
@@ -184,13 +193,28 @@ export async function computeGoalAnalytics(
 
   for (let i = 89; i >= 0; i--) {
     const d = dateStr(daysAgo(i));
-    const dayTasks = tasks.filter((t) => t.due_date === d);
-    const completed = dayTasks.filter((t) => t.status === "completed").length;
-    const score = scoreFromCompletion(completed);
-    dailyTrend.push({ date: d, score, completed });
-    if (dayTasks.length > 0 && completed === 0) missedDays.push(d);
+    const snapshot = snapshotByDate.get(d);
+    if (snapshot) {
+      const completed = snapshot.tasks_completed_count ?? 0;
+      const score = Math.round(Number(snapshot.progress_pct) || scoreFromCompletion(completed));
+      dailyTrend.push({ date: d, score, completed });
+      if (completed === 0 && score === 0) {
+        const dayTasks = tasks.filter((t) => t.due_date === d);
+        if (dayTasks.length > 0) missedDays.push(d);
+      } else if (completed === 0) {
+        const dayTasks = tasks.filter((t) => t.due_date === d);
+        if (dayTasks.length > 0) missedDays.push(d);
+      }
+    } else {
+      const dayTasks = tasks.filter((t) => t.due_date === d);
+      const completed = dayTasks.filter((t) => t.status === "completed").length;
+      const score = scoreFromCompletion(completed);
+      dailyTrend.push({ date: d, score, completed });
+      if (dayTasks.length > 0 && completed === 0) missedDays.push(d);
+    }
     if (streakActive && d <= today) {
-      if (score >= 66) streak += 1;
+      const dayScore = dailyTrend[dailyTrend.length - 1]?.score ?? 0;
+      if (dayScore >= 66) streak += 1;
       else if (d !== today) streakActive = false;
     }
   }

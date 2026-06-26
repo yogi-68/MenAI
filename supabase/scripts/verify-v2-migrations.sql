@@ -1,5 +1,5 @@
--- MenAI V2: Verify migrations 039 + 040 + 041 applied correctly
--- Run in Supabase SQL Editor after applying migrations through 041_chat_and_safety_tables.sql
+-- MenAI V2: Verify migrations 039 + 040 + 041 + 042 applied correctly
+-- Run in Supabase SQL Editor after applying migrations through 042_goal_progress_snapshots.sql
 
 -- Goals table has V2 columns
 SELECT column_name, data_type
@@ -61,4 +61,16 @@ SELECT column_name
 FROM information_schema.columns
 WHERE table_schema = 'public' AND table_name = 'messages'
   AND column_name IN ('conversation_id', 'user_id', 'role', 'content', 'emotion_data')
+ORDER BY column_name;
+
+-- Goal progress snapshots (042)
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = 'goal_progress_snapshots'
+) AS goal_progress_snapshots_exists;
+
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'goal_progress_snapshots'
+  AND column_name IN ('goal_id', 'snapshot_date', 'progress_pct', 'tasks_completed_count')
 ORDER BY column_name;

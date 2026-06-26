@@ -19,6 +19,7 @@
 
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { refreshUserModel } from "@/lib/user-model/loader";
+import { writeGoalProgressSnapshots } from "@/lib/plans/goal-progress-snapshots";
 import { rebuildAndPersistCognitiveState, type CognitiveState } from "./cognition-engine";
 
 export interface SynthesisResult {
@@ -49,6 +50,9 @@ export async function runDeepSynthesis(
 
   const supabase = await createServiceRoleClient();
   await refreshUserModel(supabase, userId);
+  await writeGoalProgressSnapshots(supabase, userId).catch((err) => {
+    console.warn(`[SynthesisWorker] Goal snapshot write failed for ${userId}:`, err);
+  });
 
   console.log(`[SynthesisWorker] Completed for ${userId}:`, {
     maturity: cognitiveState.maturity_level,
