@@ -108,13 +108,14 @@ function detectBroadKey(raw: string): string | null {
 }
 
 function detectWeakKey(raw: string): string | null {
+  if (detectBroadKey(raw)) return null;
   for (const { re, key } of WEAK_PATTERNS) {
     if (re.test(raw)) return key;
   }
   const t = raw.trim().toLowerCase();
   if (isConcreteGoalTitle(raw)) return null;
-  if (hasDomainNoun(raw) && t.split(/\s+/).length <= 5) return "business";
-  if (t.split(/\s+/).length <= 4 && !/\d/.test(t) && !hasDomainNoun(raw)) return "productivity";
+  if (hasDomainNoun(raw)) return null;
+  if (t.split(/\s+/).length <= 4 && !/\d/.test(t)) return "productivity";
   return null;
 }
 
@@ -163,13 +164,13 @@ export function assessGoalQuality(
       quality: "weak",
       needsSharpening: true,
       sharpenPrompt: SHARPEN_PROMPTS[weakKey] || "What specific outcome are you trying to reach?",
-      sharpenOptions: SHARPEN_OPTIONS[weakKey] || base.suggestions.map((s) => ({
-        value: s,
-        label: s,
-        resultTitle: s,
-      })),
+      sharpenOptions: SHARPEN_OPTIONS[weakKey],
       message: "Got it. Let's make this specific so MenAI can plan precisely.",
     };
+  }
+
+  if (hasDomainNoun(raw) || hasDomainNoun(title)) {
+    return { ...base, quality: "strong", needsSharpening: false };
   }
 
   return { ...base, quality: "strong", needsSharpening: false };

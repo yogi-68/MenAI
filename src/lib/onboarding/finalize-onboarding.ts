@@ -151,16 +151,14 @@ export async function finalizeOnboarding(
   const rawGoal = (byId.get("Q2")?.response_text || "").trim();
   const assessment = assessGoalQuality(rawGoal, {});
 
-  if (assessment.needsSharpening && assessment.quality !== "strong") {
-    const stillWeak = assessGoalQuality(rawGoal, {});
-    if (stillWeak.needsSharpening && stillWeak.quality !== "strong") {
-      throw new FinalizeOnboardingError(
-        "Goal must be sharpened before completing onboarding. Pick a concrete path and try again."
-      );
-    }
+  if (!assessment.valid) {
+    throw new FinalizeOnboardingError(
+      assessment.message ||
+        "That goal is too vague to plan from. Add a specific domain or outcome and try again."
+    );
   }
 
-  const goalTitle = assessment.valid ? assessment.title : "";
+  const goalTitle = assessment.title || rawGoal;
   const targetDate = resolveTargetDate(byId.get("Q3"));
   const obstacleKey = String(byId.get("Q4")?.response_data?.selected || "");
   const obstacleLabel = obstacleKey ? resolveObstacleLabel(obstacleKey, byId.get("Q4")) : "";

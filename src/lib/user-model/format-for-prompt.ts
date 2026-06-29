@@ -5,13 +5,13 @@ import { buildUnderstandingSummary } from "@/lib/user-model/understanding-summar
 import { COACH_VOICE_PROMPT } from "@/lib/user-model/voice-guide";
 import { MENTOR_PRODUCT_RULE } from "@/lib/mentor/product-rule";
 
-const NARRATIVE_MAX = 220;
+const NARRATIVE_MAX = 200;
 
 function capNarrative(text: string): string {
   if (text.length <= NARRATIVE_MAX) return text;
   const cut = text.slice(0, NARRATIVE_MAX);
   const lastPeriod = cut.lastIndexOf(". ");
-  return lastPeriod > NARRATIVE_MAX * 0.5 ? cut.slice(0, lastPeriod + 1) : cut.trimEnd() + "…";
+  return lastPeriod > NARRATIVE_MAX * 0.5 ? cut.slice(0, lastPeriod + 1) : cut.trimEnd();
 }
 
 /** Compact user model for coach chat — narrative + bullets only (~500 tokens max). */

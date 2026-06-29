@@ -27,9 +27,12 @@ export async function POST(request: NextRequest) {
     buildingWhat: buildingWhat || null,
   });
 
-  let llmSharpen: Awaited<ReturnType<typeof assessGoalWithLLM>> = null;
-  if (assessment.needsSharpening) {
-    llmSharpen = await assessGoalWithLLM(title);
+  // Heuristic sharpen options are enough — LLM often returns equally vague alternatives
+  if (
+    assessment.needsSharpening &&
+    (!assessment.sharpenOptions?.length || assessment.sharpenOptions.length < 2)
+  ) {
+    const llmSharpen = await assessGoalWithLLM(title);
     if (llmSharpen) {
       assessment = {
         ...assessment,
@@ -47,10 +50,7 @@ export async function POST(request: NextRequest) {
     needsSharpening: assessment.needsSharpening,
     sharpenPrompt: assessment.sharpenPrompt,
     sharpenOptions: assessment.sharpenOptions,
-    exampleTitle:
-      assessment.needsSharpening && llmSharpen?.exampleTitle
-        ? llmSharpen.exampleTitle
-        : assessment.sharpenOptions?.[0]?.resultTitle,
+    exampleTitle: assessment.sharpenOptions?.[0]?.resultTitle,
     title: assessment.title,
     message: assessment.message,
     suggestions: assessment.suggestions,

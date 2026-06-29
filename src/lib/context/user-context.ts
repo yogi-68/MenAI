@@ -220,7 +220,21 @@ export async function getUserContext(
 
   if (!options?.refresh) {
     const cached = await getFromCache<UserContext>(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      if (process.env.NODE_ENV === "development") {
+        console.log(`[Redis] HIT ${cacheKey}`);
+      }
+      return cached;
+    }
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    const redisReady = Boolean(
+      process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    );
+    console.log(
+      `[Redis] MISS ${cacheKey} — assembling from Supabase${redisReady ? "" : " (Redis env vars missing — every page load hits DB)"}`
+    );
   }
 
   const context = await assembleUserContext(supabase, userId);

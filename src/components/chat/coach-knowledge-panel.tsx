@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { ClayCard } from "@/components/ui";
-import { ExecutionProfileRadar } from "@/components/charts/execution-profile-radar";
 import type { UserModel } from "@/lib/user-model/types";
-import type { ExecutionProfileScores } from "@/lib/user-model/execution-profile-scores";
 import { isUserModelStale } from "@/lib/user-model/staleness";
 import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
 
@@ -70,7 +68,6 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
   const evidence = model?.evidence?.slice(0, 5) ?? [];
   const focusTitle = model?.currentFocus?.title;
   const milestone = model?.currentMilestone;
-  const profileScores = data?.executionProfile;
 
   if (isLoading && !bullets?.length) {
     if (isRail) {
@@ -84,7 +81,7 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
   }
 
   if (isRail && understands.length === 0) return null;
-  if (!isRail && understands.length === 0 && !focusTitle && !profileScores) return null;
+  if (!isRail && understands.length === 0 && !focusTitle) return null;
 
   const content = (
     <>
@@ -121,13 +118,6 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
                 <li key={item}>{item}</li>
               ))}
             </ul>
-          )}
-
-          {profileScores && (
-            <div className="mb-4">
-              <p className="label mb-2">Your execution profile</p>
-              <ExecutionProfileRadar scores={profileScores} />
-            </div>
           )}
 
           {stillNeeds.length > 0 && (

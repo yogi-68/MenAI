@@ -74,9 +74,18 @@ export async function GET() {
   }
 
   let resolvedDailyNote = dailyNote;
+  const primaryGoal = userContext.activeGoals[0];
+
   if (!resolvedDailyNote && expected > 0 && completed === 0) {
     resolvedDailyNote =
       "Day 1. Your goals are set. Complete today's first task — that's the only thing that matters right now.";
+  }
+
+  if (!resolvedDailyNote && primaryGoal) {
+    const deadlinePart = primaryGoal.targetDate
+      ? ` Deadline: ${primaryGoal.targetDate}.`
+      : "";
+    resolvedDailyNote = `Day 1. Focus: ${primaryGoal.title}.${deadlinePart} Complete your first task today — momentum starts there.`;
   }
 
   return NextResponse.json({

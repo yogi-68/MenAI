@@ -2,6 +2,26 @@
 
 MenAI is an **execution OS for ambitious people**: a dark, Linear-style dashboard with a persistent performance score, exactly **3 AI-generated tasks per active goal per day**, and a single execution-focused coach that remembers who you are.
 
+**Product map (status + coach + vision + plan + mentor):**
+
+| Page | Role |
+|------|------|
+| **Overview** (`/dashboard`) | Status ? execution score, pillars, trends, task outcomes |
+| **Today's Plan** (`/dashboard/plans`) | Daily plan ? 3 tasks ? goal, briefing, checkboxes |
+| **Coach chat** (`/dashboard/chat`) | Mentor ? text-only coaching, no charts in messages |
+| **Timeline** (`/dashboard/timeline`) | Vision ? wins, reflections, course corrections over time |
+| **Goal analytics** (`/dashboard/goals/[id]`) | Accountability ? pace insight, milestones, precision score |
+
+**Reference dashboard ? MenAI data (same DB, no mocks):**
+
+| Reference label | MenAI source |
+|-----------------|--------------|
+| Trading Discipline Score | **Execution score** ? average of Planning / Execution / Reflection pillars |
+| Wins / Losses / Breakeven | **Completed / Skipped / Missed** tasks (30d) |
+| Common mistakes | Top **`execution_patterns`** by `occurrences` |
+| Emotional state | Obstacle + reflection signals in **`execution_patterns`** / **`daily_reflections`** |
+| Most active time | Hour buckets from **`tasks.completed_at`** |
+
 **Stack:** Next.js 16 ? Supabase ? OpenAI ? Upstash Redis ? Recharts ? Vercel  
 **Design:** `#0f0f11` shell ? `#7c6fff` accent ? **Syne** (display headings) ? **Plus Jakarta Sans** (UI body) ? **JetBrains Mono** (numeric score only)  
 **Layout:** 3 columns ? sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile)
@@ -122,10 +142,10 @@ Defined in [`questions.ts`](src/lib/onboarding/questions.ts) ? `buildQuestionFlo
 ### Accept-and-sharpen (Q2)
 
 - **Reject only** pure vision inputs (`"be better"`, `"excel in life"`, `"improve everything"`).
-- **Accept** any title with a domain noun (`business`, `fitness`, `agency`, `product`, ?).
-- `"Build a business"` ? **accepted but sharpenable** (domain pills: Finance agency / Product-SaaS / Service business).
-- Sharpen options compose full titles (`"Build a finance agency"`) ? user can edit before Continue.
-- Finalize still blocks if the stored title remains unsharpened broad/weak.
+- **Accept** any title with a domain noun (`business`, `fitness`, `agency`, `product`, etc.).
+- `"Build a business"` ? **accepted** (quality `broad`) ? inline domain picker ? optional **Keep this goal and continue**.
+- Weak goals (`"lose weight"`) require picking a sharpen option before Continue.
+- **Q5 weekly hours** fixes plan precision Resources ? the main reason confidence stayed at 0 after onboarding.
 
 Name comes from the auth profile ? there is no separate name question.
 
@@ -133,7 +153,7 @@ Name comes from the auth profile ? there is no separate name question.
 
 When the user completes Q7, `POST /api/onboarding/finalize` streams progress while [`finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) runs:
 
-1. **Load** responses + block unsharpened broad/weak goals.
+1. **Load** responses ? block only invalid vision goals (domain-noun goals finalize even if broad).
 2. **Insert** `execution_patterns` + **`identity_signals`** (goal domain, obstacle, success, available hours).
 3. **Create execution goal** with success criteria and optional deadline.
 4. **Generate milestones** (LLM + obstacle context; week-relative if no deadline).
@@ -307,9 +327,9 @@ Rule-based 0?100, no LLM. Factors: Deadline (20), Obstacle (20), Success criteri
 
 ### Coach rail (3 sections, no truncated synthesis)
 
-1. Today's coaching note ? 1 sentence from plan calibration or daily note memory
-2. Plan precision CTA ? lowest-confidence goal + action link (shown when score < 70)
-3. What your coach knows ? max 4 bullets, ~8 words each
+1. **Today's coaching note** ? plan calibration, daily memory, or **Day-1 note from onboarding goal** (useful from minute one)
+2. **Plan precision CTA** ? lowest-confidence goal + action link (shown when score < 70)
+3. **What your coach knows** ? max 4 bullets, max 8 words each; **updating?** pill when stale
 
 ### Shipped UI fixes
 
@@ -466,7 +486,7 @@ MentalAI/
 5. **Time-aware coach** ? rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
 6. **Personalized tasks** ? planner reads `UserContext` (identity, last achievement, mentor memories) ? not generic templates  
 7. **Human why-lines** ? three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
-8. **Charts** ? sidebar score sparkline (always visible, dashed when empty); per-goal rings on Today's Plan; overview weekly bar with ghost empty state; goal analytics heatmap + milestone line chart; timeline 6-month momentum bar; coach execution radar from `/api/user-model` `executionProfile`  
+8. **Charts** ? analytics + Overview only (hero rings, pillars, trend, outcomes, blockers). **No charts in coach chat messages or rail** ? coach speaks in text  
 
 ---
 
@@ -484,7 +504,7 @@ Model constants: [`src/lib/ai/models.ts`](src/lib/ai/models.ts)
 | Onboarding extraction (selected Qs) | `FAST_MODEL` | [`onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) |
 | Chat classification / extraction | `FAST_MODEL` | [`router.ts`](src/lib/ai/orchestrator/router.ts), [`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) |
 | Memory embeddings | `text-embedding-3-small` | [`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts) |
-| Onboarding goal sharpen (vague titles) | `FAST_MODEL` | [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) ? `/api/onboarding/validate-initiative` |
+| Onboarding goal sharpen (vague titles) | `FAST_MODEL` | Only when heuristic options are missing ? [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) |
 | Moderation | `omni-moderation-latest` (async, post-stream) | [`safety-engine.ts`](src/lib/ai/orchestrator/safety-engine.ts) ? crisis keywords still sync |
 | **User model / "Who am I?"** | **No LLM on request** | Rule-based [`synthesis-engine.ts`](src/lib/user-model/synthesis-engine.ts), 12h cache [`loader.ts`](src/lib/user-model/loader.ts) |
 | Nightly cognitive + user-model refresh | Scheduled (no chat LLM) | [`synthesis-worker.ts`](src/lib/ai/orchestrator/synthesis-worker.ts) ? `/api/cron/nightly` |
@@ -511,8 +531,10 @@ Built in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts):
 - **`MENTOR_EXECUTION_PERSONA`** ? time-aware, anti-description coach persona (see below)
 - `rhythmBlock` ? time of day + tasks done/expected today
 - `todayPlanBlock` ? today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` ? no duplicate fetch)
-- `userModel` ? synthesized profile from `profiles.user_model`
-- `memoryRetrievalBlock` ? mentor memories + vector search
+- **`userModel`** ? compact injection via `formatUserModelCompactForPrompt()` ? **200-char narrative + 4 knowledge bullets** (~500 tokens), not full JSONB
+- `memoryRetrievalBlock` ? mentor memories + vector search (skipped for messages &lt;60 chars or greetings)
+
+**Prompt size:** `buildPrompt()` logs `~N tokens` in dev (and when &gt;3,000). If time-to-first-token is &gt;2s, check server logs ? trim context before adding more prompt layers.
 
 ### Coach persona (MENTOR_EXECUTION_PERSONA)
 
@@ -755,9 +777,24 @@ npm test         # Vitest (unit tests in tests/)
 
 ## Scaling notes
 
-- **`/api/coach/snapshot`** serves from cached `UserContext` ? split score-first + lazy knowledge if rail load grows  
-- **User model** refreshes on data changes + nightly cron; UI shows **"updating?"** when synthesis is >26h stale  
-- **Redis** optional in dev; required in prod for acceptable planner/rail latency  
+### Redis (check Vercel env first)
+
+If **`UPSTASH_REDIS_REST_URL`** / **`UPSTASH_REDIS_REST_TOKEN`** are missing, every page load rebuilds `UserContext` from Supabase (7+ queries) instead of one cache read. Dev logs:
+
+```
+[Redis] No Upstash credentials found. Caching disabled.
+[Redis] MISS menai:user-context:{userId} ? assembling from Supabase (Redis env vars missing ? every page load hits DB)
+[Redis] HIT menai:user-context:{userId}
+```
+
+Set both vars on Vercel ? link Upstash integration ? redeploy.
+
+### Other
+
+- **`GET /api/analytics/dashboard`** ? single Overview fetch (replaces 3 parallel analytics routes)
+- **`/api/coach/snapshot`** ? `getUserContext()` + lightweight profile read (no full `getUserModel()`)
+- **User model** refreshes on data changes + nightly cron; UI shows **"updating?"** when synthesis is stale
+- **Coach prompt** ? compact user model only; watch `[Coach prompt] ~N tokens` in logs
 
 ---
 

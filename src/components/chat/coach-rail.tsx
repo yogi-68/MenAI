@@ -117,11 +117,19 @@ export function CoachRail() {
               </Link>
             ) : null}
 
-            {/* Section 3 — What your coach knows (4 bullets max) */}
+            {/* Section 3 — fallback only when snapshot has no note and no goals */}
             {!data?.dailyNote && !data?.precisionCTA && (
-              <div className="coach-rail__bubble coach-rail__bubble--coach">
-                <p style={{ color: "var(--text-secondary)" }}>
-                  Your coach will appear here after your first conversation.
+              <div
+                style={{
+                  borderLeft: "2px solid var(--accent-primary)",
+                  paddingLeft: 10,
+                }}
+              >
+                <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                  Today
+                </p>
+                <p className="text-xs m-0" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  Complete onboarding to get your first daily plan and coaching note.
                 </p>
               </div>
             )}

@@ -25,7 +25,7 @@ export function AnalyticsRow({
   loading,
 }: AnalyticsRowProps) {
   const outcomesData = [
-    { label: "Done", value: taskOutcomes.completed, fill: seriesColor(0) },
+    { label: "Wins", value: taskOutcomes.completed, fill: seriesColor(0) },
     { label: "Skipped", value: taskOutcomes.skipped, fill: seriesColor(1) },
     { label: "Missed", value: taskOutcomes.missed, fill: seriesColor(2) },
   ];
@@ -51,6 +51,9 @@ export function AnalyticsRow({
       <ClayCard className="p-3" hover={false}>
         <p className="text-xs m-0 mb-2" style={{ color: "var(--text-muted)" }}>
           Task outcomes
+        </p>
+        <p className="text-[10px] m-0 mb-2" style={{ color: "var(--text-muted)" }}>
+          Wins · Skipped · Missed
         </p>
         {loading ? (
           <div className="skeleton shimmer" style={{ height: 100, borderRadius: 12 }} />
@@ -90,7 +93,7 @@ export function AnalyticsRow({
 
       <ClayCard className="p-3" hover={false}>
         <p className="text-xs m-0 mb-3" style={{ color: "var(--text-muted)" }}>
-          Top blockers
+          Common mistakes
         </p>
         {executionBlockers.length === 0 ? (
           <p className="text-xs m-0" style={{ color: "var(--text-muted)" }}>

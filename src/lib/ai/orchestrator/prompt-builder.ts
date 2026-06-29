@@ -406,6 +406,14 @@ This is message ${msgCount}+ in the conversation. You have enough context to not
   // === Add current user message ===
   messages.push({ role: "user", content: ctx.input.message });
 
+  const promptChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+  const estTokens = Math.ceil(promptChars / 4);
+  if (process.env.NODE_ENV === "development" || estTokens > 3000) {
+    console.log(
+      `[Coach prompt] ~${estTokens} tokens (${promptChars} chars)${estTokens > 3000 ? " — TRIM CONTEXT" : ""}`
+    );
+  }
+
   return messages;
 }
 

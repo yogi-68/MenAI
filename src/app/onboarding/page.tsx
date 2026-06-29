@@ -53,8 +53,10 @@ export default function OnboardingPage() {
     message: string;
     sharpenPrompt: string;
     sharpenOptions: Array<{ value: string; label: string; resultTitle: string }>;
+    quality?: string;
   } | null>(null);
   const [sharpenConfirmed, setSharpenConfirmed] = useState(false);
+  const [keepBroadGoal, setKeepBroadGoal] = useState(false);
 
   const [validatingGoal, setValidatingGoal] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -217,17 +219,20 @@ export default function OnboardingPage() {
           return;
         }
         if (validateData.needsSharpening) {
-          setInitiativeWeak({
-            message:
-              validateData.message ||
-              "Got it. Let's make this specific so MenAI can plan precisely.",
-            sharpenPrompt: validateData.sharpenPrompt || "What type of outcome are you building toward?",
-            sharpenOptions: validateData.sharpenOptions || [],
-          });
-          setInitiativeBlocked(null);
-          setSharpenConfirmed(false);
-          setError(null);
-          return;
+          const isBroad = validateData.quality === "broad";
+          if (!sharpenConfirmed && !(isBroad && keepBroadGoal)) {
+            setInitiativeWeak({
+              message:
+                validateData.message ||
+                "Got it. Let's make this specific so MenAI can plan precisely.",
+              sharpenPrompt: validateData.sharpenPrompt || "What type of outcome are you building toward?",
+              sharpenOptions: validateData.sharpenOptions || [],
+              quality: validateData.quality,
+            });
+            setInitiativeBlocked(null);
+            setError(null);
+            return;
+          }
         }
         setInitiativeBlocked(null);
         setInitiativeWeak(null);
@@ -291,6 +296,7 @@ export default function OnboardingPage() {
     setInitiativeBlocked(null);
     setInitiativeWeak(null);
     setSharpenConfirmed(false);
+    setKeepBroadGoal(false);
     setCustomDate("");
     setError(null);
     setAskingFollowUp(false);
@@ -444,6 +450,20 @@ export default function OnboardingPage() {
                         </button>
                       ))}
                     </div>
+                    {initiativeWeak.quality === "broad" && textInput.trim() && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ fontSize: "0.85rem" }}
+                        onClick={() => {
+                          setKeepBroadGoal(true);
+                          setInitiativeWeak(null);
+                          setError(null);
+                        }}
+                      >
+                        Keep &ldquo;{textInput.trim()}&rdquo; and continue
+                      </button>
+                    )}
                     {sharpenConfirmed && textInput.trim() && (
                       <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
                         Edit the title below if needed, then click Continue.
