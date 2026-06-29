@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { computeGoalAnalytics } from "@/lib/plans/performance-score";
 import { computeGoalHealth } from "@/lib/plans/goal-health";
 import { buildGoalAnalysis } from "@/lib/plans/coach-insights";
+import { buildGoalPaceInsight } from "@/lib/analytics/goal-pace-insight";
 
 export const runtime = "nodejs";
 
@@ -46,13 +47,26 @@ export async function GET(
     planContext: (profile?.plan_context as Record<string, unknown>) || {},
   });
 
+  const paceInsight = buildGoalPaceInsight({
+    targetDate: goal.target_date,
+    remainingDays: analytics.remainingDays,
+    progress: analytics.progress,
+    dailyProgressNeeded: analytics.dailyProgressNeeded,
+    dailyTrend: analytics.dailyTrend,
+    estimatedCompletionDate: analytics.estimatedCompletionDate,
+    tasksCompletedTotal: analytics.tasksCompletedTotal,
+  });
+
   return NextResponse.json({
     ...analytics,
     health,
+    paceInsight,
     coaching: {
       headline: coaching.headline,
-      coachInsight: coaching.coachInsight,
-      knownFacts: coaching.knownFacts,
+      coachInsight: paceInsight,
+      knownFacts: coaching.knownFacts.filter(
+        (f) => !/Weekly milestone pace|Daily priority stack|Risk flags/i.test(f)
+      ),
       onceKnown: coaching.onceKnown,
       daysRemaining: coaching.daysRemaining,
       deadlineLabel: coaching.deadlineLabel,

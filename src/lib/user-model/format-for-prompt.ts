@@ -5,11 +5,36 @@ import { buildUnderstandingSummary } from "@/lib/user-model/understanding-summar
 import { COACH_VOICE_PROMPT } from "@/lib/user-model/voice-guide";
 import { MENTOR_PRODUCT_RULE } from "@/lib/mentor/product-rule";
 
+const NARRATIVE_MAX = 220;
+
+function capNarrative(text: string): string {
+  if (text.length <= NARRATIVE_MAX) return text;
+  const cut = text.slice(0, NARRATIVE_MAX);
+  const lastPeriod = cut.lastIndexOf(". ");
+  return lastPeriod > NARRATIVE_MAX * 0.5 ? cut.slice(0, lastPeriod + 1) : cut.trimEnd() + "…";
+}
+
+/** Compact user model for coach chat — narrative + bullets only (~500 tokens max). */
+export function formatUserModelCompactForPrompt(model: UserModel): string {
+  const bullets = (model.knowledgeBullets ?? model.understands).slice(0, 4);
+  return [
+    "## USER MODEL (compact)",
+    capNarrative(model.narrative),
+    model.currentFocus.title ? `Focus: ${model.currentFocus.title}` : "",
+    model.currentMilestone ? `Milestone: ${model.currentMilestone}` : "",
+    bullets.length ? `Knows: ${bullets.join(" · ")}` : "",
+    MENTOR_PRODUCT_RULE,
+    COACH_VOICE_PROMPT,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** Inject into any LLM system prompt — the single source of truth about this user. */
 export function formatUserModelForPrompt(model: UserModel): string {
   const sections: string[] = [
     "## USER MODEL (authoritative — all features must align with this)",
-    model.narrative,
+    capNarrative(model.narrative),
     "",
     `Confidence in this model: ${model.confidence}`,
   ];

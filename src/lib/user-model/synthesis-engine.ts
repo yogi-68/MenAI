@@ -29,7 +29,7 @@ import {
   loadMemoryRetrievalContext,
 } from "@/lib/mentor/memory-retrieval";
 import { dedupeSemanticThemes } from "@/lib/user-model/theme-dedup";
-import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
+import { formatKnowledgeBulletsForRail, trimKnowledgeBullet } from "@/lib/plans/task-why-line";
 import type { EvidenceBundle } from "@/lib/user-model/evidence-bundle";
 import { sanitizeCoachCopy } from "@/lib/user-model/content-guard";
 import { loadIdentityProfile } from "@/lib/plans/identity-profile-store";
@@ -59,7 +59,7 @@ function buildSynthesisKnowledgeBullets(
   if (topPattern && bullets.length < 4) {
     const label = PATTERN_LABELS[topPattern] || `Pattern: ${topPattern.replace(/_/g, " ")}`;
     if (!bullets.some((b) => b.toLowerCase().includes(topPattern.replace(/_/g, " ")))) {
-      bullets.push(label.slice(0, 48));
+      bullets.push(trimKnowledgeBullet(label));
     }
   }
   return bullets.slice(0, 4);

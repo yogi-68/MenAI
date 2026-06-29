@@ -54,11 +54,23 @@ export const ONBOARDING_QUESTIONS: Record<string, OnboardingQuestion> = {
     allowOther: true,
     otherPrompt: "What else tends to get in the way?",
   },
+  Q5: {
+    id: "Q5",
+    type: "forced_choice",
+    prompt: "How many hours per week can you dedicate to this goal?",
+    subtitle: "MenAI uses this to size daily tasks realistically.",
+    options: [
+      { value: "1-5", label: "1–5 hours" },
+      { value: "5-10", label: "5–10 hours" },
+      { value: "10-20", label: "10–20 hours" },
+      { value: "20+", label: "20+ hours" },
+    ],
+  },
   Q7: {
     id: "Q7",
     type: "text",
     prompt: "What would make the next 30 days successful?",
-    subtitle: "Examples: Launch beta · Lose 3 kg · Finish portfolio · Get first client",
+    subtitle: "Include a number or measurable outcome — e.g. Launch beta · Lose 3 kg · Get first client",
   },
 };
 
@@ -68,8 +80,22 @@ export type OnboardingResponseMap = Record<
 >;
 
 /** Minimal flow — name comes from profile; goal, deadline, blocker, success criteria */
+export const ONBOARDING_STEP_LABELS = [
+  "Goal",
+  "Deadline",
+  "Obstacle",
+  "Success",
+  "Time",
+] as const;
+
 export function buildQuestionFlow(_responses: OnboardingResponseMap = {}): string[] {
-  return ["Q2", "Q3", "Q4", "Q7"];
+  return ["Q2", "Q3", "Q4", "Q7", "Q5"];
+}
+
+/** Map question id → progress step label index */
+export function getStepLabelIndex(questionId: string): number {
+  const map: Record<string, number> = { Q2: 0, Q3: 1, Q4: 2, Q7: 3, Q5: 4 };
+  return map[questionId] ?? 0;
 }
 
 export const QUESTION_ORDER = buildQuestionFlow();

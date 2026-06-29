@@ -2,12 +2,13 @@ import { getOpenAI } from "@/lib/ai/openai";
 import { FAST_MODEL } from "@/lib/ai/models";
 import {
   assessGoalInput,
+  hasDomainNoun,
   isConcreteGoalTitle,
   type GoalAssessment,
 } from "@/lib/goals/concreteness-gate";
 import { normalizeGoalTitle } from "@/lib/goals/title-quality";
 
-export type GoalQuality = "vision" | "weak" | "strong";
+export type GoalQuality = "vision" | "broad" | "weak" | "strong";
 
 export interface SharpenOption {
   value: string;
@@ -21,6 +22,12 @@ export interface FullGoalAssessment extends GoalAssessment {
   sharpenPrompt?: string;
   sharpenOptions?: SharpenOption[];
 }
+
+const BROAD_PATTERNS: Array<{ re: RegExp; key: string }> = [
+  { re: /\bbuild (a |my )?business\b/i, key: "business_build" },
+  { re: /\bstart (a |my )?business\b/i, key: "business_build" },
+  { re: /\bcreate (a |my )?business\b/i, key: "business_build" },
+];
 
 const WEAK_PATTERNS: Array<{ re: RegExp; key: string }> = [
   { re: /\bincrease (my )?income\b/i, key: "income" },
@@ -36,19 +43,26 @@ const WEAK_PATTERNS: Array<{ re: RegExp; key: string }> = [
   { re: /\bpass (the )?exam\b/i, key: "learning" },
 ];
 
+const BROAD_SHARPEN_OPTIONS: Record<string, SharpenOption[]> = {
+  business_build: [
+    { value: "finance_agency", label: "Finance agency", resultTitle: "Build a finance agency" },
+    { value: "product_saas", label: "Product / SaaS", resultTitle: "Build a product SaaS business" },
+    { value: "service", label: "Service business", resultTitle: "Build a service business" },
+    { value: "other", label: "Other", resultTitle: "Build a focused business" },
+  ],
+};
+
 const SHARPEN_OPTIONS: Record<string, SharpenOption[]> = {
   income: [
-    { value: "agency", label: "Finance agency", resultTitle: "Get first 3 finance agency clients" },
+    { value: "agency", label: "Finance agency", resultTitle: "Build a finance agency" },
     { value: "freelance", label: "Freelancing", resultTitle: "Land 2 freelance clients" },
     { value: "promotion", label: "Job promotion", resultTitle: "Get promoted this quarter" },
     { value: "business", label: "New business", resultTitle: "Launch MVP and get 5 users" },
-    { value: "investing", label: "Investing", resultTitle: "Deploy first $5k investment plan" },
   ],
   wealth: [
-    { value: "agency", label: "Finance agency", resultTitle: "Get first 3 finance agency clients" },
-    { value: "investing", label: "Investing", resultTitle: "Build $10k investment portfolio" },
-    { value: "savings", label: "Savings", resultTitle: "Save $5k emergency fund" },
-    { value: "business", label: "New business", resultTitle: "Launch product and reach first revenue" },
+    { value: "agency", label: "Finance agency", resultTitle: "Build a finance agency" },
+    { value: "investing", label: "Investing", resultTitle: "Build a $10k investment portfolio" },
+    { value: "savings", label: "Savings", resultTitle: "Save a $5k emergency fund" },
   ],
   fitness: [
     { value: "fat_loss", label: "Lose body fat", resultTitle: "Reach 15% body fat" },
@@ -58,10 +72,10 @@ const SHARPEN_OPTIONS: Record<string, SharpenOption[]> = {
   business: [
     { value: "clients", label: "First clients", resultTitle: "Get first 3 paying clients" },
     { value: "mvp", label: "Launch product", resultTitle: "Launch MVP and get 10 users" },
-    { value: "agency", label: "Finance agency", resultTitle: "Sign first finance agency client" },
+    { value: "agency", label: "Finance agency", resultTitle: "Build a finance agency" },
   ],
   career: [
-    { value: "role", label: "Land new role", resultTitle: "Land software engineering role" },
+    { value: "role", label: "Land new role", resultTitle: "Land a software engineering role" },
     { value: "promotion", label: "Promotion", resultTitle: "Get promoted this quarter" },
     { value: "portfolio", label: "Portfolio", resultTitle: "Finish portfolio and apply to 20 roles" },
   ],
@@ -76,6 +90,7 @@ const SHARPEN_OPTIONS: Record<string, SharpenOption[]> = {
 };
 
 const SHARPEN_PROMPTS: Record<string, string> = {
+  business_build: "What type of business are you building?",
   income: "How are you planning to increase income?",
   wealth: "What's your main path to building wealth right now?",
   fitness: "What does fitness success look like in the next 90 days?",
@@ -85,27 +100,35 @@ const SHARPEN_PROMPTS: Record<string, string> = {
   productivity: "What one thing needs to move forward?",
 };
 
+function detectBroadKey(raw: string): string | null {
+  for (const { re, key } of BROAD_PATTERNS) {
+    if (re.test(raw)) return key;
+  }
+  return null;
+}
+
 function detectWeakKey(raw: string): string | null {
   for (const { re, key } of WEAK_PATTERNS) {
     if (re.test(raw)) return key;
   }
   const t = raw.trim().toLowerCase();
   if (isConcreteGoalTitle(raw)) return null;
-  if (t.split(/\s+/).length <= 4 && !/\d/.test(t)) return "productivity";
+  if (hasDomainNoun(raw) && t.split(/\s+/).length <= 5) return "business";
+  if (t.split(/\s+/).length <= 4 && !/\d/.test(t) && !hasDomainNoun(raw)) return "productivity";
   return null;
 }
 
 export function isWeakGoal(raw: string): boolean {
-  return detectWeakKey(raw) !== null;
+  return detectWeakKey(raw) !== null || detectBroadKey(raw) !== null;
 }
 
 export function sharpenGoal(weakKey: string, optionValue: string): string | null {
-  const options = SHARPEN_OPTIONS[weakKey];
+  const options = SHARPEN_OPTIONS[weakKey] || BROAD_SHARPEN_OPTIONS[weakKey];
   const hit = options?.find((o) => o.value === optionValue);
   return hit?.resultTitle ?? null;
 }
 
-/** Full gate: block visions, flag weak goals for sharpening. */
+/** Full gate: block visions, flag broad/weak goals for sharpening. */
 export function assessGoalQuality(
   raw: string,
   context?: { directions?: string[]; buildingWhat?: string | null }
@@ -115,6 +138,22 @@ export function assessGoalQuality(
 
   if (!base.valid) {
     return { ...base, quality: "vision", needsSharpening: false };
+  }
+
+  const broadKey = detectBroadKey(raw) || detectBroadKey(title);
+  if (broadKey) {
+    return {
+      ...base,
+      quality: "broad",
+      needsSharpening: true,
+      sharpenPrompt: SHARPEN_PROMPTS[broadKey] || "What specific outcome are you trying to reach?",
+      sharpenOptions: BROAD_SHARPEN_OPTIONS[broadKey],
+      message: "Got it. Let's make this specific so MenAI can plan precisely.",
+    };
+  }
+
+  if (isConcreteGoalTitle(title) && !detectWeakKey(raw)) {
+    return { ...base, quality: "strong", needsSharpening: false };
   }
 
   const weakKey = detectWeakKey(raw) || detectWeakKey(title);
@@ -129,8 +168,7 @@ export function assessGoalQuality(
         label: s,
         resultTitle: s,
       })),
-      message:
-        "Valid direction — but too vague to plan from. Pick a concrete path so MenAI can build real milestones.",
+      message: "Got it. Let's make this specific so MenAI can plan precisely.",
     };
   }
 
@@ -156,7 +194,7 @@ export async function assessGoalWithLLM(
         {
           role: "system",
           content:
-            'Return JSON: { "sharpenPrompt": string, "exampleTitle": string, "message": string, "options": [{ "value": string, "label": string, "resultTitle": string }] }. exampleTitle is one concrete rewrite the user should try. resultTitle must be a concrete 90-day outcome.',
+            'Return JSON: { "sharpenPrompt": string, "exampleTitle": string, "message": string, "options": [{ "value": string, "label": string, "resultTitle": string }] }. exampleTitle is one concrete rewrite. resultTitle must be a full goal title (not a fragment).',
         },
         {
           role: "user",
@@ -192,9 +230,7 @@ export async function assessGoalWithLLM(
       exampleTitle: parsed.exampleTitle?.trim() || sharpenOptions[0]?.resultTitle,
       message:
         parsed.message?.trim() ||
-        (parsed.exampleTitle
-          ? `Try: "${parsed.exampleTitle.trim()}" instead of a vague goal.`
-          : undefined),
+        "Got it. Let's make this specific so MenAI can plan precisely.",
     };
   } catch {
     return null;

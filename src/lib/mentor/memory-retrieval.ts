@@ -5,6 +5,16 @@ import { loadMentorMemories } from "@/lib/mentor/mentor-memory";
 import { computeThemeActivity } from "@/lib/user-model/memory-graph-identity";
 import { isConcreteGoalTitle } from "@/lib/goals/concreteness-gate";
 
+/** Skip vector/heavy memory retrieval for short or greeting messages. */
+export function shouldSkipMemoryRetrieval(message: string): boolean {
+  const t = message.trim();
+  if (t.length < 60) return true;
+  if (/^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|sure|got it|cool|great)[\s!.?]*$/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 export interface RankedPattern {
   pattern: string;
   mentions: number;

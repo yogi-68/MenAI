@@ -21,6 +21,29 @@ import {
 const navLinks = [
   { label: "Features", href: "#features" },
   { label: "How It Works", href: "#how-it-works" },
+  { label: "Pricing", href: "#pricing" },
+];
+
+const pricingTiers = [
+  {
+    name: "Starter",
+    price: "Free",
+    detail: "Full execution system for one active goal",
+    features: ["5-step onboarding", "Daily plan + tasks", "Coach chat", "Overview analytics"],
+  },
+  {
+    name: "Pro",
+    price: "$19",
+    detail: "Multiple goals + advanced reviews",
+    features: ["Unlimited goals", "Weekly + monthly reviews", "Priority model routing", "Timeline exports"],
+    highlighted: true,
+  },
+  {
+    name: "Team",
+    price: "Custom",
+    detail: "Coaching teams and accountability groups",
+    features: ["Shared dashboards", "Admin insights", "SSO", "Dedicated support"],
+  },
 ];
 
 const features = [
@@ -206,7 +229,7 @@ function Navbar() {
 
 export default function LandingPage() {
   return (
-    <div style={{ background: "var(--bg-primary)", color: "var(--text-primary)", minHeight: "100vh", overflowX: "hidden" }}>
+    <div style={{ background: "#0f0f11", color: "var(--text-primary)", minHeight: "100vh", overflowX: "hidden" }}>
       <Navbar />
 
       {/* ─── HERO ──────────────────────────── */}
@@ -421,6 +444,56 @@ export default function LandingPage() {
                   </div>
                 </div>
               </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── BEFORE / AFTER COACH ─────────── */}
+      <section style={{ padding: "80px clamp(16px,4vw,32px)", borderTop: "1px solid var(--border-color)" }}>
+        <div style={{ maxWidth: 960, margin: "0 auto", display: "grid", gap: 20, gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))" }}>
+          <div style={{ padding: 24, borderRadius: 20, border: "1px solid var(--border-color)", background: "rgba(239,68,68,0.06)" }}>
+            <p style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#ef4444", marginBottom: 12 }}>Generic coach task</p>
+            <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+              &ldquo;Work on your business today.&rdquo; — no deadline, no milestone, no link to your actual plan.
+            </p>
+          </div>
+          <div style={{ padding: 24, borderRadius: 20, border: "1px solid rgba(124,111,255,0.25)", background: "rgba(124,111,255,0.08)" }}>
+            <p style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#a78bfa", marginBottom: 12 }}>MenAI coach task</p>
+            <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+              &ldquo;DM 3 finance founders on LinkedIn — supports milestone: first agency client by Apr 30.&rdquo;
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── PRICING ─────────────────────── */}
+      <section id="pricing" style={{ padding: "96px clamp(16px,4vw,32px)", borderTop: "1px solid var(--border-color)" }}>
+        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 48 }}>
+            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8b5cf6" }}>Pricing</div>
+            <h2 style={{ fontSize: "clamp(1.75rem,3.5vw,2.5rem)", fontWeight: 800, letterSpacing: "-0.03em" }}>Simple tiers. No surprises.</h2>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 16 }}>
+            {pricingTiers.map((tier) => (
+              <div
+                key={tier.name}
+                style={{
+                  padding: 28,
+                  borderRadius: 24,
+                  border: tier.highlighted ? "1px solid rgba(124,111,255,0.4)" : "1px solid var(--border-color)",
+                  background: tier.highlighted ? "rgba(124,111,255,0.08)" : "var(--bg-secondary)",
+                }}
+              >
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>{tier.name}</h3>
+                <p style={{ fontSize: "2rem", fontWeight: 800, margin: "8px 0" }}>{tier.price}</p>
+                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: 16 }}>{tier.detail}</p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.8 }}>
+                  {tier.features.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
           </div>
         </div>

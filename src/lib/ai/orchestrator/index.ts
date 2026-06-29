@@ -40,6 +40,7 @@ import {
   formatPinnedMemoriesForPrompt,
   loadMemoryRetrievalContext,
   loadPinnedMemories,
+  shouldSkipMemoryRetrieval,
 } from "@/lib/mentor/memory-retrieval";
 import { evaluatePredictions } from "./prediction-engine";
 import { buildCognitiveState } from "./cognition-engine";
@@ -235,10 +236,12 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   const pinnedMemories = await loadPinnedMemories(serviceClient, input.userId);
   const pinnedBlock = formatPinnedMemoriesForPrompt(pinnedMemories);
 
-  const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
+  const retrievalCtx = shouldSkipMemoryRetrieval(input.message)
+    ? null
+    : await loadMemoryRetrievalContext(serviceClient, input.userId);
   const memoryRetrievalBlock = [
     pinnedBlock,
-    formatMemoryRetrievalForPrompt(retrievalCtx, input.message),
+    retrievalCtx ? formatMemoryRetrievalForPrompt(retrievalCtx, input.message) : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -689,10 +692,12 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const pinnedMemories = await loadPinnedMemories(serviceClient, input.userId);
   const pinnedBlock = formatPinnedMemoriesForPrompt(pinnedMemories);
 
-  const retrievalCtx = await loadMemoryRetrievalContext(serviceClient, input.userId);
+  const retrievalCtx = shouldSkipMemoryRetrieval(input.message)
+    ? null
+    : await loadMemoryRetrievalContext(serviceClient, input.userId);
   const memoryRetrievalBlock = [
     pinnedBlock,
-    formatMemoryRetrievalForPrompt(retrievalCtx, input.message),
+    retrievalCtx ? formatMemoryRetrievalForPrompt(retrievalCtx, input.message) : "",
   ]
     .filter(Boolean)
     .join("\n\n");

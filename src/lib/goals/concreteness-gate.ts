@@ -18,6 +18,8 @@ const VISION_PATTERNS = [
   /\bachieve more\b/i,
   /\bdo well\b/i,
   /\bmake it in life\b/i,
+  /\bbe better\b/i,
+  /\bimprove everything\b/i,
   /^grow$/i,
   /^success$/i,
   /^greatness$/i,
@@ -25,6 +27,10 @@ const VISION_PATTERNS = [
 
 const VAGUE_NOUNS =
   /^(success|growth|greatness|improvement|excellence|happiness|freedom|life|myself|everything|something better)$/i;
+
+/** Domain nouns — accept goal direction even before sharpening. */
+export const DOMAIN_NOUN_PATTERN =
+  /\b(business|fitness|income|agency|product|clients?|customers?|saas|startup|compan(y|ies)|revenue|weight|portfolio|exam|job|career|app|website|brand|course|certification|finance|consulting|marketplace|mvp|beta|engineer|freelanc(e|ing)|health|muscle|sales|marketing)\b/i;
 
 export type GoalKind = "concrete" | "vision";
 
@@ -36,21 +42,24 @@ export interface GoalAssessment {
   suggestions: string[];
 }
 
-const DEFAULT_SUGGESTIONS = [
-  "Build my finance agency",
-  "Launch my product",
-  "Increase my income",
-  "Improve my fitness",
-  "Reach 15% body fat",
+const SHARPEN_SUGGESTIONS = [
+  "Build a finance agency",
+  "Launch my SaaS product",
   "Get my first 5 clients",
+  "Reach 15% body fat",
 ];
+
+export function hasDomainNoun(raw: string): boolean {
+  return DOMAIN_NOUN_PATTERN.test(raw.trim());
+}
 
 export function isVagueVision(raw: string): boolean {
   const t = raw.trim().toLowerCase();
   if (t.length < 4) return true;
+  if (hasDomainNoun(raw)) return false;
   if (VAGUE_NOUNS.test(t)) return true;
   if (VISION_PATTERNS.some((p) => p.test(t))) return true;
-  if (/^(to|be|become|get|achieve|excel)\s+/i.test(t) && t.split(/\s+/).length <= 6) {
+  if (/^(to|be|become|get|achieve|excel|improve)\s+/i.test(t) && t.split(/\s+/).length <= 6) {
     return true;
   }
   return false;
@@ -80,13 +89,13 @@ export function suggestGoals(context: {
   const suggestions: string[] = [];
 
   if (dirs.includes("business") || /agency|saas|startup|business|client/.test(raw)) {
-    suggestions.push("Build my finance agency", "Launch my product", "Get my first 5 clients");
+    suggestions.push("Build a finance agency", "Launch my SaaS product", "Get my first 5 clients");
   }
   if (dirs.includes("fitness") || dirs.includes("health") || /fit|gym|weight|fat/.test(raw)) {
     suggestions.push("Reach 15% body fat", "Lose 5 kg", "Complete 30 workouts");
   }
   if (dirs.includes("finance") || /income|money|wealth/.test(raw)) {
-    suggestions.push("Increase my income", "Save $10k emergency fund");
+    suggestions.push("Increase monthly income by 20%", "Save $10k emergency fund");
   }
   if (dirs.includes("career") || /job|engineer|hire/.test(raw)) {
     suggestions.push("Land software engineering role", "Complete portfolio");
@@ -95,7 +104,7 @@ export function suggestGoals(context: {
     suggestions.unshift(`Launch ${context.buildingWhat}`);
   }
 
-  const unique = [...new Set(suggestions.length ? suggestions : DEFAULT_SUGGESTIONS)];
+  const unique = [...new Set(suggestions.length ? suggestions : SHARPEN_SUGGESTIONS)];
   return unique.slice(0, 4);
 }
 
@@ -111,7 +120,15 @@ export function assessGoalInput(
     rawInput: raw,
   });
 
-  if (isVagueVision(raw) || isVagueVision(title) || !isConcreteGoalTitle(title)) {
+  if (hasDomainNoun(raw) || hasDomainNoun(title)) {
+    return { kind: "concrete", title, valid: true, suggestions: [] };
+  }
+
+  if (isConcreteGoalTitle(title)) {
+    return { kind: "concrete", title, valid: true, suggestions: [] };
+  }
+
+  if (isVagueVision(raw) || isVagueVision(title)) {
     return {
       kind: "vision",
       title,
@@ -122,7 +139,14 @@ export function assessGoalInput(
     };
   }
 
-  return { kind: "concrete", title, valid: true, suggestions: [] };
+  return {
+    kind: "vision",
+    title,
+    valid: false,
+    message:
+      "Add a specific domain or outcome — e.g. business, fitness, income, or a measurable target.",
+    suggestions,
+  };
 }
 
 export function goalNeedsStage(title: string, lifeArea?: string | null): boolean {

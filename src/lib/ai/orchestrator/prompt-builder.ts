@@ -18,7 +18,7 @@ import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
 import { formatCognitiveStateForPrompt } from "./cognition-engine";
-import { formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
+import { formatUserModelCompactForPrompt, formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
 import { buildChatModeGuidance, detectChatMode } from "@/lib/ai/orchestrator/chat-modes";
 import {
   buildEvidenceExplanation,
@@ -311,7 +311,7 @@ Remember: your response should create an emotional SHIFT. The user should feel D
   }
 
   if (ctx.userModel) {
-    parts.push(formatUserModelForPrompt(ctx.userModel));
+    parts.push(formatUserModelCompactForPrompt(ctx.userModel));
     const challenges = detectCoachingChallenges(ctx.userModel);
     const challengeBlock = formatChallengesForPrompt(challenges);
     if (challengeBlock) parts.push(challengeBlock);

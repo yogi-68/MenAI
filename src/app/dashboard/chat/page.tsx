@@ -15,7 +15,7 @@ import {
   type MessagePage,
 } from "@/lib/chat/fetch-messages";
 import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
-import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
+import { SessionPlanSummary } from "@/components/chat/session-plan-summary";
 import {
   Send,
   Loader2,
@@ -123,7 +123,20 @@ function ChatPageInner() {
     refetchOnWindowFocus: false,
   });
 
+  const { data: suggestedPrompts } = useQuery({
+    queryKey: ["chat-suggested-prompts"],
+    queryFn: async () => {
+      const res = await fetch("/api/chat/suggested-prompts");
+      if (!res.ok) return { prompts: [] as string[] };
+      return res.json() as Promise<{ prompts: string[] }>;
+    },
+    staleTime: 60_000,
+  });
 
+  const chatSuggestions =
+    suggestedPrompts?.prompts?.length
+      ? suggestedPrompts.prompts
+      : ["What's blocking my top goal today?", "Help me finish today's plan", "Sharpen my 90-day goal"];
 
   const throttledScroll = useCallback(() => {
     const now = Date.now();
@@ -551,9 +564,7 @@ function ChatPageInner() {
       </aside>
 
       <div className="chat-main">
-        <div className="coach-knowledge-mobile-only">
-          <CoachKnowledgePanel />
-        </div>
+        <SessionPlanSummary />
         {crisisAlert && (
           <div className="chat-crisis-banner">
             <AlertTriangle size={18} />
@@ -596,20 +607,18 @@ function ChatPageInner() {
                 patterns over time.
               </p>
               <div className="chat-suggestions">
-                {["I want to build an AI SaaS", "Help me set a 90-day goal", "Who am I?"].map(
-                  (suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => {
-                        setInput(suggestion);
-                        inputRef.current?.focus();
-                      }}
-                    >
-                      {suggestion}
-                    </button>
-                  )
-                )}
+                {chatSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => {
+                      setInput(suggestion);
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
               </div>
             </div>
           )}

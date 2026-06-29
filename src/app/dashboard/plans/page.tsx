@@ -159,6 +159,24 @@ export default function DailyPlansPage() {
     staleTime: 5 * 60_000,
   });
 
+  const { data: briefingData } = useQuery({
+    queryKey: ["dashboard-today-briefing", todayKey],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/today");
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        personalBriefing?: {
+          headline: string;
+          companionLine: string | null;
+          todaysFocus: string | null;
+          watchOut: string | null;
+          progressLine: string | null;
+        };
+      }>;
+    },
+    staleTime: 60_000,
+  });
+
   const completeTask = useMutation({
     mutationFn: async ({ id, actualMinutes }: { id: string; actualMinutes?: number }) => {
       const res = await fetch("/api/tasks", {
@@ -172,9 +190,23 @@ export default function DailyPlansPage() {
       });
       return res.json();
     },
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["today-tasks", todayKey] });
+      const previous = queryClient.getQueryData<Task[]>(["today-tasks", todayKey]);
+      queryClient.setQueryData<Task[]>(["today-tasks", todayKey], (old) =>
+        (old || []).map((t) => (t.id === id ? { ...t, status: "completed" } : t))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["today-tasks", todayKey], context.previous);
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["execution-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["performance-daily"] });
       queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
       setTimePromptTask(null);
       setActualMinutesInput("");
@@ -194,9 +226,23 @@ export default function DailyPlansPage() {
       });
       return res.json();
     },
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["today-tasks", todayKey] });
+      const previous = queryClient.getQueryData<Task[]>(["today-tasks", todayKey]);
+      queryClient.setQueryData<Task[]>(["today-tasks", todayKey], (old) =>
+        (old || []).map((t) => (t.id === id ? { ...t, status: "pending" } : t))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["today-tasks", todayKey], context.previous);
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["execution-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["performance-daily"] });
     },
   });
 
@@ -219,6 +265,19 @@ export default function DailyPlansPage() {
     (goalsPayload?.goals?.length ?? 0) > 0 &&
     !evidence.some((e) => /No active goals|No active initiatives/i.test(e));
   const showSetup = !hasGoals;
+
+  const briefingBullets = [
+    briefingData?.personalBriefing?.todaysFocus,
+    briefingData?.personalBriefing?.watchOut,
+    briefingData?.personalBriefing?.progressLine,
+    briefingData?.personalBriefing?.companionLine,
+  ].filter(Boolean) as string[];
+
+  const genericWhy =
+    plan?.whyTheseTasks &&
+    /these tasks align|designed to move|focus on what matters|stay on track|help you progress/i.test(
+      plan.whyTheseTasks
+    );
 
   const tasksByGoal = useMemo(() => {
     const groups = new Map<string, DailyPlanTask[]>();
@@ -328,7 +387,7 @@ export default function DailyPlansPage() {
         </section>
       )}
 
-      {topPriority && !isLoading && (
+      {!isLoading && hasGoals && briefingBullets.length > 0 && (
         <section
           className="glass-card"
           style={{
@@ -337,22 +396,56 @@ export default function DailyPlansPage() {
             borderLeft: "3px solid var(--accent-primary)",
           }}
         >
-          <p style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)", marginBottom: "8px" }}>
+          <p
+            style={{
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--text-muted)",
+              marginBottom: "8px",
+            }}
+          >
+            Daily briefing
+          </p>
+          {briefingData?.personalBriefing?.headline && (
+            <p className="text-sm font-medium m-0 mb-2" style={{ color: "var(--text-primary)" }}>
+              {briefingData.personalBriefing.headline}
+            </p>
+          )}
+          <ul className="text-sm m-0 pl-4 space-y-1.5" style={{ color: "var(--text-secondary)" }}>
+            {briefingBullets.slice(0, 3).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {!isLoading && hasGoals && briefingBullets.length === 0 && topPriority && (
+        <section
+          className="glass-card"
+          style={{
+            padding: "16px",
+            marginBottom: "24px",
+            borderLeft: "3px solid var(--accent-primary)",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "var(--text-muted)",
+              marginBottom: "8px",
+            }}
+          >
             Why today matters
           </p>
           <ul className="text-sm m-0 pl-4 space-y-1.5" style={{ color: "var(--text-secondary)" }}>
             {evidence.slice(0, 2).map((item) => (
               <li key={item}>{item}</li>
             ))}
-            {plan?.planningContext?.missingLabels?.map((item) => (
-              <li key={item} style={{ color: "var(--accent-warning)" }}>
-                Missing: {item}
-              </li>
-            ))}
-            {!plan?.planningContext?.missingLabels?.length && topPriority && (
-              <li>{topPriority}</li>
-            )}
-            {plan?.whyTheseTasks && <li>{plan.whyTheseTasks}</li>}
+            <li>{topPriority}</li>
+            {plan?.whyTheseTasks && !genericWhy && <li>{plan.whyTheseTasks}</li>}
           </ul>
         </section>
       )}
@@ -651,7 +744,7 @@ function ReflectionSection({ todayKey }: { todayKey: string }) {
   });
 
   const hour = new Date().getHours();
-  const showReflection = hour >= 17 || existing;
+  const showReflection = hour >= 18 || existing;
 
   if (!showReflection && !isLoading) return null;
 

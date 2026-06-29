@@ -10,6 +10,7 @@ import { synthesizeUserModel } from "@/lib/user-model/synthesis-engine";
 import { assessGoalQuality } from "@/lib/goals/goal-quality-gate";
 import { inferAreaFromText } from "@/lib/plans/life-area-balancer";
 import { trackProductEventOnce } from "@/lib/analytics/track-event";
+import { savePlanContextData } from "@/lib/plans/plan-interview";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 
 interface StoredResponse {
@@ -54,6 +55,17 @@ function resolveObstacleLabel(obstacleKey: string, q4?: StoredResponse): string 
   }
   const option = ONBOARDING_QUESTIONS.Q4.options?.find((o) => o.value === obstacleKey);
   return option?.label || obstacleKey.replace(/_/g, " ");
+}
+
+function parseWeeklyHours(q5?: StoredResponse): { hours: number; label: string } | null {
+  const selected = String(q5?.response_data?.selected || "");
+  const map: Record<string, { hours: number; label: string }> = {
+    "1-5": { hours: 3, label: "1–5 hours per week" },
+    "5-10": { hours: 7, label: "5–10 hours per week" },
+    "10-20": { hours: 15, label: "10–20 hours per week" },
+    "20+": { hours: 25, label: "20+ hours per week" },
+  };
+  return map[selected] ?? null;
 }
 
 async function writeOnboardingIdentitySignals(
@@ -139,10 +151,13 @@ export async function finalizeOnboarding(
   const rawGoal = (byId.get("Q2")?.response_text || "").trim();
   const assessment = assessGoalQuality(rawGoal, {});
 
-  if (assessment.needsSharpening) {
-    throw new FinalizeOnboardingError(
-      "Goal must be sharpened before completing onboarding. Pick a concrete path and try again."
-    );
+  if (assessment.needsSharpening && assessment.quality !== "strong") {
+    const stillWeak = assessGoalQuality(rawGoal, {});
+    if (stillWeak.needsSharpening && stillWeak.quality !== "strong") {
+      throw new FinalizeOnboardingError(
+        "Goal must be sharpened before completing onboarding. Pick a concrete path and try again."
+      );
+    }
   }
 
   const goalTitle = assessment.valid ? assessment.title : "";
@@ -150,6 +165,7 @@ export async function finalizeOnboarding(
   const obstacleKey = String(byId.get("Q4")?.response_data?.selected || "");
   const obstacleLabel = obstacleKey ? resolveObstacleLabel(obstacleKey, byId.get("Q4")) : "";
   const successCriteria = (byId.get("Q7")?.response_text || "").trim();
+  const weeklyHours = parseWeeklyHours(byId.get("Q5"));
   const lifeArea = goalTitle ? inferAreaFromText(goalTitle) || "personal" : "personal";
 
   let goalsCreated = 0;
@@ -184,6 +200,26 @@ export async function finalizeOnboarding(
       obstacleLabel: obstacleLabel || "Not specified",
       successCriteria,
     });
+  }
+
+  if (weeklyHours) {
+    const { data: existingHours } = await supabase
+      .from("identity_signals")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("type", "available_hours")
+      .maybeSingle();
+
+    if (!existingHours) {
+      await supabase.from("identity_signals").insert({
+        user_id: userId,
+        type: "available_hours",
+        description: weeklyHours.label,
+        confidence: 0.9,
+        source: "onboarding",
+        status: "active",
+      });
+    }
   }
 
   await emit("creating_goal");
@@ -244,6 +280,16 @@ export async function finalizeOnboarding(
             current_focus_until: targetDate,
           })
           .eq("id", userId);
+
+        if (weeklyHours) {
+          await savePlanContextData(
+            supabase,
+            userId,
+            created.id,
+            { weeklyAvailableHours: weeklyHours.hours },
+            { skipUserModelRefresh: true }
+          );
+        }
 
         trackProductEventOnce(userId, "first_initiative_created").catch(() => {});
       }

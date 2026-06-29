@@ -12,6 +12,7 @@ import {
   GhostRadial,
 } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
+import { MilestoneRoadmap } from "@/components/goals/milestone-roadmap";
 import { healthColor } from "@/lib/plans/goal-health";
 import type { GoalHealth } from "@/lib/plans/goal-health";
 
@@ -42,6 +43,7 @@ interface GoalAnalyticsPayload {
   todayScore: number;
   todayCompleted: number;
   health: { health: GoalHealth; label: string; reason: string };
+  paceInsight?: string;
   coaching: {
     headline: string;
     coachInsight: string;
@@ -144,8 +146,11 @@ export default function GoalDetailPage() {
   const coachingBullets = [
     ...(data?.coaching.knownFacts ?? []).filter(filterInternalLabels),
     ...(data?.coaching.onceKnown ?? []).filter(filterInternalLabels),
-    data?.coaching.coachInsight,
   ].filter(Boolean) as string[];
+
+  const paceInsight = data?.paceInsight || data?.coaching.coachInsight;
+  const hasHeatmapData = (data?.dailyTrend ?? []).some((d) => d.completed > 0);
+  const hasMonthlyData = monthlyChart.some((m) => m.value > 0);
 
   return (
     <div className="page-shell">
@@ -250,6 +255,15 @@ export default function GoalDetailPage() {
         </ClayCard>
       )}
 
+      <ClayCard className="p-4 mb-6" hover={false}>
+        <div className="clay-label mb-3">Milestone roadmap</div>
+        {isLoading ? (
+          <div className="skeleton shimmer" style={{ height: 60, borderRadius: 8 }} />
+        ) : (
+          <MilestoneRoadmap milestones={data?.milestones ?? []} />
+        )}
+      </ClayCard>
+
       <div className="grid gap-6 lg:grid-cols-3 mb-6">
         <ClayCard className="p-4" hover={false}>
           <h3 className="text-sm font-medium mb-2 m-0" style={{ color: "var(--text-primary)" }}>
@@ -293,15 +307,26 @@ export default function GoalDetailPage() {
               count: d.completed,
             }))}
           />
+          {!hasHeatmapData && !isLoading && (
+            <div className="mt-4">
+              <GhostRadial size={100} message="Complete tasks to fill your heatmap" />
+            </div>
+          )}
         </ClayCard>
-        <BarChartCard
-          title="Monthly trend"
-          subtitle="Goal analytics"
-          data={monthlyChart}
-          loading={isLoading}
-          valueFormatter={(v) => `${v}%`}
-          emptyMessage="Complete tasks to build your history"
-        />
+        {hasMonthlyData || isLoading ? (
+          <BarChartCard
+            title="Monthly trend"
+            subtitle="Goal analytics"
+            data={monthlyChart}
+            loading={isLoading}
+            valueFormatter={(v) => `${v}%`}
+            emptyMessage="Complete tasks to build your history"
+          />
+        ) : (
+          <ClayCard className="p-4 flex items-center justify-center" hover={false}>
+            <GhostRadial message="Complete tasks to build monthly history" />
+          </ClayCard>
+        )}
       </div>
 
       <section className="grid gap-6 lg:grid-cols-2 mb-6">
@@ -314,16 +339,24 @@ export default function GoalDetailPage() {
           </div>
           {isLoading ? (
             <div className="skeleton shimmer" style={{ height: 120, borderRadius: "var(--radius-md)" }} />
-          ) : coachingBullets.length > 0 ? (
-            <ul className="text-sm space-y-2 m-0 pl-4" style={{ color: "var(--text-secondary)" }}>
-              {coachingBullets.map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
           ) : (
-            <p className="text-sm m-0" style={{ color: "var(--text-muted)" }}>
-              Complete tasks to unlock coaching insights.
-            </p>
+            <>
+              {paceInsight && (
+                <p className="text-sm m-0 mb-3 leading-relaxed" style={{ color: "var(--text-primary)" }}>
+                  {paceInsight}
+                </p>
+              )}
+              {coachingBullets.length > 0 && (
+                <ul className="text-sm space-y-2 m-0 pl-4" style={{ color: "var(--text-secondary)" }}>
+                  {coachingBullets.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              )}
+              {!paceInsight && coachingBullets.length === 0 && (
+                <GhostRadial size={100} message="Complete tasks to unlock coaching insights" />
+              )}
+            </>
           )}
         </ClayCard>
 
@@ -367,24 +400,6 @@ export default function GoalDetailPage() {
           )}
         </ClayCard>
       </section>
-
-      {(data?.milestones ?? []).length > 0 && (
-        <ClayCard className="p-4" hover={false}>
-          <div className="clay-label mb-2">Milestones</div>
-          <ul className="space-y-2 m-0 p-0 list-none">
-            {data?.milestones.map((m) => (
-              <li
-                key={m.id}
-                className="flex justify-between text-sm py-2"
-                style={{ borderBottom: "0.5px solid var(--border-subtle)", color: "var(--text-primary)" }}
-              >
-                <span>{m.title}</span>
-                <span style={{ color: "var(--text-muted)" }}>{m.status}</span>
-              </li>
-            ))}
-          </ul>
-        </ClayCard>
-      )}
     </div>
   );
 }

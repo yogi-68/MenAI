@@ -137,6 +137,17 @@ export default function TimelinePage() {
       .filter((m) => m.events.length > 0);
   }, [data, filter, search]);
 
+  const timelineSummary = useMemo(() => {
+    const all = (data?.months ?? []).flatMap((m) => m.events);
+    if (all.length === 0) return null;
+    const wins = all.filter((e) =>
+      ["achievement", "milestone", "weekly_win", "monthly_win", "completion"].includes(e.category)
+    ).length;
+    const tasks = all.filter((e) => e.category === "execution").length;
+    const reflections = all.filter((e) => e.category === "reflection").length;
+    return `${all.length} events logged — ${wins} wins, ${tasks} tasks done, ${reflections} reflections. Keep executing to compound momentum.`;
+  }, [data]);
+
   return (
     <div className="page-shell">
       <header className="animate-fade-in" style={{ marginBottom: "28px" }}>
@@ -164,6 +175,14 @@ export default function TimelinePage() {
           Goals, milestones, habits, wins, failures, and course corrections — your execution story.
         </p>
       </header>
+
+      {timelineSummary && (
+        <ClayCard className="p-4 mb-6" hover={false}>
+          <p className="text-sm m-0 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            {timelineSummary}
+          </p>
+        </ClayCard>
+      )}
 
       {monthlyBarData.length > 0 && (
         <div style={{ marginBottom: 24 }}>

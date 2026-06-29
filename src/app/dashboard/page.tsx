@@ -1,57 +1,62 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useAppStore } from "@/lib/store";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { MessageSquare, Plus, Target, Zap } from "lucide-react";
-import { BarChartCard } from "@/components/charts";
+import { MessageSquare, Plus, Target } from "lucide-react";
+import { LineChartCard } from "@/components/charts";
 import { ClayCard } from "@/components/ui";
 import { MonthlyReviewPanel, WeeklyReviewPanel } from "@/components/dashboard/goal-review-tabs";
-import { goalAccent } from "@/lib/goals/goal-colors";
-import { dailyScoreBarColor } from "@/components/charts/chart-theme";
+import {
+  AnalyticsRow,
+  CoachInsightBanner,
+  ExecutionPillarsRow,
+  GoalOverviewCard,
+  HeroMetricsRow,
+} from "@/components/dashboard/overview";
 
-interface GoalCard {
-  id: string;
-  title: string;
-  progress: number;
-  priority: string;
-  status: string;
-  lifeArea: string;
-  targetDate: string | null;
-  streak: number;
-  remainingDays: number | null;
-  daysCompleted: number;
-  todayCompletion: number;
-  todayScore: number;
-  health: string;
-  healthLabel: string;
-  sparkline: number[];
-  currentMilestone: string | null;
-}
-
-interface OverviewCharts {
-  trend: Array<{ date: string; label: string; score: number }>;
-}
-
-interface OverviewPayload {
-  performance: {
-    weekly: number;
-    daily: number;
-    monthAvg?: number;
-    monthly: number;
+interface DashboardPayload {
+  hero: {
+    executionScore: number;
+    tasksCompletedThisWeek: number;
+    tasksPlannedThisWeek: number;
     streak: number;
-    completionPct: number;
-    weekAvg?: number;
-    prevWeekAvg?: number;
-    weekDelta?: number;
-    trend: Array<{ date: string; score: number }>;
+    nextMilestone: { title: string; progress: number; goalTitle: string } | null;
   };
-  goals: GoalCard[];
+  pillars: {
+    planning: number;
+    execution: number;
+    reflection: number;
+    labels: { planning: string; execution: string; reflection: string };
+  };
+  trend: {
+    points: Array<{ date: string; label: string; score: number }>;
+    weekDelta: number;
+    targetLine: number;
+  };
+  goals: Array<{
+    id: string;
+    title: string;
+    progress: number;
+    targetDate: string | null;
+    remainingDays: number | null;
+    todayScore: number;
+    healthLabel: string;
+    currentMilestone: string | null;
+    confidenceScore: number | null;
+    colorIndex: number;
+  }>;
+  analyticsRow: {
+    planAdherence: number;
+    taskOutcomes: { completed: number; skipped: number; missed: number };
+    activeTime: Array<{ label: string; value: number }>;
+    executionBlockers: Array<{ label: string; count: number }>;
+    confidenceTrend: Array<{ label: string; value: number }>;
+  };
+  coachInsight: string;
   hasGoals: boolean;
-  charts: OverviewCharts;
 }
 
 type OverviewTab = "goals" | "weekly" | "monthly";
@@ -63,16 +68,6 @@ function formatHeaderDate(): string {
     month: "short",
     year: "numeric",
   });
-}
-
-function statusBadge(status: string): { label: string; color: string; bg: string } {
-  if (status === "paused") {
-    return { label: "Paused", color: "var(--accent-warning)", bg: "rgba(245, 158, 11, 0.12)" };
-  }
-  if (status === "completed") {
-    return { label: "Completed", color: "var(--accent-primary)", bg: "rgba(124, 111, 255, 0.12)" };
-  }
-  return { label: "Active", color: "var(--accent-success)", bg: "rgba(29, 158, 117, 0.12)" };
 }
 
 export default function DashboardOverview() {
@@ -106,24 +101,14 @@ export default function DashboardOverview() {
   }, []);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["analytics-overview"],
+    queryKey: ["analytics-dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/analytics/overview");
+      const res = await fetch("/api/analytics/dashboard");
       if (!res.ok) throw new Error("Failed to load");
-      return res.json() as Promise<OverviewPayload>;
+      return res.json() as Promise<DashboardPayload>;
     },
     staleTime: 30_000,
     refetchOnWindowFocus: true,
-  });
-
-  const { data: userModelData } = useQuery({
-    queryKey: ["user-model-confidence"],
-    queryFn: async () => {
-      const res = await fetch("/api/user-model");
-      if (!res.ok) return null;
-      return res.json() as Promise<{ goalConfidence?: Record<string, { total: number; missingFactors: Array<{ factor: string; question: string; impact: number }> }> }>;
-    },
-    staleTime: 5 * 60_000,
   });
 
   if (checkingOnboarding) {
@@ -134,14 +119,8 @@ export default function DashboardOverview() {
     );
   }
 
-  const goals = data?.goals?.slice(0, 3) ?? [];
-  const weekAvg = data?.performance?.weekAvg ?? data?.performance?.weekly ?? 0;
-  const weekDelta = data?.performance?.weekDelta ?? 0;
-  const weeklyTrend = (data?.charts?.trend ?? []).slice(-7).map((t) => ({
-    label: t.label,
-    value: t.score,
-    fill: dailyScoreBarColor(t.score),
-  }));
+  const trendData =
+    data?.trend.points.map((p) => ({ label: p.label, value: p.score, date: p.date })) ?? [];
 
   return (
     <div className="page-shell">
@@ -184,13 +163,7 @@ export default function DashboardOverview() {
 
       {tab === "goals" && (
         <>
-          {isLoading ? (
-            <div className="grid gap-2.5 md:grid-cols-2">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="skeleton shimmer" style={{ height: 160, borderRadius: "var(--radius-xl)" }} />
-              ))}
-            </div>
-          ) : !data?.hasGoals ? (
+          {!isLoading && !data?.hasGoals ? (
             <ClayCard className="p-4" hover={false}>
               <ul className="text-sm m-0 pl-4 space-y-2" style={{ color: "var(--text-secondary)" }}>
                 <li>Add an active goal with a deadline (30–90 days)</li>
@@ -213,137 +186,84 @@ export default function DashboardOverview() {
               </div>
             </ClayCard>
           ) : (
-            <div className="grid gap-2.5 md:grid-cols-2">
-              {goals.map((goal, index) => {
-                const accent = goalAccent(index);
-                const badge = statusBadge(goal.status);
-                const confidenceScore = userModelData?.goalConfidence?.[goal.id]?.total ?? null;
-                const isLowConfidence = confidenceScore !== null && confidenceScore < 60;
-                return (
-                  <Link key={goal.id} href={`/dashboard/goals/${goal.id}`} className="no-underline block">
-                    <ClayCard className="p-4 h-full gap-2.5" hover>
-                      <div className="flex justify-between items-start gap-2">
-                        <h3
-                          className="leading-snug m-0 truncate flex-1"
-                          style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}
-                        >
-                          {goal.title}
-                        </h3>
+            <div className="flex flex-col gap-4">
+              <HeroMetricsRow
+                executionScore={data?.hero.executionScore ?? 0}
+                tasksCompletedThisWeek={data?.hero.tasksCompletedThisWeek ?? 0}
+                tasksPlannedThisWeek={data?.hero.tasksPlannedThisWeek ?? 0}
+                streak={data?.hero.streak ?? 0}
+                nextMilestone={data?.hero.nextMilestone ?? null}
+                loading={isLoading}
+              />
+
+              <ExecutionPillarsRow
+                planning={data?.pillars.planning ?? 0}
+                execution={data?.pillars.execution ?? 0}
+                reflection={data?.pillars.reflection ?? 0}
+                labels={
+                  data?.pillars.labels ?? {
+                    planning: "Add deadline + milestones",
+                    execution: "Complete daily tasks",
+                    reflection: "Log end-of-day reflections",
+                  }
+                }
+                loading={isLoading}
+              />
+
+              <div className="grid gap-4 lg:grid-cols-5">
+                <ClayCard className="p-4 lg:col-span-3" hover={false}>
+                  <LineChartCard
+                    title="Score trend"
+                    subtitle="30-day execution score"
+                    data={trendData}
+                    loading={isLoading}
+                    height={220}
+                    valueFormatter={(v) => `${v}%`}
+                    emptyMessage="Complete tasks to build your trend"
+                    action={
+                      (data?.trend.weekDelta ?? 0) !== 0 ? (
                         <span
-                          className="text-[11px] px-2 py-0.5 rounded-full shrink-0"
+                          className="text-xs font-medium"
                           style={{
-                            color: badge.color,
-                            background: badge.bg,
-                            border: "0.5px solid var(--border-color)",
+                            color:
+                              (data?.trend.weekDelta ?? 0) >= 0
+                                ? "var(--accent-success)"
+                                : "var(--accent-danger)",
                           }}
                         >
-                          {badge.label}
+                          {(data?.trend.weekDelta ?? 0) >= 0 ? "↑" : "↓"}
+                          {Math.abs(data?.trend.weekDelta ?? 0)} vs last week
                         </span>
-                      </div>
+                      ) : undefined
+                    }
+                  />
+                </ClayCard>
 
+                <div className="flex flex-col gap-2 lg:col-span-2">
+                  {(data?.goals ?? []).slice(0, 4).map((goal) => (
+                    <GoalOverviewCard key={goal.id} goal={goal} />
+                  ))}
+                  {isLoading &&
+                    [1, 2, 3].map((i) => (
                       <div
-                        className="rounded-full overflow-hidden"
-                        style={{ height: 3, background: `color-mix(in srgb, ${accent} 12%, transparent)` }}
-                      >
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${Math.min(100, goal.progress)}%`, background: accent }}
-                        />
-                      </div>
-
-                      {confidenceScore !== null && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <div
-                            className="rounded-full overflow-hidden flex-1"
-                            style={{ height: 2, background: "var(--border-subtle)" }}
-                          >
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${confidenceScore}%`,
-                                background: isLowConfidence ? "var(--accent-warning)" : "var(--accent-success)",
-                              }}
-                            />
-                          </div>
-                          <span
-                            className="text-[10px] shrink-0"
-                            style={{ color: isLowConfidence ? "var(--accent-warning)" : "var(--text-muted)" }}
-                          >
-                            {isLowConfidence ? (
-                              <span className="flex items-center gap-0.5">
-                                <Zap size={9} /> Plan precision: {confidenceScore}%
-                              </span>
-                            ) : (
-                              `Precision: ${confidenceScore}%`
-                            )}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-center gap-2 text-xs">
-                        <span style={{ fontWeight: 500, color: accent }}>
-                          {goal.progress}% complete
-                        </span>
-                        {goal.remainingDays != null ? (
-                          <span style={{ color: "var(--text-muted)" }}>
-                            {goal.remainingDays} days left
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--accent-warning)" }}>Add deadline →</span>
-                        )}
-                      </div>
-
-                      <div
-                        className="flex justify-between items-center gap-2 pt-1 text-[11px]"
-                        style={{ color: "var(--text-muted)", borderTop: "0.5px solid var(--border-subtle)" }}
-                      >
-                        <span>Goal score: {goal.todayScore}</span>
-                        <span className="truncate max-w-[55%] text-right">
-                          {goal.currentMilestone ?? "No milestone yet"}
-                        </span>
-                      </div>
-                    </ClayCard>
-                  </Link>
-                );
-              })}
-
-              <ClayCard className="p-4 h-full gap-2.5" hover={false}>
-                <div className="flex justify-between items-start gap-2">
-                  <div>
-                    <h3 className="text-sm font-medium m-0 mb-0.5" style={{ color: "var(--text-primary)" }}>
-                      Performance this week
-                    </h3>
-                    <p className="text-[11px] m-0" style={{ color: "var(--text-muted)" }}>
-                      Daily score — last 7 days
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
-                      Avg: {weekAvg > 0 ? weekAvg : "—"}
-                    </div>
-                    {weekDelta !== 0 && (
-                      <div
-                        className="text-[11px]"
-                        style={{
-                          color: weekDelta >= 0 ? "var(--accent-success)" : "var(--accent-danger)",
-                        }}
-                      >
-                        {weekDelta >= 0 ? "↑" : "↓"}
-                        {Math.abs(weekDelta)} vs last week
-                      </div>
-                    )}
-                  </div>
+                        key={i}
+                        className="skeleton shimmer"
+                        style={{ height: 88, borderRadius: "var(--radius-xl)" }}
+                      />
+                    ))}
                 </div>
-                <BarChartCard
-                  title=""
-                  subtitle=""
-                  data={weeklyTrend}
-                  loading={isLoading}
-                  valueFormatter={(v) => `${v}%`}
-                  hideHeader
-                  emptyMessage="Complete tasks to build your history"
-                />
-              </ClayCard>
+              </div>
+
+              <AnalyticsRow
+                planAdherence={data?.analyticsRow.planAdherence ?? 0}
+                taskOutcomes={data?.analyticsRow.taskOutcomes ?? { completed: 0, skipped: 0, missed: 0 }}
+                activeTime={data?.analyticsRow.activeTime ?? []}
+                executionBlockers={data?.analyticsRow.executionBlockers ?? []}
+                confidenceTrend={data?.analyticsRow.confidenceTrend ?? []}
+                loading={isLoading}
+              />
+
+              {data?.coachInsight && <CoachInsightBanner insight={data.coachInsight} />}
             </div>
           )}
         </>

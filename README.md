@@ -1,10 +1,10 @@
-# MenAI — Personal Execution OS
+# MenAI ? Personal Execution OS
 
 MenAI is an **execution OS for ambitious people**: a dark, Linear-style dashboard with a persistent performance score, exactly **3 AI-generated tasks per active goal per day**, and a single execution-focused coach that remembers who you are.
 
-**Stack:** Next.js 16 · Supabase · OpenAI · Upstash Redis · Recharts · Vercel  
-**Design:** `#0f0f11` shell · `#7c6fff` accent · **Syne** (display headings) · **Plus Jakarta Sans** (UI body) · **JetBrains Mono** (numeric score only)  
-**Layout:** 3 columns — sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile)
+**Stack:** Next.js 16 ? Supabase ? OpenAI ? Upstash Redis ? Recharts ? Vercel  
+**Design:** `#0f0f11` shell ? `#7c6fff` accent ? **Syne** (display headings) ? **Plus Jakarta Sans** (UI body) ? **JetBrains Mono** (numeric score only)  
+**Layout:** 3 columns ? sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile)
 
 ---
 
@@ -41,7 +41,7 @@ The product is code-complete for a single beta user. Operational blockers:
 | Database | Run Supabase migrations **001 through 042** on production |
 | Env vars | Set Supabase, OpenAI, Redis (prod cache), Resend, `CRON_SECRET` on Vercel |
 | Nightly cron | Schedule `GET /api/cron/nightly` with `Authorization: Bearer $CRON_SECRET` |
-| User path | Signup → onboarding → at least one **execution goal with a deadline** |
+| User path | Signup ? onboarding ? at least one **execution goal with a deadline** |
 
 Verify schema after migrate: [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql)
 
@@ -63,7 +63,7 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
-Open `http://localhost:3000` → Sign up → complete onboarding → land on dashboard.
+Open `http://localhost:3000` ? Sign up ? complete onboarding ? land on dashboard.
 
 ---
 
@@ -86,13 +86,13 @@ Copy from [`.env.local.example`](.env.local.example):
 | `NEXT_PUBLIC_APP_URL` | Yes | Email links |
 | `CRON_SECRET` | Prod | Protects `/api/cron/nightly` |
 
-Without Redis, caching is disabled gracefully — the app still works but rebuilds context from Supabase on every request.
+Without Redis, caching is disabled gracefully ? the app still works but rebuilds context from Supabase on every request.
 
 ---
 
 ## Onboarding flow (step-by-step)
 
-Onboarding is a **one-question-at-a-time** questionnaire. It runs at `/onboarding` and is gated by `onboarding_progress.completed_at` — the dashboard redirects incomplete users back to onboarding.
+Onboarding is a **one-question-at-a-time** questionnaire. It runs at `/onboarding` and is gated by `onboarding_progress.completed_at` ? the dashboard redirects incomplete users back to onboarding.
 
 ### Files involved
 
@@ -107,38 +107,47 @@ Onboarding is a **one-question-at-a-time** questionnaire. It runs at `/onboardin
 | [`src/components/onboarding/finalize-progress.tsx`](src/components/onboarding/finalize-progress.tsx) | 4-step setup tracker UI |
 | [`src/lib/ai/onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) | Optional LLM extraction for selected answers |
 
-### Question flow (4 steps)
+### Question flow (5 steps)
 
-Defined in [`questions.ts`](src/lib/onboarding/questions.ts) → `buildQuestionFlow()` returns `["Q2", "Q3", "Q4", "Q7"]`:
+Defined in [`questions.ts`](src/lib/onboarding/questions.ts) ? `buildQuestionFlow()` returns `["Q2", "Q3", "Q4", "Q7", "Q5"]`:
 
-| Step | ID | Question | Type | What it creates |
-|------|-----|----------|------|-----------------|
-| 1 | **Q2** | What are you actively trying to achieve in the next 30–90 days? | Text | Raw goal title (validated for concreteness) |
-| 2 | **Q3** | When do you want to achieve this? | Forced choice (30 / 60 / 90 days, custom date, or **flexible — no fixed date**) | `target_date` on the goal (null = week-relative milestones) |
-| 3 | **Q4** | What is the biggest thing slowing you down? | Forced choice (+ optional “other”) | `execution_patterns` row (procrastination, overthinking, etc.) |
-| 4 | **Q7** | What would make the next 30 days successful? | Text | `success_criteria` on the goal |
+| Step | Label | ID | Question | Type | What it creates |
+|------|-------|-----|----------|------|-----------------|
+| 1 | Goal | **Q2** | What are you actively trying to achieve in the next 30?90 days? | Text | Execution goal title (accept-and-sharpen, not hard block) |
+| 2 | Deadline | **Q3** | When do you want to achieve this? | Forced choice | `target_date` (null = week-relative milestones) |
+| 3 | Obstacle | **Q4** | What is the biggest thing slowing you down? | Forced choice | `execution_patterns` row |
+| 4 | Success | **Q7** | What would make the next 30 days successful? | Text (must include number or measurable noun) | `success_criteria` |
+| 5 | Time | **Q5** | How many hours per week can you dedicate? | Forced choice (1?5 / 5?10 / 10?20 / 20+) | `identity_signals.available_hours` + `plan_context.weeklyAvailableHours` |
 
-Name comes from the auth profile — there is no separate name question in the minimal flow.
+### Accept-and-sharpen (Q2)
+
+- **Reject only** pure vision inputs (`"be better"`, `"excel in life"`, `"improve everything"`).
+- **Accept** any title with a domain noun (`business`, `fitness`, `agency`, `product`, ?).
+- `"Build a business"` ? **accepted but sharpenable** (domain pills: Finance agency / Product-SaaS / Service business).
+- Sharpen options compose full titles (`"Build a finance agency"`) ? user can edit before Continue.
+- Finalize still blocks if the stored title remains unsharpened broad/weak.
+
+Name comes from the auth profile ? there is no separate name question.
 
 ### What happens on final answer (Q7)
 
 When the user completes Q7, `POST /api/onboarding/finalize` streams progress while [`finalize-onboarding.ts`](src/lib/onboarding/finalize-onboarding.ts) runs:
 
-1. **Load** responses + block weak/unsharpened goals.
-2. **Insert** `execution_patterns` + **`identity_signals`** (goal domain, obstacle, success definition).
+1. **Load** responses + block unsharpened broad/weak goals.
+2. **Insert** `execution_patterns` + **`identity_signals`** (goal domain, obstacle, success, available hours).
 3. **Create execution goal** with success criteria and optional deadline.
 4. **Generate milestones** (LLM + obstacle context; week-relative if no deadline).
-5. **Generate today's plan** — `ensureTodayPlan()` + cache invalidation.
-6. **Build user model synchronously** — `await synthesizeUserModel()` (first run only; coach rail populated on landing).
-7. **Mark complete** — `profiles.onboarding_completed` + `onboarding_progress.completed_at` last.
-8. **Redirect** → `/dashboard/plans`.
+5. **Write** `plan_context.weeklyAvailableHours` for the new goal.
+6. **Generate today's plan** ? `ensureTodayPlan()` + cache invalidation.
+7. **Build user model synchronously** ? `await synthesizeUserModel()`.
+8. **Mark complete** ? redirect `/dashboard/plans`.
 
-Q2 shows **"Checking your goal…"** during LLM sharpen validation. Q4 shows a 3-step obstacle preview. Q3 **flexible** shows a week-by-week planning note.
+Q2 uses accept-and-sharpen inline pills (not a blocking error). Q4 shows animated obstacle preview. Reflection opens after 6 PM.
 
 ### Onboarding gate in the app
 
-- [`src/middleware.ts`](src/middleware.ts) — auth protection for dashboard routes.
-- [`src/app/dashboard/page.tsx`](src/app/dashboard/page.tsx) — client check on `onboarding_progress.completed_at`; redirects to `/onboarding` if missing.
+- [`src/middleware.ts`](src/middleware.ts) ? auth protection for dashboard routes.
+- [`src/app/dashboard/page.tsx`](src/app/dashboard/page.tsx) ? client check on `onboarding_progress.completed_at`; redirects to `/onboarding` if missing.
 
 ### Post-onboarding setup checklist
 
@@ -150,18 +159,19 @@ If a user skips a deadline or adds goals later, [`src/components/onboarding/setu
 
 ```
 Signup (/signup)
-  → Email confirm
-  → Onboarding (4 questions)
-  → Dashboard Overview (/dashboard)
-       ├── Goals tab — 2×2 goal cards + weekly score chart
-       ├── Weekly tab — AI weekly review
-       └── Monthly tab — monthly review panel
-  → Today's Plan (/dashboard/plans) — 3 tasks × N goals, why lines, checkboxes
-  → Coach (/dashboard/chat) — full streaming conversation
-  → Coach rail (all pages except chat) — last message + memory bullets
-  → Goal analytics (/dashboard/goals/[goalId]) — charts, success forecast
-  → Timeline (/dashboard/timeline) — life events + reflections
-  → Settings (/dashboard/settings)
+  ? Email confirm
+  ? Onboarding (5 questions, accept-and-sharpen goal)
+  ? Today's Plan (/dashboard/plans) ? first landing after finalize
+  ? Dashboard Overview (/dashboard) ? single batched API
+       ??? Goals tab ? 4-row layout (hero, pillars, trend, analytics, coach quote)
+       ??? Weekly tab ? AI weekly review
+       ??? Monthly tab ? monthly review panel
+  ? Today's Plan ? daily briefing card, optimistic task checkboxes
+  ? Coach (/dashboard/chat) ? session plan summary + dynamic prompts
+  ? Coach rail ? daily note, precision CTA, knowledge bullets (max 4 ? 8 words)
+  ? Goal analytics ? pace insight, milestone roadmap, ghost chart empty states
+  ? Timeline ? summary strip + read-more entries
+  ? Settings (/dashboard/settings)
 ```
 
 **Daily rhythm** (morning / afternoon / night) comes from [`/api/rhythm`](src/app/api/rhythm/route.ts) + [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts) and appears on Today's Plan.
@@ -184,27 +194,51 @@ interface UserContext {
   lastAchievement: string | null
   rhythmPhase: 'morning' | 'afternoon' | 'night'
   scoreToday: number
-  knowledgeBullets: string[]  // max 4, ~8 words each — for coach rail
+  knowledgeBullets: string[]  // max 4, ~8 words each ? for coach rail
 }
 ```
 
 **Cached 15 minutes** in Redis (`menai:user-context:{userId}`). Invalidated via [`invalidateUserCache()`](src/lib/redis/client.ts) at these sites:
 
+### Batched Overview API
+
+[`GET /api/analytics/dashboard`](src/app/api/analytics/dashboard/route.ts) returns one payload for the Overview page (replaces parallel `/api/analytics/overview` + `/api/user-model` + `/api/analytics/performance`):
+
+- `hero` ? execution score (pillar average), tasks this week, streak, next milestone
+- `pillars` ? Planning / Execution / Reflection scores from [`execution-pillars.ts`](src/lib/analytics/execution-pillars.ts)
+- `trend` ? 30-day score trend + week delta
+- `goals` ? stacked goal cards
+- `analyticsRow` ? plan adherence, task outcomes, active time, blockers, confidence trend
+- `coachInsight` ? rule-based quote ([`dashboard-insights.ts`](src/lib/analytics/dashboard-insights.ts))
+
+**Pillar formulas (rule-based, no LLM):**
+
+| Pillar | Formula |
+|--------|---------|
+| Planning | % of active goals with deadline + at least one milestone |
+| Execution | Tasks completed / planned (7d rolling) |
+| Reflection | Reflection days logged / 7 |
+| Hero score | Average of the three pillars |
+
+### Cache invalidation sites
+
 | Event | File |
 |---|---|
 | Task completed / created | `src/app/api/tasks/route.ts` |
 | Goal / milestone changed | `src/app/api/milestones/route.ts` |
-| Mentor memory written | `src/lib/mentor/mentor-memory.ts` — `persistMentorMemories()` |
-| User model synthesized | `src/lib/user-model/synthesis-engine.ts` — after synthesis write |
-| Daily plan generated | `src/lib/plans/daily-plan-generator.ts` — after `insertPlan()` |
+| Mentor memory written | `src/lib/mentor/mentor-memory.ts` ? `persistMentorMemories()` |
+| User model synthesized | `src/lib/user-model/synthesis-engine.ts` ? after synthesis write |
+| Daily plan generated | `src/lib/plans/daily-plan-generator.ts` ? after `insertPlan()` |
 
 **Consumers:**
 
 | Feature | Reads from |
 |---------|------------|
-| Daily planner | `getUserContext()` first → `formatUserContextForPlanner()` (identity, values, top 3 `recentMemories`, last achievement) |
-| Coach rail snapshot | `/api/coach/snapshot` → `getUserContext().knowledgeBullets` |
-| Coach chat today block | Orchestrator passes cached `UserContext` into [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (no duplicate goal/task fetch) |
+| Daily planner | `getUserContext()` first ? `formatUserContextForPlanner()` |
+| Coach rail snapshot | `/api/coach/snapshot` ? `getUserContext()` + lightweight profile read |
+| Overview | Single `GET /api/analytics/dashboard` (hero, pillars, trend, analytics row) |
+| Coach chat prompts | `formatUserModelCompactForPrompt()` (~500 tokens, not full JSONB) |
+| Memory retrieval | Skipped for messages &lt;60 chars or greetings |
 
 ### Milestones (always ensured)
 
@@ -214,7 +248,7 @@ interface UserContext {
 - Before daily plan generation (`ensureTodayPlan`)
 - Missing milestones backfill via `POST /api/admin/backfill-milestones` (admin) + [`diagnose-and-backfill-milestones.sql`](supabase/scripts/diagnose-and-backfill-milestones.sql)
 
-If a goal has no deadline, week-relative milestones (`Week 1: …`) are used instead of skipping generation.
+If a goal has no deadline, week-relative milestones (`Week 1: ?`) are used instead of skipping generation.
 
 ### Chat ? extraction ? plan pipeline
 
@@ -233,10 +267,10 @@ Client parses sentinel:
   If cq != null: injects ConfidenceQuestionCard (1/session)
 
 Background (finally, after stream):
-  await persistExtractedData()   � writes deadline/goal/obstacle to DB
-  invalidateUserCache()          � bust Redis 15m cache immediately
-  delete daily_plans today row   � force plan regeneration on next open
-  recomputeGoalConfidence()      � update precision score
+  await persistExtractedData()   ? writes deadline/goal/obstacle to DB
+  invalidateUserCache()          ? bust Redis 15m cache immediately
+  delete daily_plans today row   ? force plan regeneration on next open
+  recomputeGoalConfidence()      ? update precision score
 `
 
 ### Plan generation pipeline
@@ -249,8 +283,8 @@ GET /api/plans/generate ? ensureTodayPlan()
     return enriched plan
   Otherwise:
     ensureMilestonesForUser()
-    fetchPlanUserContext() � validates 8 required context fields
-    generateDailyPlanWithAI() � gpt-4o-mini, 4 personalization rules
+    fetchPlanUserContext() ? validates 8 required context fields
+    generateDailyPlanWithAI() ? gpt-4o-mini, 4 personalization rules
     insert daily_plans
     insert tasks + retrieve IDs
     embed taskId into plan_content (direct ID match, no title fragility)
@@ -258,24 +292,24 @@ GET /api/plans/generate ? ensureTodayPlan()
 `
 
 **4 mandatory personalization rules in every prompt:**
-1. Task title specific to this user � never generic
+1. Task title specific to this user ? never generic
 2. If lastAchievement exists, at least one task references it explicitly
 3. Every task has a CONCRETE DELIVERABLE (never "research X")
 4. Fitness tasks include exercise name + duration + plan day number
 
-Why-line logic: task-why-line.ts � never "No milestones yet" or duplicates task title.
+Why-line logic: task-why-line.ts ? never "No milestones yet" or duplicates task title.
 
 ### Goal confidence (Plan Precision Score)
 
-Rule-based 0�100, no LLM. Factors: Deadline (20), Obstacle (20), Success criteria (20), Resources (20), Execution history (20).
+Rule-based 0?100, no LLM. Factors: Deadline (20), Obstacle (20), Success criteria (20), Resources (20), Execution history (20).
 
 **Confidence Q&A:** Auto-injected as ConfidenceQuestionCard (max 1/session) when score < 60. User clicks a pill ? POST /api/confidence/answer writes to correct table, recomputes, returns next factor. Cards chain automatically.
 
 ### Coach rail (3 sections, no truncated synthesis)
 
-1. Today's coaching note � 1 sentence from plan calibration or daily note memory
-2. Plan precision CTA � lowest-confidence goal + action link (shown when score < 70)
-3. What your coach knows � max 4 bullets, ~8 words each
+1. Today's coaching note ? 1 sentence from plan calibration or daily note memory
+2. Plan precision CTA ? lowest-confidence goal + action link (shown when score < 70)
+3. What your coach knows ? max 4 bullets, ~8 words each
 
 ### Shipped UI fixes
 
@@ -288,7 +322,7 @@ Dark mode default, score badge spacing, task card metadata stripped, goal card h
 ### Design intent
 
 - **Body copy** uses `letter-spacing: normal` and `word-spacing: normal`.
-- **Display headings** (Syne) may use Tailwind `tracking-tight` (`-0.02em`) — scoped to headings only, not body text.
+- **Display headings** (Syne) may use Tailwind `tracking-tight` (`-0.02em`) ? scoped to headings only, not body text.
 - **Score block** uses JetBrains Mono for the number only; subtitle uses Plus Jakarta Sans with explicit spacing (see [`performance-score-badge.tsx`](src/components/dashboard/performance-score-badge.tsx)).
 
 ### Where spacing was breaking
@@ -315,13 +349,13 @@ Dark mode default, score badge spacing, task card metadata stripped, goal card h
 |-----------|---------|
 | [`chat-message.tsx`](src/components/chat/chat-message.tsx) | User = plain text (`white-space: pre-wrap`); Assistant = ReactMarkdown |
 | [`markdown-content.tsx`](src/components/chat/markdown-content.tsx) | Shared markdown renderer for chat + coach rail |
-| [`coach-rail.tsx`](src/components/chat/coach-rail.tsx) | Last 2 coach messages via `MarkdownContent` |
+| [`coach-rail.tsx`](src/components/chat/coach-rail.tsx) | Daily note, precision CTA, knowledge bullets from snapshot |
 
 Dark mode default: `<html className="dark">` in [`src/app/layout.tsx`](src/app/layout.tsx) with blocking inline script reading `localStorage` key `menai-theme`, SSR `#0f0f11` fallback, and `color-scheme: dark`. Light mode is opt-in via Settings only.
 
-**Design tokens (dark):** shell `#0f0f11` · sidebar/rail `#141416` · cards `#1a1a1e` · accent `#7c6fff`  
-**Layout:** sidebar **220px** · coach rail **240px** · main content max-width **900px** centered (`page-shell__inner` class in `dashboard/layout.tsx`)  
-**Coach rail truncation:** `trimAtSentence(text, 500)` and `trimAtSentence(text, 400)` in `/api/coach/snapshot` — cuts at last sentence boundary before limit, falls back to last word boundary + ellipsis to prevent mid-word cuts.
+**Design tokens (dark):** shell `#0f0f11` ? sidebar/rail `#141416` ? cards `#1a1a1e` ? accent `#7c6fff`  
+**Layout:** sidebar **220px** ? coach rail **240px** ? main content max-width **900px** centered (`page-shell__inner` class in `dashboard/layout.tsx`)  
+**Coach rail truncation:** `trimAtSentence(text, 500)` and `trimAtSentence(text, 400)` in `/api/coach/snapshot` ? cuts at last sentence boundary before limit, falls back to last word boundary + ellipsis to prevent mid-word cuts.
 
 **Chart data:** aggregate scores use `goal_progress_snapshots` with `tasks` fallback (`computePerformanceScore`); per-goal analytics same path in `computeGoalAnalytics`. Snapshots upsert on task completion + nightly cron backfill.
 
@@ -331,23 +365,23 @@ Dark mode default: `<html className="dark">` in [`src/app/layout.tsx`](src/app/l
 
 ```
 MentalAI/
-├── public/                    # Static assets (logo.png, etc.)
-├── supabase/
-│   ├── migrations/            # SQL migrations 001–041 (run in order)
-│   ├── scripts/               # verify-v2-migrations.sql, memory debug scripts
-│   └── functions/             # Legacy edge functions (email, daily tasks)
-├── tests/
-│   ├── unit/                  # Vitest unit tests
-│   ├── integration/           # Integration tests
-│   └── e2e/                   # End-to-end tests
-├── mobile/                    # Expo React Native app (companion, separate deploy)
-└── src/
-    ├── app/                   # Next.js App Router — pages + API routes
-    ├── components/            # React UI components
-    └── lib/                     # Business logic, AI, data access
+??? public/                    # Static assets (logo.png, etc.)
+??? supabase/
+?   ??? migrations/            # SQL migrations 001?041 (run in order)
+?   ??? scripts/               # verify-v2-migrations.sql, memory debug scripts
+?   ??? functions/             # Legacy edge functions (email, daily tasks)
+??? tests/
+?   ??? unit/                  # Vitest unit tests
+?   ??? integration/           # Integration tests
+?   ??? e2e/                   # End-to-end tests
+??? mobile/                    # Expo React Native app (companion, separate deploy)
+??? src/
+    ??? app/                   # Next.js App Router ? pages + API routes
+    ??? components/            # React UI components
+    ??? lib/                     # Business logic, AI, data access
 ```
 
-### `src/app/` — Pages & API
+### `src/app/` ? Pages & API
 
 | Path | Purpose |
 |------|---------|
@@ -359,7 +393,7 @@ MentalAI/
 | `auth/callback/` | Supabase OAuth/email callback |
 | `dashboard/layout.tsx` | 3-column shell: sidebar + main + coach rail |
 | `dashboard/page.tsx` | Overview (Goals / Weekly / Monthly tabs) |
-| `dashboard/plans/page.tsx` | Today's Plan — tasks, rhythm, reflection |
+| `dashboard/plans/page.tsx` | Today's Plan ? tasks, rhythm, reflection |
 | `dashboard/chat/page.tsx` | Full coach conversation |
 | `dashboard/goals/[goalId]/page.tsx` | Per-goal analytics + charts |
 | `dashboard/timeline/page.tsx` | Timeline of wins + reflections |
@@ -368,7 +402,7 @@ MentalAI/
 | `dashboard/reviews/weekly|monthly/` | Standalone review pages (also embedded in Overview tabs) |
 | `api/` | All server routes (see [API routes](#api-routes)) |
 
-### `src/components/` — UI
+### `src/components/` ? UI
 
 | Folder | Key files | Purpose |
 |--------|-----------|---------|
@@ -380,16 +414,16 @@ MentalAI/
 | `plans/` | `plan-context-interview.tsx` | Mid-day plan context interview on Today's Plan when context is thin |
 | `ui/` | `clay-card.tsx`, `clay-sidebar-link.tsx` | Shared primitives |
 
-### `src/lib/` — Business logic
+### `src/lib/` ? Business logic
 
 | Folder | Purpose |
 |--------|---------|
 | `ai/` | OpenAI client, models, orchestrator, onboarding extraction |
-| `ai/orchestrator/` | Chat pipeline: router → prompt → stream → memory write |
+| `ai/orchestrator/` | Chat pipeline: router ? prompt ? stream ? memory write |
 | `analytics/` | Product event tracking |
 | `auth/` | Bootstrap, admin checks, email cooldown |
 | `chat/` | Message fetch helpers |
-| `context/` | **`user-context.ts`** — unified cached user state |
+| `context/` | **`user-context.ts`** ? unified cached user state |
 | `dashboard/` | Briefing, pending tasks |
 | `email/` | Resend + auth email templates |
 | `goals/` | Active goals fetch, quality gate, colors |
@@ -419,20 +453,20 @@ MentalAI/
 
 **Shell & tokens:** [`src/app/dashboard/layout.tsx`](src/app/dashboard/layout.tsx), [`src/app/globals.css`](src/app/globals.css)
 
-**Redirects:** `/dashboard/goals` and `/dashboard/status` → `/dashboard`
+**Redirects:** `/dashboard/goals` and `/dashboard/status` ? `/dashboard`
 
 ---
 
 ## Product rules
 
-1. **3 tasks per goal per day** — enforced in planner and task API; no bonus lists  
-2. **Max 3 active execution goals** — direction goals are synthesis-only, never in daily plan UI  
-3. **Single coach persona** — direct, anti-skip guardrails in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts)  
-4. **Transparent memory** — Coach rail shows what MenAI knows; stale synthesis shows **"updating…"** if >26h old  
-5. **Time-aware coach** — rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
-6. **Personalized tasks** — planner reads `UserContext` (identity, last achievement, mentor memories) — not generic templates  
-7. **Human why-lines** — three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
-8. **Charts** — sidebar score sparkline (always visible, dashed when empty); per-goal rings on Today's Plan; overview weekly bar with ghost empty state; goal analytics heatmap + milestone line chart; timeline 6-month momentum bar; coach execution radar from `/api/user-model` `executionProfile`  
+1. **3 tasks per goal per day** ? enforced in planner and task API; no bonus lists  
+2. **Max 3 active execution goals** ? direction goals are synthesis-only, never in daily plan UI  
+3. **Single coach persona** ? direct, anti-skip guardrails in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts)  
+4. **Transparent memory** ? Coach rail shows what MenAI knows; stale synthesis shows **"updating?"** if >26h old  
+5. **Time-aware coach** ? rhythm block in prompts from [`rhythm-phase.ts`](src/lib/plans/rhythm-phase.ts)  
+6. **Personalized tasks** ? planner reads `UserContext` (identity, last achievement, mentor memories) ? not generic templates  
+7. **Human why-lines** ? three-tier fallback in [`task-why-line.ts`](src/lib/plans/task-why-line.ts); never expose internal null labels  
+8. **Charts** ? sidebar score sparkline (always visible, dashed when empty); per-goal rings on Today's Plan; overview weekly bar with ghost empty state; goal analytics heatmap + milestone line chart; timeline 6-month momentum bar; coach execution radar from `/api/user-model` `executionProfile`  
 
 ---
 
@@ -442,26 +476,26 @@ Model constants: [`src/lib/ai/models.ts`](src/lib/ai/models.ts)
 
 | Job | Model | Where |
 |-----|-------|-------|
-| Daily plan generation | `PLANNER_MODEL` → gpt-4o-mini | [`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts) · `/api/plans/generate` |
-| Coach chat | `COACH_CHAT_MODEL` → gpt-4o | [`orchestrator/index.ts`](src/lib/ai/orchestrator/index.ts) · `/api/chat` |
+| Daily plan generation | `PLANNER_MODEL` ? gpt-4o-mini | [`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts) ? `/api/plans/generate` |
+| Coach chat | `COACH_CHAT_MODEL` ? gpt-4o | [`orchestrator/index.ts`](src/lib/ai/orchestrator/index.ts) ? `/api/chat` |
 | Milestones | `DEEP_MODEL` | [`milestone-generator.ts`](src/lib/plans/milestone-generator.ts) |
 | Weekly review narrative | `DEEP_MODEL` | [`weekly-review-generator.ts`](src/lib/plans/weekly-review-generator.ts) |
 | Goal completion summary | `DEEP_MODEL` | [`goal-completion.ts`](src/lib/plans/goal-completion.ts) |
 | Onboarding extraction (selected Qs) | `FAST_MODEL` | [`onboarding-extraction.ts`](src/lib/ai/onboarding-extraction.ts) |
 | Chat classification / extraction | `FAST_MODEL` | [`router.ts`](src/lib/ai/orchestrator/router.ts), [`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) |
 | Memory embeddings | `text-embedding-3-small` | [`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts) |
-| Onboarding goal sharpen (vague titles) | `FAST_MODEL` | [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) · `/api/onboarding/validate-initiative` |
-| Moderation | `omni-moderation-latest` (async, post-stream) | [`safety-engine.ts`](src/lib/ai/orchestrator/safety-engine.ts) — crisis keywords still sync |
+| Onboarding goal sharpen (vague titles) | `FAST_MODEL` | [`goal-quality-gate.ts`](src/lib/goals/goal-quality-gate.ts) ? `/api/onboarding/validate-initiative` |
+| Moderation | `omni-moderation-latest` (async, post-stream) | [`safety-engine.ts`](src/lib/ai/orchestrator/safety-engine.ts) ? crisis keywords still sync |
 | **User model / "Who am I?"** | **No LLM on request** | Rule-based [`synthesis-engine.ts`](src/lib/user-model/synthesis-engine.ts), 12h cache [`loader.ts`](src/lib/user-model/loader.ts) |
-| Nightly cognitive + user-model refresh | Scheduled (no chat LLM) | [`synthesis-worker.ts`](src/lib/ai/orchestrator/synthesis-worker.ts) · `/api/cron/nightly` |
+| Nightly cognitive + user-model refresh | Scheduled (no chat LLM) | [`synthesis-worker.ts`](src/lib/ai/orchestrator/synthesis-worker.ts) ? `/api/cron/nightly` |
 
 ### Extraction gate
 
-[`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) — `shouldSkipExtraction()`:
+[`extraction-engine.ts`](src/lib/ai/orchestrator/extraction-engine.ts) ? `shouldSkipExtraction()`:
 
 ```
 skip if message.length < 10   (hard minimum)
-skip if exact casual phrase   (hi, thanks, ok, …)
+skip if exact casual phrase   (hi, thanks, ok, ?)
 skip if message.length < 60 AND no named-entity signals
   where signals = capitalized noun | any digit | goal/deadline/milestone keyword
 ```
@@ -474,27 +508,27 @@ This gates ~30% of chat turns from hitting the extraction LLM (gpt-4o-mini) with
 
 Built in [`prompt-builder.ts`](src/lib/ai/orchestrator/prompt-builder.ts):
 
-- **`MENTOR_EXECUTION_PERSONA`** — time-aware, anti-description coach persona (see below)
-- `rhythmBlock` — time of day + tasks done/expected today
-- `todayPlanBlock` — today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` — no duplicate fetch)
-- `userModel` — synthesized profile from `profiles.user_model`
-- `memoryRetrievalBlock` — mentor memories + vector search
+- **`MENTOR_EXECUTION_PERSONA`** ? time-aware, anti-description coach persona (see below)
+- `rhythmBlock` ? time of day + tasks done/expected today
+- `todayPlanBlock` ? today's tasks from [`today-plan-context.ts`](src/lib/plans/today-plan-context.ts) (uses cached `UserContext` ? no duplicate fetch)
+- `userModel` ? synthesized profile from `profiles.user_model`
+- `memoryRetrievalBlock` ? mentor memories + vector search
 
 ### Coach persona (MENTOR_EXECUTION_PERSONA)
 
-Core rule: **never describe, always act**. Every response must reference something only sayable to this specific user — a date, task title, number, or recent event.
+Core rule: **never describe, always act**. Every response must reference something only sayable to this specific user ? a date, task title, number, or recent event.
 
-**Time-aware tone** (mandatory — reads `rhythmBlock` before responding):
+**Time-aware tone** (mandatory ? reads `rhythmBlock` before responding):
 
 | Time + state | Opening template |
 |---|---|
-| Morning, 0 tasks done | "Today's plan is set. Start with [task] — it unblocks the others." |
+| Morning, 0 tasks done | "Today's plan is set. Start with [task] ? it unblocks the others." |
 | Afternoon, 1 of 3 done | "You're behind pace. [N] hours left. Drop [lower-priority] and finish [critical]." |
-| Evening, 0 of 3 done | "This was a lost day. Tell me what got in the way — we adjust tomorrow's plan now." |
+| Evening, 0 of 3 done | "This was a lost day. Tell me what got in the way ? we adjust tomorrow's plan now." |
 | Evening, 3 of 3 done | "100 today. [X] days from your next milestone. One more like this and you cross it." |
 
 **Guardrails:**
-- Never open with "Great job!" / "Well done!" — open with facts + next action
+- Never open with "Great job!" / "Well done!" ? open with facts + next action
 - If behind on tasks: name which tasks are undone, name the consequence
 - If excuses detected: name the pattern by label, give one specific counter-action
 - Never agree for comfort; never soften accountability
@@ -506,30 +540,30 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 
 ### Planner context fields
 
-[`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts) — `fetchPlanUserContext()` assembles:
+[`daily-plan-generator.ts`](src/lib/plans/daily-plan-generator.ts) ? `fetchPlanUserContext()` assembles:
 
 | Field | Source | Purpose |
 |---|---|---|
 | `userModelNarrative` | `UserContext` | Identity, values, top patterns |
 | `userContextBlock` | `formatUserContextForPlanner()` | Identity, recent win, memories |
-| `yesterdayCompleted` | `tasks.completed_at` | Tasks finished yesterday — planner builds next logical step |
-| `yesterdaySkipped` | `tasks.due_date = yesterday, status pending` | Tasks skipped — must address why or reschedule |
+| `yesterdayCompleted` | `tasks.completed_at` | Tasks finished yesterday ? planner builds next logical step |
+| `yesterdaySkipped` | `tasks.due_date = yesterday, status pending` | Tasks skipped ? must address why or reschedule |
 | `initiativeMilestones` | `goal_milestones` | Current milestone per goal |
-| `milestoneUrgencyLines` | computed | "MILESTONE CLOSES IN N DAYS" if ≤ 5 days away |
-| `deadlineUrgencyLines` | computed | "DEADLINE IN N DAYS" if goal deadline ≤ 7 days |
+| `milestoneUrgencyLines` | computed | "MILESTONE CLOSES IN N DAYS" if ? 5 days away |
+| `deadlineUrgencyLines` | computed | "DEADLINE IN N DAYS" if goal deadline ? 7 days |
 | `executionAllocationLines` | `UserContext.executionAllocation` | % allocation per initiative |
 | `mentorMemoryBlock` | `mentor_memories` | Long-term mentor signals |
 | `lastAchievement` | `UserContext` | Most recent win for momentum reference |
 
 **Why-line rules (in prompt):** Every `whyItMatters` must contain a deadline reference, a progress number, or a connection to a recent specific event. Never restate the task title. Fitness tasks must include distance/reps/duration and the plan day number.
 
-**Milestone urgency:** if a goal's next incomplete milestone is ≤ 5 days away, a `⚠️ MILESTONE URGENCY` block is prepended to the prompt — all tasks must directly complete that milestone. If goal deadline ≤ 7 days, a `🚨 DEADLINE PRESSURE` block marks all tasks deadline-critical.
+**Milestone urgency:** if a goal's next incomplete milestone is ? 5 days away, a `?? MILESTONE URGENCY` block is prepended to the prompt ? all tasks must directly complete that milestone. If goal deadline ? 7 days, a `?? DEADLINE PRESSURE` block marks all tasks deadline-critical.
 
 ---
 
 ## Database reference
 
-**Source of truth:** [`supabase/migrations/`](supabase/migrations/) — run in numeric order through **042**.
+**Source of truth:** [`supabase/migrations/`](supabase/migrations/) ? run in numeric order through **042**.
 
 ### Active tables (by domain)
 
@@ -600,18 +634,18 @@ Deep dive: [`src/lib/ai/orchestrator/README.md`](src/lib/ai/orchestrator/README.
 
 Dropped by migrations **020**, **021**, **039**:
 
-- `initiatives` → merged into `goals` (`goal_kind = 'execution'`)
-- `initiative_milestones` → `goal_milestones`
-- `user_reports` → `weekly_reviews`
+- `initiatives` ? merged into `goals` (`goal_kind = 'execution'`)
+- `initiative_milestones` ? `goal_milestones`
+- `user_reports` ? `weekly_reviews`
 - `behavioral_reports`, `task_generation_log`, `habits`, `habit_logs`, `subscriptions`, `accountability_log`
 
 ### Key RPC
 
-- `match_memories(vector, …)` — pgvector semantic search ([`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts))
+- `match_memories(vector, ?)` ? pgvector semantic search ([`memory-engine.ts`](src/lib/ai/orchestrator/memory-engine.ts))
 
 ### Migration 041 (chat + safety)
 
-[`supabase/migrations/041_chat_and_safety_tables.sql`](supabase/migrations/041_chat_and_safety_tables.sql) adds `messages` + `crisis_events` with RLS — required for coach rail message history.
+[`supabase/migrations/041_chat_and_safety_tables.sql`](supabase/migrations/041_chat_and_safety_tables.sql) adds `messages` + `crisis_events` with RLS ? required for coach rail message history.
 
 ---
 
@@ -627,9 +661,10 @@ Dropped by migrations **020**, **021**, **039**:
 | `/api/rhythm` | GET | Daily rhythm phase + prompts |
 | `/api/onboarding/answer` | POST | Save onboarding step |
 | `/api/onboarding/progress` | GET | Current onboarding state |
-| `/api/analytics/overview` | GET | Overview goals + charts |
-| `/api/analytics/performance` | GET | Score, streak, task counts |
-| `/api/analytics/goals/[goalId]` | GET | Per-goal analytics |
+| `/api/analytics/dashboard` | GET | Batched Overview payload (hero, pillars, trend, analytics row) |
+| `/api/analytics/goals/[goalId]` | GET | Per-goal analytics + pace insight |
+| `/api/dashboard/today` | GET | Daily briefing for Today's Plan |
+| `/api/chat/suggested-prompts` | GET | Dynamic coach chat starters |
 | `/api/cron/nightly` | GET | Nightly synthesis (cron + `CRON_SECRET`) |
 | `/api/tasks` | GET/PATCH | Today's tasks CRUD |
 | `/api/reflections` | GET/POST | End-of-day reflection |
@@ -647,11 +682,11 @@ Full list: browse [`src/app/api/`](src/app/api/)
 | **Daily planner** | `plans/daily-plan-generator.ts` | Fetches context, calls GPT, writes tasks + `daily_plans` |
 | **Why lines** | `plans/task-why-line.ts` | Three-tier fallback; rail bullet trimming |
 | **Performance score** | `plans/performance-score.ts` | Daily/weekly/monthly score from task completion |
-| **User model** | `user-model/synthesis-engine.ts`, `loader.ts` | Rule-based “who am I” synthesis, 12h cache |
-| **Orchestrator** | `ai/orchestrator/index.ts` | Full chat turn: classify → retrieve → prompt → stream → extract |
+| **User model** | `user-model/synthesis-engine.ts`, `loader.ts` | Rule-based ?who am I? synthesis, 12h cache |
+| **Orchestrator** | `ai/orchestrator/index.ts` | Full chat turn: classify ? retrieve ? prompt ? stream ? extract |
 | **Redis** | `redis/client.ts` | Cache keys: session, cognition, **user-context** (15 min) |
 | **Active goals** | `goals/active-goals.ts` | Fetches execution goals (no legacy initiatives fallback) |
-| **Staleness** | `user-model/staleness.ts` | >26h → show “updating…” in coach UI |
+| **Staleness** | `user-model/staleness.ts` | >26h ? show ?updating?? in coach UI |
 
 ---
 
@@ -659,11 +694,11 @@ Full list: browse [`src/app/api/`](src/app/api/)
 
 | Component | Renders |
 |-----------|---------|
-| `PerformanceScoreBadge` | Purple sidebar score block + “X of Y tasks done” |
+| `PerformanceScoreBadge` | Purple sidebar score block + ?X of Y tasks done? |
 | `SidebarStreak` | Streak count at sidebar bottom |
 | `CoachRail` | Right panel: status, last messages (markdown), knowledge bullets |
-| `CoachKnowledgePanel` | “What your coach knows” — full page or compact rail variant |
-| `ChatMessage` | Single chat bubble — user plain text, assistant markdown |
+| `CoachKnowledgePanel` | ?What your coach knows? ? full page or compact rail variant |
+| `ChatMessage` | Single chat bubble ? user plain text, assistant markdown |
 | `MarkdownContent` | Shared ReactMarkdown with `.chat-markdown` styles |
 | `RadialProgressChart` | Success probability donut (min arc value, background ring) |
 | `SetupChecklist` | Nudge when no goals/deadline on Today's Plan |
@@ -674,7 +709,7 @@ Full list: browse [`src/app/api/`](src/app/api/)
 
 1. Link repo; set all env vars above  
 2. Run migrations on production Supabase through **041**  
-3. Add Vercel Cron (example — 2 AM UTC daily):
+3. Add Vercel Cron (example ? 2 AM UTC daily):
 
 ```json
 {
@@ -687,7 +722,7 @@ Full list: browse [`src/app/api/`](src/app/api/)
 
 Set `CRON_SECRET` and send `Authorization: Bearer <CRON_SECRET>` (handled by Vercel cron headers if configured).
 
-4. Verify: signup → onboarding → goal → plan generates → coach chat streams → rail shows memory bullets
+4. Verify: signup ? onboarding ? goal ? plan generates ? coach chat streams ? rail shows memory bullets
 
 ---
 
@@ -695,7 +730,7 @@ Set `CRON_SECRET` and send `Authorization: Bearer <CRON_SECRET>` (handled by Ver
 
 | Script | Purpose |
 |--------|---------|
-| [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039–042 applied |
+| [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039?042 applied |
 | [`supabase/scripts/diagnose-and-backfill-milestones.sql`](supabase/scripts/diagnose-and-backfill-milestones.sql) | Find goals missing milestones + stale plans |
 | [`supabase/scripts/verify-memory-storage.sql`](supabase/scripts/verify-memory-storage.sql) | Debug mentor memory writes |
 
@@ -720,12 +755,12 @@ npm test         # Vitest (unit tests in tests/)
 
 ## Scaling notes
 
-- **`/api/coach/snapshot`** serves from cached `UserContext` — split score-first + lazy knowledge if rail load grows  
-- **User model** refreshes on data changes + nightly cron; UI shows **"updating…"** when synthesis is >26h stale  
+- **`/api/coach/snapshot`** serves from cached `UserContext` ? split score-first + lazy knowledge if rail load grows  
+- **User model** refreshes on data changes + nightly cron; UI shows **"updating?"** when synthesis is >26h stale  
 - **Redis** optional in dev; required in prod for acceptable planner/rail latency  
 
 ---
 
 ## License
 
-Private — Yogeshwaran MenAI project.
+Private ? Yogeshwaran MenAI project.

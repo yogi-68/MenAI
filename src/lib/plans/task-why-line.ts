@@ -98,21 +98,18 @@ export function sanitizePlanTaskFields<T extends TaskWhyInput>(
   };
 }
 
-export function trimKnowledgeBullet(text: string, maxWords = 8, maxChars = 50): string {
+export function trimKnowledgeBullet(text: string, maxWords = 8): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  const trimmed = words.slice(0, maxWords).join(" ");
-  if (trimmed.length <= maxChars) return trimmed;
-  return `${trimmed.slice(0, maxChars - 1).trim()}…`;
+  return words.slice(0, maxWords).join(" ");
 }
 
 export function formatKnowledgeBulletsForRail(
   bullets: string[],
   maxItems = 4,
-  maxWords = 8,
-  maxChars = 50
+  maxWords = 8
 ): string[] {
   return bullets
-    .map((item) => trimKnowledgeBullet(item, maxWords, maxChars))
+    .map((item) => trimKnowledgeBullet(item, maxWords))
     .filter(Boolean)
     .slice(0, maxItems);
 }

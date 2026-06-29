@@ -15,6 +15,7 @@ import {
   getTotalQuestions,
   getQuestionNumber,
   isValidQuestionId,
+  ONBOARDING_STEP_LABELS,
   type OnboardingResponseMap,
 } from "@/lib/onboarding/questions";
 
@@ -53,6 +54,7 @@ export default function OnboardingPage() {
     sharpenPrompt: string;
     sharpenOptions: Array<{ value: string; label: string; resultTitle: string }>;
   } | null>(null);
+  const [sharpenConfirmed, setSharpenConfirmed] = useState(false);
 
   const [validatingGoal, setValidatingGoal] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
@@ -216,13 +218,14 @@ export default function OnboardingPage() {
         }
         if (validateData.needsSharpening) {
           setInitiativeWeak({
-            message: validateData.exampleTitle
-              ? `Try: "${validateData.exampleTitle}"`
-              : validateData.message || "Valid direction — let's make it concrete.",
-            sharpenPrompt: validateData.sharpenPrompt || "How are you planning to do this?",
+            message:
+              validateData.message ||
+              "Got it. Let's make this specific so MenAI can plan precisely.",
+            sharpenPrompt: validateData.sharpenPrompt || "What type of outcome are you building toward?",
             sharpenOptions: validateData.sharpenOptions || [],
           });
           setInitiativeBlocked(null);
+          setSharpenConfirmed(false);
           setError(null);
           return;
         }
@@ -230,6 +233,18 @@ export default function OnboardingPage() {
         setInitiativeWeak(null);
       } finally {
         setValidatingGoal(false);
+      }
+    }
+
+    if (question.id === "Q7" && response) {
+      const measurable =
+        /\d/.test(response) ||
+        /\b(launch|client|clients|kg|lb|users|revenue|beta|first|complete|finish|pass|ship|reach|get|lose|gain)\b/i.test(
+          response
+        );
+      if (!measurable) {
+        setError("Include a number or measurable outcome — e.g. 3 clients, 5 kg, launch beta");
+        return;
       }
     }
 
@@ -275,6 +290,7 @@ export default function OnboardingPage() {
     setOtherText("");
     setInitiativeBlocked(null);
     setInitiativeWeak(null);
+    setSharpenConfirmed(false);
     setCustomDate("");
     setError(null);
     setAskingFollowUp(false);
@@ -340,6 +356,30 @@ export default function OnboardingPage() {
             style={{ height: "100%", background: "var(--accent-primary)" }}
           />
         </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            padding: "10px 24px 0",
+            maxWidth: 640,
+            margin: "0 auto",
+          }}
+        >
+          {ONBOARDING_STEP_LABELS.map((label, i) => (
+            <span
+              key={label}
+              style={{
+                fontSize: "0.65rem",
+                fontWeight: i + 1 <= questionNumber ? 600 : 500,
+                color: i + 1 <= questionNumber ? "var(--accent-primary)" : "var(--text-muted)",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Main Content Area */}
@@ -380,13 +420,13 @@ export default function OnboardingPage() {
               <div style={{ marginTop: "8px" }}>
                 {initiativeWeak && currentQuestionId === "Q2" && (
                   <div style={{ marginBottom: 16 }}>
-                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                    <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.6, marginBottom: 12 }}>
                       {initiativeWeak.message}
                     </p>
-                    <p style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
+                    <p style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 12 }}>
                       {initiativeWeak.sharpenPrompt}
                     </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
                       {initiativeWeak.sharpenOptions.map((opt) => (
                         <button
                           key={opt.value}
@@ -396,6 +436,7 @@ export default function OnboardingPage() {
                           onClick={() => {
                             setTextInput(opt.resultTitle);
                             setInitiativeWeak(null);
+                            setSharpenConfirmed(true);
                             setError(null);
                           }}
                         >
@@ -403,6 +444,11 @@ export default function OnboardingPage() {
                         </button>
                       ))}
                     </div>
+                    {sharpenConfirmed && textInput.trim() && (
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
+                        Edit the title below if needed, then click Continue.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -564,7 +610,10 @@ export default function OnboardingPage() {
                       )}
 
                       {currentQuestionId === "Q4" && selectedOptions[0] && (
-                        <div
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.25 }}
                           style={{
                             display: "grid",
                             gridTemplateColumns: "1fr auto 1fr auto 1fr",
@@ -591,7 +640,7 @@ export default function OnboardingPage() {
                           <span style={{ textAlign: "center" }}>
                             {OBSTACLE_PREVIEW[selectedOptions[0]]?.taskType || "3 concrete tasks/day"}
                           </span>
-                        </div>
+                        </motion.div>
                       )}
 
                       {currentQuestion.allowOther && (

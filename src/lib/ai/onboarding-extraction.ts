@@ -27,7 +27,7 @@ const QUESTION_EXTRACTORS: Record<string, (response: string, responseData: any) 
   Q2STAGE: extractGoalStage,
   Q3: extractDeadlineFrame,
   Q4: extractObstaclePattern,
-  Q5: extractCoachingStyle,
+  Q5: extractAvailableHours,
   Q6: extractReflectionFrequency,
   Q7: extractSuccessCriteria,
 };
@@ -252,7 +252,33 @@ async function extractBusinessBuilding(
   };
 }
 
-/** Q5: coaching style preference */
+/** Q5: weekly available hours */
+async function extractAvailableHours(
+  _response: string,
+  responseData: { selected?: string }
+): Promise<ExtractionResult> {
+  const selected = responseData?.selected;
+  if (!selected) return {};
+  const labels: Record<string, string> = {
+    "1-5": "1–5 hours per week",
+    "5-10": "5–10 hours per week",
+    "10-20": "10–20 hours per week",
+    "20+": "20+ hours per week",
+  };
+  const label = labels[selected] || selected;
+  return {
+    identitySignals: [
+      {
+        type: "available_hours",
+        description: label,
+        longTermDirection: "",
+        confidence: 0.9,
+      },
+    ],
+  };
+}
+
+/** Legacy Q5: coaching style preference */
 async function extractCoachingStyle(
   _response: string,
   responseData: { selected?: string }
