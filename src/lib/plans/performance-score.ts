@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
+import { fetchTodayTaskStats, todayPlanScorePercent } from "@/lib/plans/today-task-stats";
 
 export const TASKS_PER_GOAL = 3;
 
@@ -48,7 +49,7 @@ export async function computePerformanceScore(
   const today = dateStr(referenceDate);
   const since30 = dateStr(daysAgo(30));
 
-  const [goals, tasksRes, snapshotsRes] = await Promise.all([
+  const [goals, tasksRes, snapshotsRes, todayStats] = await Promise.all([
     fetchActiveExecutionGoals(supabase, userId, 50),
     supabase
       .from("tasks")
@@ -63,6 +64,7 @@ export async function computePerformanceScore(
       .eq("user_id", userId)
       .gte("snapshot_date", since30)
       .lte("snapshot_date", today),
+    fetchTodayTaskStats(supabase, userId),
   ]);
 
   const tasks = tasksRes.data || [];
@@ -110,10 +112,7 @@ export async function computePerformanceScore(
     };
   });
 
-  const daily =
-    dailyGoalScores.length > 0
-      ? Math.round(dailyGoalScores.reduce((s, g) => s + g.score, 0) / dailyGoalScores.length)
-      : 0;
+  const daily = todayPlanScorePercent(todayStats);
 
   const dailyScores: number[] = [];
   const trend: Array<{ date: string; score: number }> = [];

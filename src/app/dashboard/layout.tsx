@@ -20,11 +20,12 @@ import { ClaySidebarLink, PageTransition } from "@/components/ui";
 import { PerformanceScoreBadge } from "@/components/dashboard/performance-score-badge";
 import { SidebarStreak } from "@/components/dashboard/sidebar-streak";
 import { CoachRail } from "@/components/chat/coach-rail";
+import { CoachMobileFab } from "@/components/chat/coach-mobile-fab";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
-  { href: "/dashboard/chat", icon: MessageSquare, label: "Coach" },
+  { href: "/dashboard/chat", icon: MessageSquare, label: "Coach", desktopOnly: true },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
@@ -39,11 +40,21 @@ export default function DashboardLayout({
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
   const userLoadedRef = useRef(false);
-  const isFullCoachPage = pathname.startsWith("/dashboard/chat");
+  const isFullCoachPage = pathname.startsWith("/dashboard/chat") && !pathname.startsWith("/dashboard/chat/embed");
+  const isEmbedChat = pathname.startsWith("/dashboard/chat/embed");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     if (userLoadedRef.current) return;
@@ -96,6 +107,12 @@ export default function DashboardLayout({
     return () => document.body.classList.remove("dashboard-nav-open");
   }, [mobileMenuOpen]);
 
+  if (isEmbedChat) {
+    return <div className="coach-embed-shell">{children}</div>;
+  }
+
+  const visibleNav = primaryNav.filter((item) => !(isMobile && item.desktopOnly));
+
   return (
     <div className="dashboard-shell">
       <aside className={`sidebar ${mobileMenuOpen ? "open" : ""}`}>
@@ -126,7 +143,7 @@ export default function DashboardLayout({
         <PerformanceScoreBadge />
 
         <nav style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-          {primaryNav.map((item) => {
+          {visibleNav.map((item) => {
             const isActive =
               pathname === item.href ||
               (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -236,6 +253,8 @@ export default function DashboardLayout({
       </main>
 
       {!isFullCoachPage && <CoachRail />}
+
+      {isMobile && !isFullCoachPage && <CoachMobileFab />}
 
       {mobileMenuOpen && (
         <button

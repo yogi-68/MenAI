@@ -273,7 +273,8 @@ CRITICAL RULE: Include a "confidence" field (0.0 to 1.0) on each extracted item.
 
 Return ONLY valid JSON:
 {
-  "goals": [{"title": "...", "category": "startup|fitness|financial|relationship|learning|identity|health|career|other", "priority": "low|medium|high|critical", "description": "...", "confidence": 0.9}],
+  "goals": [{"title": "...", "category": "startup|fitness|financial|relationship|learning|identity|health|career|other", "priority": "low|medium|high|critical", "description": "...", "targetDate": "YYYY-MM-DD or relative e.g. 85 days", "confidence": 0.9}],
+  "completedTasks": [{"title": "exact or partial task title the user finished", "confidence": 0.9}],
   "commitments": [{"description": "...", "category": "health|work|relationships|personal|other", "timeframe": "today|this_week|ongoing", "confidence": 0.9}],
   "identitySignals": [{"type": "founder|creator|self-discipline|leadership|other", "description": "...", "longTermDirection": "...", "confidence": 0.9}],
   "executionPatterns": [{"pattern": "burnout|procrastination|avoidance|perfectionism|scattered_focus|inconsistency|overthinking", "trigger": "...", "frequency": "rare|occasional|frequent|constant", "severity": "low|medium|high", "behavioralImpact": "...", "confidence": 0.9}],
@@ -290,6 +291,16 @@ Extraction Rules:
 1. GOALS — long-term DIRECTION only (identity / lifetime outcomes). NOT active work.
    Examples: "Achieve financial freedom", "Build wealth", "Get healthier overall"
    Do NOT put active projects here (e.g. "Build AI SaaS" → project/initiative, not goal)
+
+   DEADLINE UPDATES on existing goals — extract as goal with matching title + targetDate:
+   - "Add a deadline to Build a business is 85 days" → {title: "Build a business", targetDate: "85 days", confidence: 0.95}
+   - "My fitness goal deadline is June 30" → {title: "<match user's fitness goal title>", targetDate: "2026-06-30", confidence: 0.92}
+   Use targetDate for ANY explicit deadline, relative duration ("90 days"), or calendar date.
+
+10. COMPLETED TASKS — user reports finishing a specific task from their plan.
+   - "I finished writing my success metric" → {title: "writing my success metric", confidence: 0.92}
+   - "Done with the outreach emails" → {title: "outreach emails", confidence: 0.90}
+   Only extract when user clearly states they completed something actionable (not vague "had a good day").
 
 2. PROJECTS — initiatives the user is actively working on OR exploring.
    COMMITTED (status: active, confidence 0.88+):

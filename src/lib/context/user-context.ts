@@ -258,7 +258,7 @@ export function formatUserContextForPlanner(context: UserContext): string {
     memoryLines.length > 0
       ? `Recent memories (use in task titles and whyItMatters): ${memoryLines.join(" | ")}`
       : "",
-    `Today's score: ${context.scoreToday}`,
+    `Today's plan: ${context.scoreToday}%`,
     `Active goals: ${context.activeGoals.map((g) => g.title).join(", ") || "none"}`,
   ].filter(Boolean);
   return lines.join("\n");

@@ -29,6 +29,8 @@ import { validateResponse } from "./response-validator";
 import { validateResponseStyle } from "./style-validator";
 import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
+import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import { buildRhythmContext, formatRhythmBlockForPrompt } from "@/lib/plans/rhythm-phase";
@@ -47,6 +49,89 @@ import { buildCognitiveState } from "./cognition-engine";
 import { getUserModel } from "@/lib/user-model/loader";
 import type { OrchestratorInput, OrchestratorOutput, PipelineContext, UserProfile, EmotionAnalysis } from "./types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+const EMPTY_EXTRACTION_FALLBACK: import("./types").ExtractedLifeData = {
+  goals: [],
+  commitments: [],
+  relationships: [],
+  habits: [],
+  emotions: [],
+  projects: [],
+  opportunities: [],
+  blockers: [],
+  identitySignals: [],
+  executionPatterns: [],
+  completedTasks: [],
+};
+
+async function handleExtractedDataPersistence(
+  input: OrchestratorInput,
+  data: Awaited<ReturnType<typeof extractLifeData>>,
+  conversationId: string,
+  serviceClient: SupabaseClient
+): Promise<void> {
+  if (!hasExtractedData(data)) return;
+
+  try {
+    await persistExtractedData(input.userId, data, conversationId, serviceClient);
+    console.log("[Extraction] Persisted data");
+
+    invalidateUserCache(input.userId, "extraction complete");
+    scheduleUserModelRefresh(serviceClient, input.userId);
+
+    const today = new Date().toISOString().split("T")[0];
+    Promise.resolve(
+      serviceClient.from("daily_plans").delete().eq("user_id", input.userId).eq("plan_date", today)
+    ).catch(() => {});
+
+    if (data.goals.length > 0) {
+      const { fetchAndComputeGoalConfidence } = await import("@/lib/plans/goal-confidence");
+      const { data: extractedGoalRows } = await serviceClient
+        .from("goals")
+        .select("id, target_date, success_criteria, title")
+        .eq("user_id", input.userId)
+        .eq("status", "active")
+        .limit(12);
+      if (extractedGoalRows?.length) {
+        for (const goal of data.goals) {
+          const hint = goal.title.toLowerCase();
+          const row =
+            extractedGoalRows.find((g) => g.title.toLowerCase() === hint) ??
+            extractedGoalRows.find(
+              (g) =>
+                g.title.toLowerCase().includes(hint) || hint.includes(g.title.toLowerCase())
+            );
+          if (row) {
+            fetchAndComputeGoalConfidence(serviceClient, input.userId, row.id, {
+              target_date: row.target_date,
+              success_criteria: row.success_criteria,
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Extraction] Persistence failed:", err);
+  }
+
+  const extractionSummary = buildExtractionSummary(data);
+  if (extractionSummary) {
+    storeMemory({
+      userId: input.userId,
+      content: extractionSummary,
+      memoryType: data.goals.length > 0 ? "goal" : data.completedTasks.length > 0 ? "commitment" : "commitment",
+      importance: 0.85,
+      metadata: { conversation_id: conversationId, type: "extraction" },
+    }).catch(() => {});
+  }
+
+  evaluatePredictions({
+    userId: input.userId,
+    extractedData: data,
+    conversationId,
+    serviceClient,
+  }).catch(() => {});
+}
 
 async function resolveConversationId(
   serviceClient: SupabaseClient,
@@ -423,7 +508,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
   // These all run AFTER the response is returned to the user.
 
   // Extract life data from message (moved from fast path to background)
-  const extractedData = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));
+  const extractedData = extractLifeData(input.message).catch(() => ({ ...EMPTY_EXTRACTION_FALLBACK }));
 
   // Store memory
   storeMemory({
@@ -438,31 +523,7 @@ async function _orchestrateInternal(input: OrchestratorInput): Promise<Orchestra
 
   // Persist extracted life data (after extraction completes)
   extractedData.then((data) => {
-    if (hasExtractedData(data)) {
-      persistExtractedData(input.userId, data, conversationId, serviceClient).then(() => {
-        // After successful persistence, we no longer need to invalidate old snapshot
-        console.log("[Extraction] Successfully persisted data");
-      }).catch(() => {});
-      
-      const extractionSummary = buildExtractionSummary(data);
-      if (extractionSummary) {
-        storeMemory({
-          userId: input.userId,
-          content: extractionSummary,
-          memoryType: data.goals.length > 0 ? "goal" : "commitment",
-          importance: 0.85,
-          metadata: { conversation_id: conversationId, type: "extraction" },
-        }).catch(() => { /* non-critical */ });
-      }
-      
-      // Evaluate predictions in background
-      evaluatePredictions({
-        userId: input.userId,
-        extractedData: data,
-        conversationId,
-        serviceClient,
-      }).catch(() => {});
-    }
+    handleExtractedDataPersistence(input, data, conversationId, serviceClient).catch(() => {});
   }).catch(() => {});
 
   // Summarize after every 20 messages
@@ -537,6 +598,9 @@ function buildExtractionSummary(data: import("./types").ExtractedLifeData): stri
   }
   if (data.blockers.length > 0) {
     parts.push(`Blockers identified: ${data.blockers.join(", ")}`);
+  }
+  if (data.completedTasks.length > 0) {
+    parts.push(`Tasks completed: ${data.completedTasks.map((t) => t.title).join(", ")}`);
   }
   return parts.join(". ");
 }
@@ -920,64 +984,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         // Mentor signals already ingested before prompt build
 
         // Extract and persist life data — awaited so downstream cache+plan invalidation runs reliably
-        const bgExtraction = extractLifeData(input.message).catch(() => ({ goals: [], commitments: [], relationships: [], habits: [], emotions: [], projects: [], opportunities: [], blockers: [], identitySignals: [], executionPatterns: [] }));
-        bgExtraction.then(async (data) => {
-          if (!hasExtractedData(data)) return;
-
-          try {
-            await persistExtractedData(input.userId, data, conversationId, serviceClient);
-            console.log("[Extraction] Persisted data (streaming)");
-
-            // Step 2: Invalidate user cache immediately
-            const { invalidateUserCache: bustCache } = await import("@/lib/ai/orchestrator/cache-invalidation");
-            bustCache(input.userId, "extraction complete");
-
-            // Step 3: Delete today's daily_plan so plan regenerates on next open
-            const today = new Date().toISOString().split("T")[0];
-            Promise.resolve(
-              serviceClient.from("daily_plans").delete().eq("user_id", input.userId).eq("plan_date", today)
-            ).catch(() => {});
-
-            // Step 4: Recompute confidence for any extracted goals (fire-and-forget)
-            if (data.goals.length > 0) {
-              const { fetchAndComputeGoalConfidence } = await import("@/lib/plans/goal-confidence");
-              const { data: extractedGoalRows } = await serviceClient
-                .from("goals")
-                .select("id, target_date, success_criteria")
-                .eq("user_id", input.userId)
-                .in("title", data.goals.map((g) => g.title))
-                .limit(5);
-              if (extractedGoalRows?.length) {
-                for (const goalRow of extractedGoalRows) {
-                  fetchAndComputeGoalConfidence(serviceClient, input.userId, goalRow.id, {
-                    target_date: goalRow.target_date,
-                    success_criteria: goalRow.success_criteria,
-                  }).catch(() => {});
-                }
-              }
-            }
-          } catch (err) {
-            console.error("[Extraction] Persistence failed:", err);
-          }
-
-          const extractionSummary = buildExtractionSummary(data);
-          if (extractionSummary) {
-            storeMemory({
-              userId: input.userId,
-              content: extractionSummary,
-              memoryType: data.goals.length > 0 ? "goal" : "commitment",
-              importance: 0.85,
-              metadata: { conversation_id: conversationId, type: "extraction" },
-            }).catch(() => {});
-          }
-
-          // Evaluate predictions in background
-          evaluatePredictions({
-            userId: input.userId,
-            extractedData: data,
-            conversationId,
-            serviceClient,
-          }).catch(() => {});
+        const bgExtraction = extractLifeData(input.message).catch(() => ({ ...EMPTY_EXTRACTION_FALLBACK }));
+        bgExtraction.then((data) => {
+          handleExtractedDataPersistence(input, data, conversationId, serviceClient).catch(() => {});
         }).catch(() => {});
 
         if (conversationHistory.length > 0 && conversationHistory.length % 20 === 0) {

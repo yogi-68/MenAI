@@ -671,6 +671,113 @@ html:not(.dark) .border-hairline {
   }
 }
 
+/* ===== Mobile coach FAB + sheet ===== */
+.coach-mobile-fab {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .coach-mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 20px;
+    bottom: 24px;
+    z-index: 60;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 0.5px solid rgba(124, 111, 255, 0.35);
+    background: rgba(124, 111, 255, 0.18);
+    color: var(--accent-primary);
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+
+  .coach-mobile-fab__dot {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-warning);
+    border: 2px solid #141416;
+  }
+
+  .coach-mobile-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: rgba(0, 0, 0, 0.55);
+    border: none;
+    cursor: pointer;
+  }
+
+  .coach-mobile-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    height: min(92vh, 720px);
+    background: var(--bg-primary);
+    border-radius: 16px 16px 0 0;
+    border: 0.5px solid rgba(255, 255, 255, 0.08);
+    border-bottom: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .coach-mobile-sheet__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+  }
+
+  .coach-mobile-sheet__close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+  }
+
+  .coach-mobile-sheet__frame {
+    flex: 1;
+    width: 100%;
+    border: none;
+    background: var(--bg-primary);
+  }
+}
+
+.coach-embed-shell {
+  height: 100%;
+  min-height: 100%;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.coach-embed-shell .chat-sidebar-toggle {
+  display: none;
+}
+
+.coach-embed-shell .chat-layout {
+  height: 100%;
+  min-height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost-radial-ring {
+    animation: none !important;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard-shell {
     flex-direction: column;

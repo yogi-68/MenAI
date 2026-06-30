@@ -52,18 +52,18 @@ const features = [
     title: "Initiatives, not wishlists",
     description:
       "Define what you're building — career moves, health systems, revenue targets. MenAI tracks active initiatives and keeps them in focus every day.",
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.08)",
-    border: "rgba(59,130,246,0.15)",
+    color: "#7c6fff",
+    bg: "rgba(124,111,255,0.08)",
+    border: "rgba(124,111,255,0.15)",
   },
   {
     icon: Calendar,
     title: "Daily execution plans",
     description:
       "AI-generated daily plans grounded in your initiatives and context. Three tasks that matter, not twenty that don't. Adjusted every morning.",
-    color: "#8b5cf6",
-    bg: "rgba(139,92,246,0.08)",
-    border: "rgba(139,92,246,0.15)",
+    color: "#a78bfa",
+    bg: "rgba(124,111,255,0.1)",
+    border: "rgba(124,111,255,0.2)",
   },
   {
     icon: MessageSquare,
@@ -83,9 +83,9 @@ const steps = [
     title: "Set your initiatives",
     desc: "Define what you're executing toward — not vague goals, but specific outcomes with timelines and success criteria.",
     tags: ["Career moves", "Health systems", "Revenue targets"],
-    color: "#3b82f6",
-    bg: "rgba(59,130,246,0.08)",
-    border: "rgba(59,130,246,0.15)",
+    color: "#7c6fff",
+    bg: "rgba(124,111,255,0.08)",
+    border: "rgba(124,111,255,0.15)",
   },
   {
     num: "02",
@@ -93,9 +93,9 @@ const steps = [
     title: "Get your daily plan",
     desc: "Every morning, MenAI generates a grounded daily plan from your initiatives, energy levels, and yesterday's context.",
     tags: ["3 focused tasks", "Context-aware", "Auto-adjusted"],
-    color: "#8b5cf6",
-    bg: "rgba(139,92,246,0.08)",
-    border: "rgba(139,92,246,0.15)",
+    color: "#a78bfa",
+    bg: "rgba(124,111,255,0.1)",
+    border: "rgba(124,111,255,0.2)",
   },
   {
     num: "03",
@@ -236,8 +236,8 @@ export default function LandingPage() {
       <section style={{ paddingTop: 112, paddingBottom: 80, paddingLeft: "clamp(16px,4vw,32px)", paddingRight: "clamp(16px,4vw,32px)", position: "relative", overflow: "hidden" }}>
         {/* Background glow */}
         <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: "-30%", left: "50%", transform: "translateX(-50%)", width: 900, height: 600, background: "rgba(59,130,246,0.05)", borderRadius: "50%", filter: "blur(120px)" }} />
-          <div style={{ position: "absolute", top: "10%", right: "-5%", width: 400, height: 400, background: "rgba(139,92,246,0.04)", borderRadius: "50%", filter: "blur(100px)" }} />
+          <div style={{ position: "absolute", top: "-30%", left: "50%", transform: "translateX(-50%)", width: 900, height: 600, background: "rgba(124,111,255,0.06)", borderRadius: "50%", filter: "blur(120px)" }} />
+          <div style={{ position: "absolute", top: "10%", right: "-5%", width: 400, height: 400, background: "rgba(124,111,255,0.05)", borderRadius: "50%", filter: "blur(100px)" }} />
         </div>
 
         <div style={{ maxWidth: 1280, margin: "0 auto", position: "relative" }}>
@@ -245,7 +245,7 @@ export default function LandingPage() {
             {/* Left */}
             <div>
               <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0} style={{ marginBottom: 28 }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 16px", borderRadius: 9999, background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)", fontSize: "0.8rem", color: "#60a5fa", fontWeight: 600 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 16px", borderRadius: 9999, background: "rgba(124,111,255,0.1)", border: "1px solid rgba(124,111,255,0.25)", fontSize: "0.8rem", color: "#a78bfa", fontWeight: 600 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", animation: "pulse 2s infinite" }} />
                   Beta open — early access, free forever
                 </div>
@@ -254,7 +254,7 @@ export default function LandingPage() {
               <motion.h1 variants={fadeUp} initial="hidden" animate="visible" custom={1}
                 style={{ fontSize: "clamp(2.4rem,5.5vw,4.2rem)", fontWeight: 900, lineHeight: 1.06, letterSpacing: "-0.04em", marginBottom: 24 }}>
                 Turn intentions into{" "}
-                <span style={{ background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                <span style={{ background: "linear-gradient(135deg,#7c6fff,#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
                   daily execution
                 </span>
               </motion.h1>
@@ -382,7 +382,7 @@ export default function LandingPage() {
       <section id="features" style={{ padding: "96px clamp(16px,4vw,32px)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto" }}>
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.5 }} style={{ textAlign: "center", marginBottom: 56 }}>
-            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#3b82f6" }}>Features</div>
+            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#7c6fff" }}>Features</div>
             <h2 style={{ fontSize: "clamp(1.75rem,3.5vw,2.75rem)", fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.12, marginBottom: 14 }}>
               Built on intelligent<br />foundations
             </h2>
@@ -413,7 +413,7 @@ export default function LandingPage() {
       <section id="how-it-works" style={{ padding: "96px clamp(16px,4vw,32px)", borderTop: "1px solid var(--border-color)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto" }}>
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.5 }} style={{ textAlign: "center", marginBottom: 60 }}>
-            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#3b82f6" }}>How it works</div>
+            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#7c6fff" }}>How it works</div>
             <h2 style={{ fontSize: "clamp(1.75rem,3.5vw,2.75rem)", fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.12, marginBottom: 14 }}>
               Three steps to your<br />execution system
             </h2>
@@ -471,7 +471,7 @@ export default function LandingPage() {
       <section id="pricing" style={{ padding: "96px clamp(16px,4vw,32px)", borderTop: "1px solid var(--border-color)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 48 }}>
-            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8b5cf6" }}>Pricing</div>
+            <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#a78bfa" }}>Pricing</div>
             <h2 style={{ fontSize: "clamp(1.75rem,3.5vw,2.5rem)", fontWeight: 800, letterSpacing: "-0.03em" }}>Simple tiers. No surprises.</h2>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 16 }}>
@@ -508,8 +508,8 @@ export default function LandingPage() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }}>
             <div style={{ maxWidth: 660, margin: "0 auto", textAlign: "center", padding: "52px clamp(24px,6vw,56px)", borderRadius: 32, border: "1px solid rgba(59,130,246,0.15)", background: "var(--bg-card)", backdropFilter: "blur(20px)", position: "relative", overflow: "hidden" }}>
               {/* gradient top bar */}
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg,#3b82f6,#8b5cf6,rgba(59,130,246,0.4))", borderRadius: "32px 32px 0 0" }} />
-              <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#3b82f6" }}>Get Started</div>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg,#7c6fff,#a78bfa,rgba(124,111,255,0.4))", borderRadius: "32px 32px 0 0" }} />
+              <div style={{ display: "inline-block", marginBottom: 14, fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#7c6fff" }}>Get Started</div>
               <h2 style={{ fontSize: "clamp(1.75rem,3.5vw,2.25rem)", fontWeight: 900, letterSpacing: "-0.035em", lineHeight: 1.12, marginBottom: 14 }}>
                 Stop planning.<br />Start executing.
               </h2>

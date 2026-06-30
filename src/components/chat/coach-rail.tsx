@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { motion, useReducedMotion } from "framer-motion";
 import { CoachKnowledgePanel } from "@/components/chat/coach-knowledge-panel";
 import { Sparkles } from "lucide-react";
 
@@ -18,6 +19,8 @@ interface CoachSnapshot {
   knows?: string[];
   dailyNote: string | null;
   precisionCTA: PrecisionCTA | null;
+  hasActiveGoals?: boolean;
+  hasConversations?: boolean;
 }
 
 const FACTOR_LABELS: Record<string, string> = {
@@ -28,6 +31,7 @@ const FACTOR_LABELS: Record<string, string> = {
 };
 
 export function CoachRail() {
+  const reduced = useReducedMotion();
   const { data, isLoading } = useQuery({
     queryKey: ["coach-snapshot"],
     queryFn: async () => {
@@ -40,6 +44,12 @@ export function CoachRail() {
   });
 
   const statusLabel = isLoading ? "Loading…" : data?.statusLabel ?? "Score —";
+  const showKnowledge =
+    !isLoading && (data?.hasActiveGoals || (data?.knows?.length ?? 0) > 0);
+
+  const noteMotion = reduced
+    ? {}
+    : { initial: { opacity: 0, x: 8 }, animate: { opacity: 1, x: 0 }, transition: { duration: 0.2 } };
 
   return (
     <aside className="coach-rail" aria-label="Coach panel">
@@ -69,7 +79,8 @@ export function CoachRail() {
           <>
             {/* Section 1 — Today's coaching note */}
             {data?.dailyNote ? (
-              <div
+              <motion.div
+                {...noteMotion}
                 style={{
                   borderLeft: "2px solid var(--accent-primary)",
                   paddingLeft: 10,
@@ -83,11 +94,11 @@ export function CoachRail() {
                 <p className="text-xs m-0" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
                   {data.dailyNote}
                 </p>
-              </div>
+              </motion.div>
             ) : null}
 
-            {/* Section 2 — Plan precision CTA */}
             {data?.precisionCTA ? (
+              <motion.div {...noteMotion}>
               <Link
                 href={`/dashboard/chat?intent=improve_confidence&goalId=${data.precisionCTA.goalId}`}
                 className="no-underline"
@@ -115,10 +126,11 @@ export function CoachRail() {
                   </p>
                 </div>
               </Link>
+              </motion.div>
             ) : null}
 
-            {/* Section 3 — fallback only when snapshot has no note and no goals */}
-            {!data?.dailyNote && !data?.precisionCTA && (
+            {/* Section 3 — onboarding hint only when user has no active goals */}
+            {!data?.hasActiveGoals && !data?.dailyNote && !data?.precisionCTA && (
               <div
                 style={{
                   borderLeft: "2px solid var(--accent-primary)",
@@ -133,13 +145,33 @@ export function CoachRail() {
                 </p>
               </div>
             )}
+
+            {data?.hasActiveGoals && !data?.dailyNote && !data?.precisionCTA && (
+              <div
+                style={{
+                  borderLeft: "2px solid var(--accent-primary)",
+                  paddingLeft: 10,
+                }}
+              >
+                <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>
+                  Today
+                </p>
+                <p className="text-xs m-0" style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  {data.hasConversations
+                    ? "Your coach note refreshes as you execute — complete today's first task."
+                    : "Open chat and tell your coach what's blocking you — they'll remember it here."}
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>
 
       {/* Footer — 4 knowledge bullets max */}
       <div className="coach-rail__footer">
-        <CoachKnowledgePanel variant="rail" bullets={data?.knows?.slice(0, 4)} />
+        {showKnowledge ? (
+          <CoachKnowledgePanel variant="rail" bullets={data?.knows?.slice(0, 4)} />
+        ) : null}
       </div>
     </aside>
   );

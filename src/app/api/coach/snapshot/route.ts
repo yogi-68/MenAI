@@ -15,7 +15,7 @@ export async function GET() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const [userContext, planAndProfile] = await Promise.all([
+  const [userContext, planAndProfile, conversationsRes] = await Promise.all([
     getUserContext(supabase, user.id),
     Promise.all([
       supabase
@@ -39,6 +39,10 @@ export async function GET() {
         .eq("id", user.id)
         .maybeSingle(),
     ]),
+    supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id),
   ]);
 
   const [todayPlan, dailyNoteRes, profileRes] = planAndProfile;
@@ -91,12 +95,14 @@ export async function GET() {
   return NextResponse.json({
     score: userContext.scoreToday,
     phase,
-    statusLabel: `Score ${userContext.scoreToday} · ${phase}`,
+    statusLabel: `Plan ${userContext.scoreToday}% · ${phase}`,
     tasksCompletedToday: completed,
     tasksDueToday: expected,
     knows: userContext.knowledgeBullets,
     lastAchievement: userContext.lastAchievement,
     dailyNote: resolvedDailyNote,
     precisionCTA,
+    hasActiveGoals: userContext.activeGoals.length > 0,
+    hasConversations: (conversationsRes.count ?? 0) > 0,
   });
 }

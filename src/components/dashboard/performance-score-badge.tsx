@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ScoreSparkline } from "@/components/charts/score-sparkline";
+import { AnimatedScore } from "@/components/ui/animated-score";
 
 interface PerformanceSummary {
   summary: {
@@ -46,10 +47,14 @@ export function PerformanceScoreBadge({ compact = false }: PerformanceScoreBadge
       aria-label="Performance score — open overview"
       className={compact ? "score-hero score-hero--compact" : "score-hero"}
     >
-      {!compact && <div className="score-hero__label">Today&apos;s score</div>}
-      <div className="score-hero__value font-data" data-numeric>
-        {isLoading ? "—" : daily}
-      </div>
+      {!compact && <div className="score-hero__label">Today&apos;s plan</div>}
+      {isLoading ? (
+        <div className="score-hero__value font-data" data-numeric>
+          —
+        </div>
+      ) : (
+        <AnimatedScore value={daily} className="score-hero__value font-data" />
+      )}
       {!compact && (
         <>
           <div className="score-hero__subtitle">

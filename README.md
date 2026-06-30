@@ -24,7 +24,9 @@ MenAI is an **execution OS for ambitious people**: a dark, Linear-style dashboar
 
 **Stack:** Next.js 16 ? Supabase ? OpenAI ? Upstash Redis ? Recharts ? Vercel  
 **Design:** `#0f0f11` shell ? `#7c6fff` accent ? **Syne** (display headings) ? **Plus Jakarta Sans** (UI body) ? **JetBrains Mono** (numeric score only)  
-**Layout:** 3 columns ? sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile)
+**Layout:** 3 columns ? sidebar (score + nav) | main content | Coach rail (hidden on `/dashboard/chat` and on mobile). **Mobile (?768px):** coach opens via **FAB + bottom sheet** (`/dashboard/chat/embed`); Coach is removed from sidebar nav.
+
+**Design system:** Locked tokens documented in [`design-system/MASTER.md`](design-system/MASTER.md).
 
 ---
 
@@ -36,19 +38,22 @@ MenAI is an **execution OS for ambitious people**: a dark, Linear-style dashboar
 4. [Onboarding flow (step-by-step)](#onboarding-flow-step-by-step)
 5. [User journey after onboarding](#user-journey-after-onboarding)
 6. [Architecture & data flow](#architecture--data-flow)
-7. [Typography & spacing](#typography--spacing)
-8. [Project structure](#project-structure)
-9. [Feature map](#feature-map)
-10. [Product rules](#product-rules)
-11. [How AI is used](#how-ai-is-used)
-12. [Database reference](#database-reference)
-13. [API routes](#api-routes)
-14. [Key modules (`src/lib`)](#key-modules-srclib)
-15. [UI components (`src/components`)](#ui-components-srccomponents)
-16. [Deploy (Vercel)](#deploy-vercel)
-17. [Scripts & verification](#scripts--verification)
-18. [Testing](#testing)
-19. [Scaling notes](#scaling-notes)
+7. [Design system](#design-system)
+8. [Typography & spacing](#typography--spacing)
+9. [Project structure](#project-structure)
+10. [Feature map](#feature-map)
+11. [Product rules](#product-rules)
+12. [How AI is used](#how-ai-is-used)
+13. [Database reference](#database-reference)
+14. [API routes](#api-routes)
+15. [Key modules (`src/lib`)](#key-modules-srclib)
+16. [UI components (`src/components`)](#ui-components-srccomponents)
+17. [Deploy (Vercel)](#deploy-vercel)
+18. [Scripts & verification](#scripts--verification)
+19. [Manual verification checklist](#manual-verification-checklist)
+20. [Supabase audit (MenAI prod)](#supabase-audit-menai-prod)
+21. [Testing](#testing)
+22. [Scaling notes](#scaling-notes)
 
 ---
 
@@ -240,12 +245,24 @@ interface UserContext {
 | Reflection | Reflection days logged / 7 |
 | Hero score | Average of the three pillars |
 
+**Two different numbers (by design):**
+
+| UI location | Metric | Source |
+|-------------|--------|--------|
+| Sidebar badge + coach rail | **Today's plan** ? tasks completed ? tasks due today | [`today-task-stats.ts`](src/lib/plans/today-task-stats.ts) ? `todayPlanScorePercent()` via [`performance-score.ts`](src/lib/plans/performance-score.ts) `daily` |
+| Overview hero | **Execution score** ? average of Planning + Execution + Reflection pillars (7d weighted) | [`execution-pillars.ts`](src/lib/analytics/execution-pillars.ts) |
+
+These should **not** match unless your pillar math happens to equal today's checkbox ratio. Labels say "Today's plan" (sidebar) vs execution score (Overview hero).
+
 ### Cache invalidation sites
 
 | Event | File |
 |---|---|
 | Task completed / created | `src/app/api/tasks/route.ts` |
-| Goal / milestone changed | `src/app/api/milestones/route.ts` |
+| Goal / milestone changed | `src/app/api/milestones/route.ts`, `src/app/api/goals/route.ts` |
+| Chat extraction (deadline, task done, identity) | `src/lib/ai/orchestrator/index.ts` ? `handleExtractedDataPersistence()` |
+| Deadline via extraction | `src/lib/ai/orchestrator/extraction-engine.ts` ? `persistExtractedData()` |
+| Confidence Q&A answer | `src/app/api/confidence/answer/route.ts` |
 | Mentor memory written | `src/lib/mentor/mentor-memory.ts` ? `persistMentorMemories()` |
 | User model synthesized | `src/lib/user-model/synthesis-engine.ts` ? after synthesis write |
 | Daily plan generated | `src/lib/plans/daily-plan-generator.ts` ? after `insertPlan()` |
@@ -287,10 +304,16 @@ Client parses sentinel:
   If cq != null: injects ConfidenceQuestionCard (1/session)
 
 Background (finally, after stream):
-  await persistExtractedData()   ? writes deadline/goal/obstacle to DB
-  invalidateUserCache()          ? bust Redis 15m cache immediately
-  delete daily_plans today row   ? force plan regeneration on next open
-  recomputeGoalConfidence()      ? update precision score
+  handleExtractedDataPersistence()
+    extractLifeData() ? fast paths: deadline ("85 days"), task completion ("I finished?")
+    persistExtractedData() ? fuzzy goal match, writes target_date, marks tasks completed
+    invalidateUserCache() ? bust Redis 15m cache
+    scheduleUserModelRefresh() ? re-synthesize profiles.user_model (knowledge bullets)
+    delete daily_plans today row ? force plan regeneration on next open
+    recomputeGoalConfidence() ? update precision score
+
+Client after stream closes:
+  invalidateQueries: coach-snapshot, analytics-dashboard, performance-daily, user-model-coach, today-tasks
 `
 
 ### Plan generation pipeline
@@ -325,15 +348,55 @@ Rule-based 0?100, no LLM. Factors: Deadline (20), Obstacle (20), Success criteri
 
 **Confidence Q&A:** Auto-injected as ConfidenceQuestionCard (max 1/session) when score < 60. User clicks a pill ? POST /api/confidence/answer writes to correct table, recomputes, returns next factor. Cards chain automatically.
 
-### Coach rail (3 sections, no truncated synthesis)
+### Coach rail (3 sections, goal-aware empty states)
 
-1. **Today's coaching note** ? plan calibration, daily memory, or **Day-1 note from onboarding goal** (useful from minute one)
+1. **Today's coaching note** ? plan calibration, daily memory, or Day-1 fallback from primary goal
 2. **Plan precision CTA** ? lowest-confidence goal + action link (shown when score < 70)
-3. **What your coach knows** ? max 4 bullets, max 8 words each; **updating?** pill when stale
+3. **What your coach knows** ? max 4 bullets, max 8 words each; **updating?** pill when stale; hidden until user has active goals or synthesized bullets
 
-### Shipped UI fixes
+Snapshot API returns `hasActiveGoals` and `hasConversations` so onboarding copy never shows after goals exist.
 
-Dark mode default, score badge spacing, task card metadata stripped, goal card hierarchy, radial chart empty state, rhythm empty-state copy, coach rail redesigned to 3 action-oriented sections, chat virtualizer `measureElement` for correct row heights, `__DONE__` sentinel for server message ID (prevents disappearing messages), task checkbox resolved by ID not fragile title lookup.
+### Mobile coach (?768px)
+
+- **Coach** removed from sidebar nav (`desktopOnly: true` on nav item)
+- **FAB** (bottom-right) opens slide-up sheet with embedded chat at `/dashboard/chat/embed`
+- Unread dot when `precisionCTA` is set or `dailyNote` changed since last open (sessionStorage)
+- Closing sheet preserves underlying page scroll (no route navigation)
+
+### Shipped UI fixes (data + UX)
+
+| Issue | Fix |
+|-------|-----|
+| Deadline via chat not on Overview | `targetDate` in extraction prompt + regex fast path + fuzzy goal match in `persistExtractedData()` |
+| Coach rail empty after chats | Gate onboarding copy on `!hasActiveGoals`; snapshot fallbacks from primary goal |
+| Stale knowledge bullets | `scheduleUserModelRefresh()` after extraction; rail refetches on window focus (no 45s poll) |
+| Scores stuck at 0% | Cache invalidation + client query refresh; sidebar **Today's plan** % aligned with Today's Plan checkboxes |
+| Task done in chat | `completedTasks` extraction + fuzzy match; expanded regex ("wrapped up", "checked off", "mark X done") |
+| Chart empty states | `GhostRadial` with icon + caption; `ChartCrossfade` on Overview analytics row |
+| Page transitions | 180ms opacity fade (`PageTransition`); respects `prefers-reduced-motion` |
+| Task checkboxes | `TaskCheckButton` with scale animation (<250ms) |
+| Score badge | `AnimatedScore` count-up when value changes |
+| Landing page | Hero-centric layout using locked `#7c6fff` accent (see `design-system/MASTER.md`) |
+
+Prior fixes: dark mode default, `__DONE__` sentinel, chat virtualizer `measureElement`, task checkbox by ID.
+
+---
+
+## Design system
+
+Source of truth: [`design-system/MASTER.md`](design-system/MASTER.md)
+
+| Token | Value |
+|-------|--------|
+| Shell | `#0f0f11` |
+| Sidebar / rail | `#141416` |
+| Cards | `#1a1a1e` |
+| Accent | `#7c6fff` |
+| Display | Syne |
+| Body | Plus Jakarta Sans |
+| Numeric score | JetBrains Mono |
+
+Motion (Framer Motion): score count-up, task check, coach rail fade-in, chart crossfade, page fade, mobile coach sheet ? all ?300ms, disabled when `prefers-reduced-motion`.
 
 ---
 
@@ -703,7 +766,7 @@ Full list: browse [`src/app/api/`](src/app/api/)
 | **User context** | `context/user-context.ts` | Assembles + caches unified user state for planner + rail |
 | **Daily planner** | `plans/daily-plan-generator.ts` | Fetches context, calls GPT, writes tasks + `daily_plans` |
 | **Why lines** | `plans/task-why-line.ts` | Three-tier fallback; rail bullet trimming |
-| **Performance score** | `plans/performance-score.ts` | Daily/weekly/monthly score from task completion |
+| **Performance score** | `plans/performance-score.ts` | Sidebar daily = today's plan %; weekly/monthly from auto-generated task history |
 | **User model** | `user-model/synthesis-engine.ts`, `loader.ts` | Rule-based ?who am I? synthesis, 12h cache |
 | **Orchestrator** | `ai/orchestrator/index.ts` | Full chat turn: classify ? retrieve ? prompt ? stream ? extract |
 | **Redis** | `redis/client.ts` | Cache keys: session, cognition, **user-context** (15 min) |
@@ -718,8 +781,13 @@ Full list: browse [`src/app/api/`](src/app/api/)
 |-----------|---------|
 | `PerformanceScoreBadge` | Purple sidebar score block + ?X of Y tasks done? |
 | `SidebarStreak` | Streak count at sidebar bottom |
-| `CoachRail` | Right panel: status, last messages (markdown), knowledge bullets |
-| `CoachKnowledgePanel` | ?What your coach knows? ? full page or compact rail variant |
+| `CoachRail` | Right panel: daily note, precision CTA, knowledge bullets (desktop only) |
+| `CoachMobileFab` | Mobile FAB + bottom sheet ? `/dashboard/chat/embed` |
+| `CoachKnowledgePanel` | "What your coach knows" ? full page or compact rail variant |
+| `GhostRadial` | Chart empty state (ring + icon, not bare "?") |
+| `ChartCrossfade` | Empty ? populated chart transition |
+| `AnimatedScore` | Sidebar score count-up on change |
+| `TaskCheckButton` | Today's Plan checkbox with completion animation |
 | `ChatMessage` | Single chat bubble ? user plain text, assistant markdown |
 | `MarkdownContent` | Shared ReactMarkdown with `.chat-markdown` styles |
 | `RadialProgressChart` | Success probability donut (min arc value, background ring) |
@@ -753,14 +821,91 @@ Set `CRON_SECRET` and send `Authorization: Bearer <CRON_SECRET>` (handled by Ver
 | Script | Purpose |
 |--------|---------|
 | [`supabase/scripts/verify-v2-migrations.sql`](supabase/scripts/verify-v2-migrations.sql) | Confirm 039?042 applied |
+| [`supabase/scripts/schema-health-check.sql`](supabase/scripts/schema-health-check.sql) | Column/table checks for extraction + coach rail |
 | [`supabase/scripts/diagnose-and-backfill-milestones.sql`](supabase/scripts/diagnose-and-backfill-milestones.sql) | Find goals missing milestones + stale plans |
 | [`supabase/scripts/verify-memory-storage.sql`](supabase/scripts/verify-memory-storage.sql) | Debug mentor memory writes |
 
 ```bash
+npm install      # Dependencies (framer-motion already in package.json)
 npm run dev      # Local development
-npm run build    # Production build
+npm run build    # Production build ? run locally before trusting agent "typecheck passes" claims
+npx tsc --noEmit # Typecheck only
 npm test         # Vitest (unit tests in tests/)
 ```
+
+**Deploy sync:** If screenshots show copy that does not exist in this repo (e.g. "Your coach will appear here after your first conversation"), the running Vercel deployment is **behind** local `main`. Redeploy after merging; hard-refresh the browser. Local `npm run dev` reflects repo code immediately.
+
+**Design system note:** [`design-system/MASTER.md`](design-system/MASTER.md) was authored in-repo. `uipro init --ai cursor` was **not** run ? there is no `.cursor/skills/ui-ux-pro-max/` skill bundle unless you install it separately.
+
+---
+
+## Manual verification checklist
+
+Run these **after** `npm run build` succeeds and you are on the deployment that matches this branch.
+
+### Git / build
+
+1. `git status` ? expect uncommitted or committed Phase 1?4 diff; note whether you can bisect by commit.
+2. Confirm new files exist: `coach-mobile-fab.tsx`, `animated-score.tsx`, `task-check-button.tsx`, `chart-crossfade.tsx`, `dashboard/chat/embed/page.tsx`, `design-system/MASTER.md`.
+3. `/dashboard/chat/embed` is covered by [`src/middleware.ts`](src/middleware.ts) (same auth as `/dashboard/chat`).
+
+### Issue 1 ? deadline via chat (write path)
+
+1. Chat: `Add a deadline to Build a business is 85 days`
+2. Supabase: `SELECT target_date, title FROM goals WHERE title ILIKE '%business%';` ? row must update **before** checking UI.
+3. Overview goal card should show deadline within ~30s (cache TTL) or after navigation; no hard refresh required if React Query invalidation fired.
+
+### Issue 2 & 3 ? coach rail / knowledge bullets
+
+1. With active goals, rail must **not** show onboarding-only empty copy.
+2. Send a substantive chat message; bullets refresh after synthesis (~minutes) or on window focus ? not on a fixed 45s poll.
+
+### Issue 4 ? scores
+
+1. Complete a task on Today's Plan ? sidebar **Today's plan** % should match checkbox ratio.
+2. Overview hero **execution score** may differ ? that is expected (pillar average, see table above).
+
+### Issue 5 ? task completion from chat
+
+1. Chat: `I finished [exact task title from today's plan]`
+2. Supabase: `SELECT status, completed_at FROM tasks WHERE title ILIKE '%?%' AND due_date = CURRENT_DATE;`
+3. Today's Plan checkbox updates without manual refresh.
+
+### Mobile (?768px)
+
+1. Coach absent from sidebar nav; FAB visible.
+2. Sheet opens `/dashboard/chat/embed`; closing preserves scroll.
+3. `prefers-reduced-motion: reduce` ? sheet opens without slide animation.
+
+---
+
+## Supabase audit (MenAI prod)
+
+Audited via Supabase MCP against project **MenAI** (`zshgaiqapgesppcvfnwz`, ap-southeast-1, ACTIVE_HEALTHY).
+
+### Schema ? no migration required for Phase 1 fixes
+
+Required columns/tables **present**:
+
+| Need | Table / column | Status |
+|------|----------------|--------|
+| Deadline writes | `goals.target_date` | OK |
+| Task completion | `tasks.status`, `completed_at`, `auto_generated`, `due_date` | OK |
+| Coach knowledge | `profiles.user_model` (JSONB) | OK |
+| Chat history | `conversations`, `messages` (migration 041) | OK |
+| Milestones / pace | `goal_milestones`, `goal_progress_snapshots` | OK |
+
+Re-run [`supabase/scripts/schema-health-check.sql`](supabase/scripts/schema-health-check.sql) after any prod migrate.
+
+### Security advisories (informational ? not blocking extraction)
+
+Run `get_advisors` (security) periodically. Typical findings on this project:
+
+- Functions with mutable `search_path` ? harden with `SET search_path = public` in definitions.
+- Some `SECURITY DEFINER` RPCs callable by `anon`/`authenticated` ? review each RPC's intent.
+- Leaked password protection may be disabled in Auth settings ? enable for production.
+
+No table DDL changes were required for the five diagnostic bugs; fixes are application-layer (extraction, cache, UI labels).
 
 ---
 
@@ -768,6 +913,7 @@ npm test         # Vitest (unit tests in tests/)
 
 | File | Covers |
 |------|--------|
+| `tests/today-plan-score.test.ts` | Sidebar daily % = today's plan completion ratio |
 | `tests/performance-score.test.ts` | Score calculation |
 | `tests/daily-planner.test.ts` | Planner constraints |
 | `tests/rhythm-phase.test.ts` | Morning/afternoon/night phase |

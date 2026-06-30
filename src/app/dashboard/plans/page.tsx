@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Circle, Clock, Target, Sparkles } from "lucide-react";
+import { Clock, Target, Sparkles } from "lucide-react";
+import { TaskCheckButton } from "@/components/plans/task-check-button";
 import { SetupChecklist } from "@/components/onboarding/setup-checklist";
 import { PlanContextInterview } from "@/components/plans/plan-context-interview";
 import { GoalCompletionRingRow } from "@/components/charts/daily-completion-ring";
@@ -571,7 +572,9 @@ export default function DailyPlansPage() {
                     }}
                   >
                     {dbTask ? (
-                      <button
+                      <TaskCheckButton
+                        done={isDone}
+                        accent={goalAccent(goalIndex)}
                         onClick={() =>
                           toggleTask.mutate({
                             id: dbTask.id,
@@ -579,24 +582,7 @@ export default function DailyPlansPage() {
                             estimated: planTask.estimatedMinutes,
                           })
                         }
-                        style={{
-                          marginTop: "2px",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: 0,
-                          color: isDone
-                            ? goalAccent(goalIndex)
-                            : "var(--text-muted)",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isDone ? (
-                          <CheckCircle2 size={22} />
-                        ) : (
-                          <Circle size={22} />
-                        )}
-                      </button>
+                      />
                     ) : (
                       <Target
                         size={20}

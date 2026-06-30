@@ -58,3 +58,9 @@ export async function fetchTodayTaskStats(
     daysToNearestMilestone,
   };
 }
+
+/** Sidebar + coach rail "today" score — matches Today's Plan checkboxes (all tasks due today, not auto_generated-only). */
+export function todayPlanScorePercent(stats: TodayTaskStats): number {
+  if (stats.tasksDueToday <= 0) return 0;
+  return Math.round((stats.tasksCompletedToday / stats.tasksDueToday) * 100);
+}

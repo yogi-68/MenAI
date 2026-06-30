@@ -447,7 +447,12 @@ function ChatPageInner() {
       addMessage(activeConvId, aiMessage);
       setStreamingContent("");
 
-      // Inject confidence Q&A card as a follow-up message if orchestrator says so
+      // Refresh dashboard data after extraction may have updated goals/tasks/model
+      queryClient.invalidateQueries({ queryKey: ["coach-snapshot"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["performance-daily"] });
+      queryClient.invalidateQueries({ queryKey: ["user-model-coach"] });
+      queryClient.invalidateQueries({ queryKey: ["today-tasks"] });
       if (confidencePayload && activeConvId && !sessionConfidenceAskedRef.current) {
         sessionConfidenceAskedRef.current = true;
         const { CONFIDENCE_QUESTIONS } = await import("@/components/chat/confidence-question-card");

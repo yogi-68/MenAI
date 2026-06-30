@@ -7,6 +7,7 @@ import { ClayCard } from "@/components/ui";
 import type { UserModel } from "@/lib/user-model/types";
 import { isUserModelStale } from "@/lib/user-model/staleness";
 import { formatKnowledgeBulletsForRail } from "@/lib/plans/task-why-line";
+import type { ExecutionProfileScores } from "@/lib/user-model/execution-profile-scores";
 
 interface CoachKnowledgePanelProps {
   variant?: "page" | "rail";
@@ -42,17 +43,25 @@ export function CoachKnowledgePanel({ variant = "page", bullets }: CoachKnowledg
         executionProfile?: ExecutionProfileScores;
       }>;
     },
-    staleTime: 5 * 60_000,
+    staleTime: 60_000,
     refetchOnWindowFocus: true,
-    enabled: !isRail || !bullets?.length,
   });
 
   const model = data?.userModel;
   const stale = isUserModelStale(data?.updatedAt, model?.synthesizedAt);
   const rawUnderstands = model?.understands?.slice(0, isRail ? 6 : 5) ?? [];
 
-  const railBullets =
-    bullets && bullets.length > 0
+  const railBullets = isRail
+    ? !stale && model?.knowledgeBullets?.length
+      ? model.knowledgeBullets
+      : bullets && bullets.length > 0
+        ? bullets
+        : model?.knowledgeBullets?.length
+          ? model.knowledgeBullets
+          : formatKnowledgeBulletsForRail(
+              rawUnderstands.length > 0 ? rawUnderstands : model?.identity.labels ?? []
+            )
+    : bullets && bullets.length > 0
       ? bullets
       : model?.knowledgeBullets?.length
         ? model.knowledgeBullets

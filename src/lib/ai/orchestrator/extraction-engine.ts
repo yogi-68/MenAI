@@ -71,6 +71,7 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
   projects: [],
   opportunities: [],
   blockers: [],
+  completedTasks: [],
 };
 
 /**
@@ -80,6 +81,18 @@ const EMPTY_EXTRACTION: ExtractedLifeData = {
  * Includes confidence scoring — low-confidence items are filtered out.
  */
 export async function extractLifeData(message: string): Promise<ExtractedLifeData> {
+  const deadlineHit = extractDeadlineUpdate(message);
+  if (deadlineHit) {
+    console.log("[Extraction] Deadline update (fast path):", deadlineHit.goals[0]?.title);
+    return deadlineHit;
+  }
+
+  const taskCompletionHit = extractTaskCompletion(message);
+  if (taskCompletionHit) {
+    console.log("[Extraction] Task completion (fast path):", taskCompletionHit.completedTasks[0]?.title);
+    return taskCompletionHit;
+  }
+
   const lifeAreaHit = extractLifeAreaInterest(message);
   if (lifeAreaHit) {
     console.log("[Extraction] Life area interest (fast path):", lifeAreaHit.identitySignals[0]?.description);
@@ -186,6 +199,11 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
           })
         : [],
       blockers: Array.isArray(parsed.blockers) ? parsed.blockers.filter((b: unknown) => typeof b === "string") : [],
+      completedTasks: Array.isArray(parsed.completedTasks)
+        ? parsed.completedTasks
+            .map(sanitizeCompletedTask)
+            .filter((t: { confidence?: number; title?: string }) => (t.confidence ?? 0) >= 0.75 && !!t.title)
+        : [],
     };
 
     // Log extraction summary with details
@@ -223,6 +241,62 @@ export async function extractLifeData(message: string): Promise<ExtractedLifeDat
     console.error("[Extraction] Error:", e);
     return EMPTY_EXTRACTION;
   }
+}
+
+/**
+ * Fast path: "Add a deadline to Build a business is 85 days"
+ */
+function extractDeadlineUpdate(message: string): ExtractedLifeData | null {
+  const patterns = [
+    /(?:add\s+a?\s*deadline\s+(?:to|for)\s+)(.+?)\s+(?:is\s+)?(\d+)\s*days?\b/i,
+    /(?:deadline\s+(?:for|on)\s+)(.+?)\s+(?:is\s+)?(\d+)\s*days?\b/i,
+    /(?:set\s+(?:the\s+)?deadline\s+(?:for|on|to)\s+)(.+?)\s+(?:to\s+)?(\d+)\s*days?\b/i,
+  ];
+
+  for (const re of patterns) {
+    const match = message.match(re);
+    if (!match) continue;
+    const title = match[1].trim().replace(/\.$/, "");
+    if (title.length < 3) continue;
+    return {
+      ...EMPTY_EXTRACTION,
+      goals: [
+        {
+          title,
+          category: "other",
+          priority: "medium",
+          targetDate: `${match[2]} days`,
+          confidence: 0.95,
+        },
+      ],
+    };
+  }
+  return null;
+}
+
+/**
+ * Fast path: "I finished writing my success metric"
+ */
+function extractTaskCompletion(message: string): ExtractedLifeData | null {
+  const patterns = [
+    /\bi(?:'ve| have)?\s+(?:finished|completed|done with|knocked out|checked off|wrapped up)\s+(?:my\s+|the\s+)?(.+)/i,
+    /\b(?:finished|completed|done with|wrapped up|checked off)\s+(?:my\s+|the\s+)?(.+)/i,
+    /\bi\s+(?:did|finished|completed)\s+(?:my\s+|the\s+)?(.+)/i,
+    /\bmark(?:ed)?\s+(.+?)\s+(?:as\s+)?done\b/i,
+  ];
+
+  for (const re of patterns) {
+    const match = message.match(re);
+    if (!match) continue;
+    const title = match[1].trim().replace(/[.!?]+$/, "").slice(0, 200);
+    if (title.length < 4) continue;
+    if (/^(it|that|this|everything|all of it)$/i.test(title)) continue;
+    return {
+      ...EMPTY_EXTRACTION,
+      completedTasks: [{ title, confidence: 0.9 }],
+    };
+  }
+  return null;
 }
 
 /**
@@ -309,8 +383,39 @@ export async function persistExtractedData(
   data: ExtractedLifeData,
   conversationId: string,
   supabase: ReturnType<typeof import("@/lib/supabase/server").createServiceRoleClient> extends Promise<infer T> ? T : never
-): Promise<void> {
+): Promise<boolean> {
   const tasks: PromiseLike<unknown>[] = [];
+  let wroteData = false;
+
+  async function findGoalByTitleHint(titleHint: string) {
+    const { data: goals } = await supabase
+      .from("goals")
+      .select("id, title, target_date")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(24);
+
+    if (!goals?.length) return null;
+    const hint = titleHint.toLowerCase().trim();
+    if (!hint) return null;
+
+    const exact = goals.find((g) => g.title.toLowerCase() === hint);
+    if (exact) return exact;
+
+    const contains = goals.find(
+      (g) =>
+        g.title.toLowerCase().includes(hint) || hint.includes(g.title.toLowerCase())
+    );
+    if (contains) return contains;
+
+    const hintWords = hint.split(/\s+/).filter((w) => w.length > 3);
+    return (
+      goals.find((g) => {
+        const titleWords = g.title.toLowerCase().split(/\s+/);
+        return hintWords.some((w) => titleWords.some((tw: string) => tw.includes(w) || w.includes(tw)));
+      }) ?? null
+    );
+  }
 
   // Direction (goals): explicit statements save immediately; low confidence → suggestion queue
   if (data.goals.length > 0) {
@@ -319,26 +424,20 @@ export async function persistExtractedData(
       if (shouldSaveExplicit(conf)) {
         tasks.push(
           (async () => {
-            const { data: existing } = await supabase
-              .from("goals")
-              .select("id, target_date")
-              .eq("user_id", userId)
-              .ilike("title", goal.title)
-              .limit(1);
-            if (existing?.length) {
-              // Update target_date on the existing goal if newly provided and not yet set
-              if (goal.targetDate && !existing[0].target_date) {
+            const existing = await findGoalByTitleHint(goal.title);
+            if (existing) {
+              if (goal.targetDate) {
                 const isoDate = parseRelativeDate(goal.targetDate);
-                if (isoDate) {
+                if (isoDate && existing.target_date !== isoDate) {
                   await supabase
                     .from("goals")
                     .update({ target_date: isoDate })
-                    .eq("id", existing[0].id);
-                  // Regenerate milestones + bust cache (fire-and-forget)
+                    .eq("id", existing.id);
+                  wroteData = true;
                   Promise.resolve(
-                    supabase.from("goal_milestones").delete().eq("goal_id", existing[0].id)
+                    supabase.from("goal_milestones").delete().eq("goal_id", existing.id)
                   ).then(() =>
-                    ensureMilestonesForGoal(supabase, userId, existing[0].id).catch(() => {})
+                    ensureMilestonesForGoal(supabase, userId, existing.id).catch(() => {})
                   ).catch(() => {});
                   invalidateUserCache(userId, "deadline extracted");
                 }
@@ -355,6 +454,7 @@ export async function persistExtractedData(
               target_date: insertDate || null,
               source: "chat_extraction",
             });
+            wroteData = true;
           })()
         );
       } else {
@@ -564,7 +664,61 @@ export async function persistExtractedData(
     }
   }
 
+  // Task completions from chat (match today's pending tasks by title)
+  if (data.completedTasks.length > 0) {
+    for (const completion of data.completedTasks) {
+      if ((completion.confidence ?? 0) < 0.75) continue;
+      tasks.push(
+        (async () => {
+          const today = new Date().toISOString().split("T")[0];
+          const { data: pendingTasks } = await supabase
+            .from("tasks")
+            .select("id, title, status")
+            .eq("user_id", userId)
+            .eq("due_date", today)
+            .in("status", ["pending", "in_progress"]);
+
+          if (!pendingTasks?.length) return;
+
+          const hint = completion.title.toLowerCase().trim();
+          const match =
+            pendingTasks.find((t) => t.title.toLowerCase() === hint) ??
+            pendingTasks.find(
+              (t) =>
+                t.title.toLowerCase().includes(hint) || hint.includes(t.title.toLowerCase())
+            ) ??
+            pendingTasks.find((t) => {
+              const words = hint.split(/\s+/).filter((w) => w.length > 3);
+              const titleLower = t.title.toLowerCase();
+              return words.some((w) => titleLower.includes(w));
+            });
+
+          if (!match || match.status === "completed") return;
+
+          const now = new Date().toISOString();
+          await supabase
+            .from("tasks")
+            .update({
+              status: "completed",
+              completed_at: now,
+              last_completed_at: now,
+            })
+            .eq("id", match.id)
+            .eq("user_id", userId);
+          wroteData = true;
+          console.log("[Extraction] Task completed via chat:", match.title);
+        })()
+      );
+    }
+  }
+
   await Promise.allSettled(tasks);
+
+  if (hasExtractedData(data)) {
+    invalidateUserCache(userId, "extraction persisted");
+  }
+
+  return wroteData || hasExtractedData(data);
 }
 
 /**
@@ -579,11 +733,19 @@ export function hasExtractedData(data: ExtractedLifeData): boolean {
     data.relationships.length > 0 ||
     data.projects.length > 0 ||
     data.opportunities.length > 0 ||
-    data.blockers.length > 0
+    data.blockers.length > 0 ||
+    data.completedTasks.length > 0
   );
 }
 
 // ===== Sanitization helpers =====
+
+function sanitizeCompletedTask(task: Record<string, unknown>) {
+  return {
+    title: String(task.title || "").slice(0, 200),
+    confidence: typeof task.confidence === "number" ? task.confidence : 0.85,
+  } as ExtractedLifeData["completedTasks"][number];
+}
 
 function sanitizeGoal(goal: Record<string, unknown>) {
   const validCategories = ["startup", "fitness", "financial", "relationship", "learning", "identity", "health", "career", "other"];

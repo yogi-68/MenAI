@@ -115,6 +115,11 @@ export interface MemoryContext {
 }
 
 // ===== Life Data (Extracted from Conversations) =====
+export interface ExtractedTaskCompletion {
+  title: string;
+  confidence: number;
+}
+
 export interface ExtractedLifeData {
   goals: ExtractedGoal[];
   commitments: ExtractedCommitment[];
@@ -126,6 +131,7 @@ export interface ExtractedLifeData {
   projects: ExtractedProject[];
   opportunities: ExtractedOpportunity[];
   blockers: string[];
+  completedTasks: ExtractedTaskCompletion[];
 }
 
 export interface ExtractedOpportunity {

@@ -5,6 +5,7 @@ import { RadialProgressChart } from "@/components/charts/radial-progress-chart";
 import { DonutChartCard } from "@/components/charts/donut-chart-card";
 import { BarChartCard } from "@/components/charts";
 import { GhostRadial } from "@/components/charts/ghost-radial";
+import { ChartCrossfade } from "@/components/charts/chart-crossfade";
 import { seriesColor } from "@/components/charts/chart-theme";
 
 interface AnalyticsRowProps {
@@ -41,10 +42,13 @@ export function AnalyticsRow({
         </p>
         {loading ? (
           <div className="skeleton shimmer" style={{ height: 100, borderRadius: 12 }} />
-        ) : planAdherence > 0 ? (
-          <RadialProgressChart title="" value={planAdherence} hideHeader height={100} label="Month" />
         ) : (
-          <GhostRadial size={90} message="Complete tasks this month" />
+          <ChartCrossfade
+            showData={planAdherence > 0}
+            empty={<GhostRadial size={90} message="Complete tasks this month" />}
+          >
+            <RadialProgressChart title="" value={planAdherence} hideHeader height={100} label="Month" />
+          </ChartCrossfade>
         )}
       </ClayCard>
 
@@ -57,37 +61,45 @@ export function AnalyticsRow({
         </p>
         {loading ? (
           <div className="skeleton shimmer" style={{ height: 100, borderRadius: 12 }} />
-        ) : hasOutcomes ? (
-          <BarChartCard
-            title=""
-            data={outcomesData}
-            hideHeader
-            height={100}
-            valueFormatter={(v) => String(v)}
-          />
         ) : (
-          <GhostRadial size={90} message="No task history yet" />
+          <ChartCrossfade
+            showData={hasOutcomes}
+            empty={<GhostRadial size={90} message="No task history yet" />}
+          >
+            <BarChartCard
+              title=""
+              data={outcomesData}
+              hideHeader
+              height={100}
+              valueFormatter={(v) => String(v)}
+            />
+          </ChartCrossfade>
         )}
       </ClayCard>
 
       <ClayCard className="p-3" hover={false}>
         {loading ? (
           <div className="skeleton shimmer" style={{ height: 120, borderRadius: 12 }} />
-        ) : hasActiveTime ? (
-          <DonutChartCard
-            title="Most active time"
-            data={activeTime}
-            height={120}
-            centerLabel="Peak"
-            centerValue={activeTime.reduce((a, b) => (b.value > a.value ? b : a)).label}
-          />
         ) : (
-          <>
-            <p className="text-xs m-0 mb-2" style={{ color: "var(--text-muted)" }}>
-              Most active time
-            </p>
-            <GhostRadial size={90} message="Complete tasks to see patterns" />
-          </>
+          <ChartCrossfade
+            showData={hasActiveTime}
+            empty={
+              <>
+                <p className="text-xs m-0 mb-2" style={{ color: "var(--text-muted)" }}>
+                  Most active time
+                </p>
+                <GhostRadial size={90} message="Complete tasks to see patterns" />
+              </>
+            }
+          >
+            <DonutChartCard
+              title="Most active time"
+              data={activeTime}
+              height={120}
+              centerLabel="Peak"
+              centerValue={activeTime.reduce((a, b) => (b.value > a.value ? b : a)).label}
+            />
+          </ChartCrossfade>
         )}
       </ClayCard>
 
@@ -131,16 +143,19 @@ export function AnalyticsRow({
         </p>
         {loading ? (
           <div className="skeleton shimmer" style={{ height: 100, borderRadius: 12 }} />
-        ) : confidenceTrend.length > 0 ? (
-          <BarChartCard
-            title=""
-            data={confidenceTrend.map((d) => ({ label: d.label, value: d.value, fill: seriesColor(0) }))}
-            hideHeader
-            height={100}
-            valueFormatter={(v) => `${v}%`}
-          />
         ) : (
-          <GhostRadial size={90} message="Build plan precision over time" />
+          <ChartCrossfade
+            showData={confidenceTrend.length > 0}
+            empty={<GhostRadial size={90} message="Build plan precision over time" />}
+          >
+            <BarChartCard
+              title=""
+              data={confidenceTrend.map((d) => ({ label: d.label, value: d.value, fill: seriesColor(0) }))}
+              hideHeader
+              height={100}
+              valueFormatter={(v) => `${v}%`}
+            />
+          </ChartCrossfade>
         )}
       </ClayCard>
     </div>
