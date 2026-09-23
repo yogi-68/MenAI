@@ -17,6 +17,8 @@
  */
 
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/observability/logger";
+import { encodeStreamTrailer } from "@/lib/chat/stream-protocol";
 import { logAiUsage } from "@/lib/ai/usage-guard";
 import { runCrisisSafetyCheck, scheduleAsyncModeration } from "./safety-engine";
 import { detectEmotion } from "./emotion-engine";
@@ -24,7 +26,7 @@ import { determineState, classifyIntent } from "./state-machine";
 import { getMemoryContext, storeMemory, summarizeConversation, compressMemories } from "./memory-engine";
 import { selectModel, callLLMStreaming } from "./router";
 import { buildPrompt } from "./prompt-builder";
-import { validateResponse } from "./response-validator";
+import { createResponseGuard } from "./response-validator";
 import { validateResponseStyle } from "./style-validator";
 import { scoreClaimQuality } from "@/lib/ai/claim-quality";
 import { extractLifeData, persistExtractedData, hasExtractedData } from "./extraction-engine";
@@ -300,25 +302,51 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   const safety = runCrisisSafetyCheck(input.message);
 
   if (safety.requiresEscalation && safety.crisisResponse) {
-    try {
-      await serviceClient.from("crisis_events").insert({
-        user_id: input.userId,
-        conversation_id: input.conversationId || null,
-        crisis_level: safety.level,
-        categories: safety.categories,
-        matched_patterns: [],
-        confidence: safety.confidence,
-        escalated: true,
+    // A crisis event that fails to record is a crisis that, as far as our
+    // records are concerned, never happened. Retry once, and if it still
+    // fails log it at error level so it surfaces in monitoring — never
+    // swallow it.
+    const crisisRow = {
+      user_id: input.userId,
+      conversation_id: input.conversationId || null,
+      crisis_level: safety.level,
+      categories: safety.categories,
+      matched_patterns: [],
+      confidence: safety.confidence,
+      escalated: true,
+    };
+
+    let crisisLogged = false;
+    for (let attempt = 0; attempt < 2 && !crisisLogged; attempt++) {
+      const { error } = await serviceClient.from("crisis_events").insert(crisisRow);
+      if (!error) {
+        crisisLogged = true;
+        break;
+      }
+      logger.error("[crisis] failed to record crisis event", error, {
+        userId: input.userId,
+        attempt,
+        level: safety.level,
       });
-    } catch { /* non-blocking */ }
+    }
+    if (!crisisLogged) {
+      logger.error("[crisis] CRISIS EVENT NOT RECORDED", undefined, {
+        userId: input.userId,
+        level: safety.level,
+        categories: safety.categories,
+      });
+    }
 
     if (input.conversationId) {
-      try {
-        await serviceClient.from("messages").insert([
-          { conversation_id: input.conversationId, user_id: input.userId, role: "user", content: input.message },
-          { conversation_id: input.conversationId, user_id: input.userId, role: "assistant", content: safety.crisisResponse },
-        ]);
-      } catch { /* non-blocking */ }
+      const { error: messageError } = await serviceClient.from("messages").insert([
+        { conversation_id: input.conversationId, user_id: input.userId, role: "user", content: input.message },
+        { conversation_id: input.conversationId, user_id: input.userId, role: "assistant", content: safety.crisisResponse },
+      ]);
+      if (messageError) {
+        logger.error("[crisis] failed to persist crisis transcript", messageError, {
+          userId: input.userId,
+        });
+      }
     }
 
     const encoder = new TextEncoder();
@@ -487,7 +515,13 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     async start(controller) {
       const reader = llmStream.getReader();
       const decoder = new TextDecoder();
-      let validated: ReturnType<typeof validateResponse> | null = null;
+      // The guard decides what may be emitted, so what the user reads, what
+      // we store and what we validate are the same string.
+      const guard = createResponseGuard({
+        crisisMode: safety.level !== "safe",
+        emotionIntensity: emotion.intensity,
+      });
+      let validated: ReturnType<typeof guard.finish> | null = null;
       let styleValidation: ReturnType<typeof validateResponseStyle> | null = null;
       try {
         while (true) {
@@ -495,15 +529,19 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
           if (done) break;
           const text = decoder.decode(value, { stream: true });
           if (text && firstTokenAt === null) firstTokenAt = Date.now();
-          fullResponse += text;
-          controller.enqueue(encoder.encode(text));
+
+          const chunk = guard.push(text);
+          if (chunk.emit) controller.enqueue(encoder.encode(chunk.emit));
+          if (chunk.done) {
+            // Limit reached or prohibited content detected — stop pulling
+            // tokens we would only discard, and stop paying for them.
+            await reader.cancel().catch(() => {});
+            break;
+          }
         }
 
-        // Validate content synchronously before writing
-        validated = validateResponse(fullResponse, {
-          crisisMode: safety.level !== "safe",
-          emotionIntensity: emotion.intensity,
-        });
+        validated = guard.finish();
+        fullResponse = validated.content;
 
         styleValidation = validateResponseStyle(validated.content, {
           lifeContext: null,
@@ -551,10 +589,13 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         }
 
         // Append sentinel so client can use the real server message ID (and optional confidence Q)
-        if (savedMsg?.id) {
-          const sentinelPayload = JSON.stringify({ id: savedMsg.id, cq: confidenceQuestion });
-          controller.enqueue(encoder.encode(`\n__DONE__:${sentinelPayload}\n`));
-        }
+        // Always send the trailer, even without an id: the client uses its
+        // arrival to know the body is complete.
+        controller.enqueue(
+          encoder.encode(
+            encodeStreamTrailer({ id: savedMsg?.id ?? null, cq: confidenceQuestion })
+          )
+        );
         controller.close();
       } catch (err) {
         streamErrored = true;

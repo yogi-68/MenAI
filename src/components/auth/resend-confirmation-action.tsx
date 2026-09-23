@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   requestSignupConfirmationEmail,
-  RATE_LIMIT_USER_MESSAGE,
   RESEND_SUCCESS_MESSAGE,
 } from "@/lib/auth/request-confirmation-email";
 import {
@@ -58,18 +57,14 @@ export function ResendConfirmationAction({
     setNotice("");
 
     try {
-      const result = await requestSignupConfirmationEmail(trimmed);
+      await requestSignupConfirmationEmail(trimmed);
       markResendCooldown(trimmed);
       setCooldown(getResendCooldownSeconds(trimmed));
 
-      if (result.alreadyConfirmed) {
-        setNotice("This email is already confirmed. You can sign in.");
-        return;
-      }
-
-      setNotice(
-        result.rateLimited ? RATE_LIMIT_USER_MESSAGE : RESEND_SUCCESS_MESSAGE
-      );
+      // The endpoint answers identically whatever happened, so that this page
+      // cannot be used to test whether an address has an account. There is
+      // nothing to branch on here, by design.
+      setNotice(RESEND_SUCCESS_MESSAGE);
     } catch {
       setNotice(
         "Check your inbox — a confirmation link may already be on its way."

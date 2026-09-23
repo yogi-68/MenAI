@@ -14,6 +14,7 @@ import {
   fetchOlderMessages,
   type MessagePage,
 } from "@/lib/chat/fetch-messages";
+import { createStreamParser } from "@/lib/chat/stream-protocol";
 import { CHAT_INITIAL_LIMIT } from "@/lib/chat/constants";
 import { SessionPlanSummary } from "@/components/chat/session-plan-summary";
 import {
@@ -38,6 +39,17 @@ type ConversationRow = {
 type PaginationMeta = { hasMore: boolean; nextBefore: string | null };
 
 const EMPTY_MESSAGES: Message[] = [];
+
+/** An error the API reported deliberately, with a message safe to display. */
+class ChatRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = "ChatRequestError";
+  }
+}
 
 function applyPagination(meta: Record<string, PaginationMeta>, convId: string, page: MessagePage) {
   meta[convId] = { hasMore: page.hasMore, nextBefore: page.nextBefore };
@@ -397,7 +409,19 @@ function ChatPageInner() {
         signal: controller.signal,
       });
 
-      if (!res.ok) throw new Error("Chat request failed");
+      if (!res.ok) {
+        // The API now returns a real status with a user-safe message (rate
+        // limited, daily limit reached, or a genuine failure) instead of a
+        // fabricated 200. Show what it said rather than a generic line.
+        const detail = await res
+          .json()
+          .then((b: { error?: string }) => b.error)
+          .catch(() => null);
+        throw new ChatRequestError(
+          detail || "Something went wrong reaching your coach. Try again in a moment.",
+          res.status
+        );
+      }
 
       serverConvId = res.headers.get("X-Conversation-Id");
       const isCrisis = res.headers.get("X-Crisis") === "true";
@@ -420,36 +444,22 @@ function ChatPageInner() {
       if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
+      // Buffers across reads, so a trailer split over two network chunks is
+      // still parsed rather than rendered as message text.
+      const parser = createStreamParser();
       let accumulated = "";
-      let serverMessageId: string | null = null;
-      let confidencePayload: { factor: string; goalId: string; goalTitle: string } | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-
-        // Parse __DONE__ sentinel: \n__DONE__:{"id":"uuid","cq":...}\n
-        const sentinelIdx = chunk.indexOf("\n__DONE__:{");
-        if (sentinelIdx !== -1) {
-          const endIdx = chunk.indexOf("}\n", sentinelIdx + 10);
-          if (endIdx !== -1) {
-            const jsonStr = chunk.slice(sentinelIdx + "\n__DONE__:".length, endIdx + 1);
-            try {
-              const parsed = JSON.parse(jsonStr) as { id?: string; cq?: { factor: string; goalId: string; goalTitle: string } | null };
-              serverMessageId = parsed.id ?? null;
-              confidencePayload = parsed.cq ?? null;
-            } catch { /* ignore parse errors */ }
-            accumulated += chunk.slice(0, sentinelIdx) + chunk.slice(endIdx + 2);
-          } else {
-            accumulated += chunk;
-          }
-        } else {
-          accumulated += chunk;
-        }
+        accumulated += parser.push(decoder.decode(value, { stream: true }));
         setStreamingContent(accumulated);
         throttledScroll();
       }
+      accumulated += parser.flush();
+
+      const serverMessageId = parser.trailer?.id ?? null;
+      const confidencePayload = parser.trailer?.cq ?? null;
 
       const aiMessage: Message = {
         id: serverMessageId ?? crypto.randomUUID(),
@@ -486,11 +496,12 @@ function ChatPageInner() {
       }
     } catch (error) {
       if ((error as Error).name === "AbortError") return;
-      console.error("Chat error:", error);
 
       setStreamingContent("");
       setNetworkError(
-        "Connection interrupted. Your message may have been saved — tap retry or refresh."
+        error instanceof ChatRequestError
+          ? error.message
+          : "Connection interrupted. Your message may have been saved — tap retry or refresh."
       );
       setRetryText(messageText);
 
