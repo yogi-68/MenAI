@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   requestSignupConfirmationEmail,
   RATE_LIMIT_USER_MESSAGE,

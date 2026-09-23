@@ -94,7 +94,7 @@ export async function fetchNextMilestone(
 export async function fetchAnalyticsRowData(
   supabase: SupabaseClient,
   userId: string,
-  performance: PerformanceScore
+  _performance: PerformanceScore
 ) {
   const since30 = new Date();
   since30.setDate(since30.getDate() - 30);

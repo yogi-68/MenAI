@@ -45,27 +45,3 @@ export async function detectEmotion(message: string): Promise<EmotionAnalysis> {
     return defaultResult;
   }
 }
-
-/**
- * Quick emotion check without LLM (keyword-based, instant)
- */
-export function quickEmotionCheck(message: string): {
-  likelyNegative: boolean;
-  likelyHighIntensity: boolean;
-} {
-  const lower = message.toLowerCase();
-  const negativeKeywords = [
-    "sad", "depressed", "anxious", "scared", "angry", "hopeless",
-    "overwhelmed", "exhausted", "lonely", "worthless", "stressed",
-    "panic", "crying", "can't sleep", "nightmare", "hate",
-  ];
-  const intensityKeywords = [
-    "extremely", "very", "so much", "can't stop", "always",
-    "never", "worst", "terrible", "unbearable", "dying",
-  ];
-
-  const likelyNegative = negativeKeywords.some((k) => lower.includes(k));
-  const likelyHighIntensity = intensityKeywords.some((k) => lower.includes(k));
-
-  return { likelyNegative, likelyHighIntensity };
-}

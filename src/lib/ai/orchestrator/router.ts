@@ -33,7 +33,11 @@ const MODELS: Record<ModelTier, ModelConfig> = {
 };
 
 /**
- * Select the right model based on conversation context
+ * Select the right model based on conversation context.
+ *
+ * Returns a COPY of the tier config. The entries in MODELS are shared, and a
+ * caller that mutated the returned object was silently rewriting the tier for
+ * every subsequent request in the same process.
  */
 export function selectModel(params: {
   emotion: EmotionAnalysis;
@@ -45,7 +49,7 @@ export function selectModel(params: {
 
   // CRITICAL: Always use premium for crisis/safety situations
   if (safety.level === "critical" || safety.level === "danger") {
-    return MODELS.premium;
+    return { ...MODELS.premium };
   }
 
   // PREMIUM: Deep Founder Coaching, Strategic Thinking, Identity-Level Reframing
@@ -55,12 +59,12 @@ export function selectModel(params: {
     state === "WISDOM_FIRST" ||
     state === "ESCALATION"
   ) {
-    return MODELS.premium;
+    return { ...MODELS.premium };
   }
 
   // PREMIUM: Burnout & Crisis Mode (High stress, exhaustion, panic)
   if (emotion.intensity >= 8 || emotion.needsSupport) {
-    return MODELS.premium;
+    return { ...MODELS.premium };
   }
 
   // STANDARD: Planning, Accountability, Execution Review, Goal Setting, Exploring, Validation
@@ -72,45 +76,16 @@ export function selectModel(params: {
     state === "GOAL_SETTING" ||
     state === "EXPLORING"
   ) {
-    return MODELS.standard;
+    return { ...MODELS.standard };
   }
 
   // STANDARD: Moderate emotion
   if (emotion.intensity >= 4) {
-    return MODELS.standard;
+    return { ...MODELS.standard };
   }
 
   // CHEAP: Casual greetings, simple check-ins, confirmation, reflection
-  return MODELS.cheap;
-}
-
-/**
- * Call the LLM with the selected model
- */
-export async function callLLM(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  config: ModelConfig
-): Promise<{
-  content: string;
-  tokensUsed: number;
-  model: string;
-}> {
-  const openai = getOpenAI();
-
-  const completion = await openai.chat.completions.create({
-    model: config.model,
-    messages,
-    max_tokens: config.maxTokens,
-    temperature: config.temperature,
-    presence_penalty: 0.3,
-    frequency_penalty: 0.3,
-  });
-
-  return {
-    content: completion.choices[0]?.message?.content || "I'm here. Tell me what's on your mind.",
-    tokensUsed: completion.usage?.total_tokens || 0,
-    model: config.model,
-  };
+  return { ...MODELS.cheap };
 }
 
 /**

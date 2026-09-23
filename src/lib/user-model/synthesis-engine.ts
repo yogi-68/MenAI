@@ -164,13 +164,13 @@ export async function synthesizeUserModel(
       .limit(3),
   ]);
 
-  const patterns = patternsRes.data || [];
-  const profileExtra = profileExtraRes.data;
-  const reflectionBlocks = (reflectionsRes.data || [])
+  const _patterns = patternsRes.data || [];
+  const _profileExtra = profileExtraRes.data;
+  const _reflectionBlocks = (reflectionsRes.data || [])
     .map((r) => r.blocked_by?.trim())
     .filter(Boolean) as string[];
 
-  const initiativeThemes = ctx.initiatives.map((i) => ({
+  const _initiativeThemes = ctx.initiatives.map((i) => ({
     title: i.title,
     lifeArea: i.life_area,
     domain: detectDomain(`${i.title} ${i.description || ""}`, i.life_area),

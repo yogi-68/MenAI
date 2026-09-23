@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  type ContextDimensionId,
   type DimensionInput,
   type PlanContextSnapshot,
   buildPlanContextSnapshot,
@@ -13,7 +12,6 @@ import {
 } from "@/lib/plans/coach-insights";
 import {
   loadExecutionContext,
-  resolvePrimaryInitiative,
 } from "@/lib/user-model/resolve-context";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import {

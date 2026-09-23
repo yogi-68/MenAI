@@ -83,7 +83,9 @@ function ChatPageInner() {
 
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const paginationRef = useRef<Record<string, PaginationMeta>>({});
-  const clearedStaleIdsRef = useRef<Set<string>>(new Set());
+  // Mirrors paginationRef[currentConversationId].hasMore. Refs don't trigger
+  // renders, so the "load older" control needs this to stay accurate.
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastScrollTs = useRef(0);
@@ -103,6 +105,7 @@ function ChatPageInner() {
     (convId: string) => {
       clearConversationState(convId);
       delete paginationRef.current[convId];
+      setHasMoreOlder(false);
       queryClient.removeQueries({ queryKey: ["messages", convId] });
       if (getChatStore().currentConversationId === convId) {
         setCurrentConversationId(null);
@@ -155,9 +158,18 @@ function ChatPageInner() {
     scrollContainerToBottom(messagesScrollRef.current, true);
   }, [messages.length, streamingContent, isSending, loadingOlder]);
 
+  /** Write pagination for a conversation and keep the mirrored state in step. */
+  const commitPagination = useCallback((convId: string, meta: PaginationMeta) => {
+    paginationRef.current[convId] = meta;
+    if (getChatStore().currentConversationId === convId) {
+      setHasMoreOlder(meta.hasMore);
+    }
+  }, []);
+
   const loadPageIntoStore = useCallback(
     (convId: string, page: MessagePage, mode: "replace" | "prepend") => {
       applyPagination(paginationRef.current, convId, page);
+      commitPagination(convId, paginationRef.current[convId]);
       if (mode === "replace") {
         setMessages(convId, page.messages);
       } else {
@@ -209,6 +221,7 @@ function ChatPageInner() {
       const page = await fetchOlderMessages(convId, meta.nextBefore);
       prependMessages(convId, page.messages);
       applyPagination(paginationRef.current, convId, page);
+      commitPagination(convId, paginationRef.current[convId]);
 
       requestAnimationFrame(() => {
         if (el) el.scrollTop += el.scrollHeight - prevHeight;
@@ -238,12 +251,13 @@ function ChatPageInner() {
 
       const cached = getChatStore().conversationStates[convId]?.messages;
       if (cached && cached.length > 0) {
-        if (!paginationRef.current[convId]) {
-          paginationRef.current[convId] = {
+        commitPagination(
+          convId,
+          paginationRef.current[convId] ?? {
             hasMore: cached.length >= CHAT_INITIAL_LIMIT,
             nextBefore: cached[0]?.created_at ?? null,
-          };
-        }
+          }
+        );
         return;
       }
 
@@ -291,6 +305,7 @@ function ChatPageInner() {
     );
     clearConversationState(convId);
     delete paginationRef.current[convId];
+    setHasMoreOlder(false);
     queryClient.removeQueries({ queryKey: ["messages", convId] });
 
     if (currentConversationId === convId) startNewChat();
@@ -392,10 +407,10 @@ function ChatPageInner() {
         migrateConversation(localConvId, serverConvId);
         activeConvId = serverConvId;
         upsertConversationInList(serverConvId, messageText);
-        paginationRef.current[serverConvId] = paginationRef.current[localConvId] ?? {
-          hasMore: false,
-          nextBefore: null,
-        };
+        commitPagination(
+          serverConvId,
+          paginationRef.current[localConvId] ?? { hasMore: false, nextBefore: null }
+        );
       } else if (serverConvId) {
         upsertConversationInList(serverConvId, messageText);
         activeConvId = serverConvId;
@@ -496,10 +511,6 @@ function ChatPageInner() {
   };
 
   const showEmpty = messages.length === 0 && !streamingContent && !isSending;
-  const pagination =
-    currentConversationId && isRealConversationId(currentConversationId)
-      ? paginationRef.current[currentConversationId]
-      : undefined;
 
   return (
     <div className="chat-layout">
@@ -634,7 +645,7 @@ function ChatPageInner() {
               messages={messages}
               streamingContent={streamingContent}
               isSending={isSending}
-              hasMoreOlder={pagination?.hasMore}
+              hasMoreOlder={hasMoreOlder}
               loadingOlder={loadingOlder}
               onLoadOlder={loadOlder}
             />

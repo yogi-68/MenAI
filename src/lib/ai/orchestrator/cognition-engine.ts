@@ -23,7 +23,6 @@ import {
   setInCache,
   REDIS_KEYS,
   CACHE_TTL,
-  invalidateUserCache,
 } from "@/lib/redis/client";
 
 // ===== DB ROW TYPES (snake_case — matches Supabase column names) =====
@@ -220,14 +219,6 @@ export async function rebuildAndPersistCognitiveState(userId: string): Promise<C
   await setInCache(cacheKey, state, CACHE_TTL.SESSION_CONTEXT);
 
   return state;
-}
-
-/**
- * Invalidate the cognitive state cache for a user.
- * Call after any data mutation (goal created, task completed, chat extraction, etc.)
- */
-export async function invalidateCognitiveState(userId: string): Promise<void> {
-  await invalidateUserCache(userId);
 }
 
 // ===== INTERNAL: REBUILD FROM DB =====
@@ -700,18 +691,6 @@ export function formatCognitiveStateForDashboard(state: CognitiveState): {
       ? topWeakness.adaptation_hint
       : null,
   };
-}
-
-function _formatMomentum(momentum: MomentumState): string | null {
-  const texts: Record<MomentumState, string | null> = {
-    surging: "Based on recent activity, execution momentum looks strong.",
-    building: "Based on recent activity, momentum is building through consistent action.",
-    stable: "Based on available data, progress appears steady.",
-    stalling: "Based on limited recent activity, momentum may be slowing.",
-    declining: "Based on available data, execution activity appears to be dropping.",
-    unknown: null,
-  };
-  return texts[momentum];
 }
 
 function _buildSmartGreeting(state: CognitiveState): string {

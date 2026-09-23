@@ -6,7 +6,7 @@
  * sentence length, tone, question frequency, coaching depth, technique selection.
  */
 
-import type { ConversationState, EmotionAnalysis, SafetyResult, UserIntent, UserIntentType, ContextRichness } from "./types";
+import type { ConversationState, EmotionAnalysis, SafetyResult, UserIntent,  ContextRichness } from "./types";
 
 /**
  * Classify user intent BEFORE state selection.
@@ -131,7 +131,9 @@ export function determineState(params: {
   intent?: UserIntent;
   contextRichness?: ContextRichness;
 }): ConversationState {
-  const { emotion, safety, messageCount, userMessage, lastState, hasAccountabilityItems, intent, contextRichness } = params;
+  // emotion and contextRichness are accepted for call-site compatibility but
+  // not read here: routing is driven by safety, intent and message shape.
+  const { safety, messageCount, userMessage, lastState, hasAccountabilityItems, intent } = params;
   const lower = userMessage.toLowerCase();
 
   // ESCALATION: Safety always takes priority

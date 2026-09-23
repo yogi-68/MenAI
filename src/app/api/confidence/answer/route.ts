@@ -54,7 +54,7 @@ function getNextUnansweredFactor(
   return null;
 }
 
-function buildConfirmMessage(factor: Factor, value: string): string {
+function buildConfirmMessage(factor: Factor, _value: string): string {
   switch (factor) {
     case "deadline":
       return `Got it — I've locked in your deadline. Your plan now has a clear finish line.`;

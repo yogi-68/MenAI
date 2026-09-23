@@ -22,7 +22,7 @@
  * POST /api/rhythm/synthesize → Triggers deep synthesis (admin/cron only)
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import {  NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { buildCognitiveState, formatCognitiveStateForDashboard } from "@/lib/ai/orchestrator/cognition-engine";
 import { needsSynthesisOnLogin, runDeepSynthesis } from "@/lib/ai/orchestrator/synthesis-worker";

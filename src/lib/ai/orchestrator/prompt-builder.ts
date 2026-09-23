@@ -18,7 +18,7 @@ import { SYSTEM_PROMPT } from "@/lib/ai/prompts";
 import { getResponseLengthGuidance, getAntiRepetitionInstructions } from "./naturalizer";
 import { buildRegulationPrompt, detectEmotionalState } from "./regulation-engine";
 import { formatCognitiveStateForPrompt } from "./cognition-engine";
-import { formatUserModelCompactForPrompt, formatUserModelForPrompt } from "@/lib/user-model/format-for-prompt";
+import { formatUserModelCompactForPrompt } from "@/lib/user-model/format-for-prompt";
 import { buildChatModeGuidance, detectChatMode } from "@/lib/ai/orchestrator/chat-modes";
 import {
   buildEvidenceExplanation,
@@ -100,7 +100,7 @@ function shouldTriggerObservationMode(ctx: PipelineContext): boolean {
 /**
  * Build observation mode guidance for prompt
  */
-function buildObservationModeGuidance(ctx: PipelineContext): string {
+function buildObservationModeGuidance(_ctx: PipelineContext): string {
   return `## OBSERVATION MODE ACTIVE
 
 The user is ready for pattern reflection. Your job is to OBSERVE and INTERPRET with EVIDENCE, not to coach or question.
@@ -135,7 +135,7 @@ This creates premium intelligence feeling. The user wants to be SEEN through rea
  * Build context confidence alert based on what we know about the user
  * This is critical for preventing hallucinated plans and fake personalization
  */
-function buildContextConfidenceAlert(ctx: PipelineContext): string {
+function _buildContextConfidenceAlert(ctx: PipelineContext): string {
   const { maturity_level, active_goals, unfinished_commitments } = ctx.cognitiveState;
   
   const goalsCount = active_goals.length;
@@ -212,35 +212,6 @@ Don't just respond — interpret their trajectory. Surface insights they haven't
   }
   
   return "";
-}
-
-/**
- * Validate if we have sufficient context for the user's request
- * Now provides real validation instead of always returning true
- */
-export function validateSufficientContext(
-  cognitiveState: PipelineContext["cognitiveState"],
-  userMessage: string
-): {
-  sufficient: boolean;
-  missingInfo: string[];
-  shouldAsk: boolean;
-  suggestedQuestions?: string[];
-} {
-  const hasGoals = cognitiveState.active_goals.length > 0;
-  const hasCommitments = cognitiveState.unfinished_commitments.length > 0;
-  
-  const missingInfo: string[] = [];
-  if (!hasGoals) missingInfo.push("goals");
-  if (!hasCommitments) missingInfo.push("commitments");
-  
-  // Always return sufficient — the context confidence system (LOW/MODERATE/HIGH) 
-  // will guide how the AI behaves. The AI should NEVER refuse to engage.
-  return {
-    sufficient: true,
-    missingInfo,
-    shouldAsk: false,
-  };
 }
 
 /**

@@ -101,7 +101,7 @@ const DIMENSION_META: Record<
 
 function scoreGoalClarity(input: DimensionInput): number {
   if (input.initiatives.length === 0) return 10;
-  const init = input.initiatives[0];
+  const _init = input.initiatives[0];
   const facts = knownFactsFromInput(input);
   const missing = buildGoalAnalysis(facts).missingVariables;
   if (missing.length === 0) return 95;

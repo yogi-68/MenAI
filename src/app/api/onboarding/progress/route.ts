@@ -9,7 +9,7 @@ import { ensureUserSetup } from "@/lib/auth/ensure-user-setup";
 
 export const runtime = "nodejs";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();

@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 export async function createServerSupabaseClient() {
@@ -32,9 +33,21 @@ export async function createServerSupabaseClient() {
   );
 }
 
-export async function createServiceRoleClient() {
+/**
+ * Service-role client — bypasses RLS. Only for server-side work that has
+ * already established who the user is.
+ *
+ * Memoized: this was previously re-importing `@supabase/supabase-js` and
+ * constructing a fresh client on every call, across ~30 call sites, several of
+ * which sit on the chat request path.
+ */
+let _serviceRoleClient: SupabaseClient | null = null;
+
+export async function createServiceRoleClient(): Promise<SupabaseClient> {
+  if (_serviceRoleClient) return _serviceRoleClient;
+
   const { createClient } = await import("@supabase/supabase-js");
-  return createClient(
+  _serviceRoleClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
     process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder",
     {
@@ -44,4 +57,5 @@ export async function createServiceRoleClient() {
       },
     }
   );
+  return _serviceRoleClient;
 }

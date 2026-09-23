@@ -118,8 +118,8 @@ export function detectEmotionalState(
  */
 export function getRegulationStrategy(
   emotionalState: EmotionalState,
-  emotion: EmotionAnalysis,
-  state: ConversationState
+  _emotion: EmotionAnalysis,
+  _state: ConversationState
 ): RegulationStrategy {
   switch (emotionalState) {
     case "ACTIVATED":

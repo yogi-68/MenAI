@@ -40,7 +40,7 @@ export async function writeGoalProgressSnapshots(
   supabase: SupabaseClient,
   userId: string
 ): Promise<number> {
-  const today = todayDateStr();
+  const _today = todayDateStr();
 
   const { data: goals } = await supabase
     .from("goals")

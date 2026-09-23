@@ -1,17 +1,22 @@
 {
-  "name": "men-ai",
+  "name": "mettle",
   "version": "1.0.0",
   "private": true,
-  "description": "MenAI — personal execution operating system",
+  "description": "Mettle - your mental performance coach",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
@@ -22,10 +27,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@upstash/redis": "^1.38.0",
-    "ai": "^6.0.184",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
     "idb-keyval": "^6.2.4",
     "lucide-react": "^1.16.0",
@@ -36,22 +38,24 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
     "resend": "^6.12.4",
-    "stripe": "^22.1.1",
     "tailwind-merge": "^3.6.0",
-    "tailwindcss-animate": "^1.0.7",
     "typescript": "^6.0.3",
     "zod": "^4.4.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.3.0",
-    "@types/jest": "^29.5.14",
     "@vitest/ui": "^4.1.7",
     "autoprefixer": "^10.5.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.6",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "happy-dom": "^20.9.0",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.7"
   }
 }

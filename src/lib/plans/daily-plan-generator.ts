@@ -54,9 +54,9 @@ import {
 } from "@/lib/plans/coach-insights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
-import { isVagueTask, isFinishableTodayTask } from "@/lib/tasks/finishable-today";
+import { isVagueTask } from "@/lib/tasks/finishable-today";
 import { getUserContext, formatUserContextForPlanner } from "@/lib/context/user-context";
-import { sanitizePlanTaskFields, buildTaskWhyLine } from "@/lib/plans/task-why-line";
+import { sanitizePlanTaskFields } from "@/lib/plans/task-why-line";
 
 export const PLAN_CONTENT_VERSION = 2;
 
@@ -412,7 +412,7 @@ export async function fetchPlanUserContext(
   const primaryInit = primaryId
     ? initiativesRaw.find((i) => i.id === primaryId)
     : initiativesRaw[0];
-  const goals: Array<{ id: string; title: string; description?: string | null; target_date?: string | null; progress?: number | null; parent_goal_id?: string | null }> = [];
+  const _goals: Array<{ id: string; title: string; description?: string | null; target_date?: string | null; progress?: number | null; parent_goal_id?: string | null }> = [];
   const pendingTasks = pendingTasksRes.data || [];
   const completedTasks = completedTasksRes.data || [];
 
@@ -552,8 +552,8 @@ export async function fetchPlanUserContext(
     return [];
   });
 
-  let currentFocusTitle: string | null = primaryInit?.title ?? null;
-  let currentFocusUntil: string | null =
+  const currentFocusTitle: string | null = primaryInit?.title ?? null;
+  const currentFocusUntil: string | null =
     profileRes.data?.current_focus_until ?? primaryInit?.target_date ?? null;
 
   const patternGuidance = buildPatternGuidanceLines(patterns);
@@ -679,7 +679,7 @@ export async function fetchPlanUserContext(
   const planContext = primaryInit
     ? await loadPlanContextData(supabase, userId, primaryInit.id)
     : await loadPlanContextData(supabase, userId, "_none");
-  const linkedGoal = null; // direction goals excluded from daily planner
+  const _linkedGoal = null; // direction goals excluded from daily planner
   const dimensionInput = {
     goals: [],
     initiatives: initiatives.map((i) => ({
@@ -1114,7 +1114,7 @@ function enforceThreeTasksPerGoal(
   const result: DailyPlanTask[] = [];
   for (const title of goalTitles) {
     const key = title.toLowerCase();
-    let list = byGoal.get(key) || [];
+    const list = byGoal.get(key) || [];
     while (list.length < TASKS_PER_GOAL && unlinked.length > 0) {
       const next = unlinked.shift()!;
       list.push({ ...next, linkedInitiative: title });
@@ -1133,7 +1133,7 @@ function fitTasksToTimeBudget(
   const capped = tasks.slice(0, maxTasks);
   if (capped.length === 0) return capped;
 
-  let total = capped.reduce((sum, t) => sum + t.estimatedMinutes, 0);
+  const total = capped.reduce((sum, t) => sum + t.estimatedMinutes, 0);
   if (total <= maxMinutes) return capped;
 
   const scale = maxMinutes / total;
@@ -1356,7 +1356,7 @@ export async function generateDailyPlanWithAI(
     throw new Error("AI produced only vague or oversized tasks");
   }
 
-  const score = ctx.confidence.score;
+  const _score = ctx.confidence.score;
   const evidence =
     (parsed.evidenceUsed?.filter(Boolean).length ?? 0) > 0
       ? parsed.evidenceUsed!.filter(Boolean).slice(0, 6)

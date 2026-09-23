@@ -34,3 +34,8 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+# Test output
+playwright-report/
+test-results/
+coverage/

@@ -108,7 +108,9 @@ export async function setInCache<T>(
   if (!client) return false;
 
   try {
-    await client.setex(key, ttlSeconds, JSON.stringify(value));
+    // No JSON.stringify: @upstash/redis serializes on write and parses on
+    // read. Stringifying here double-encoded every cached value.
+    await client.setex(key, ttlSeconds, value);
     return true;
   } catch (error) {
     console.error(`[Redis] Set failed for ${key}:`, error);

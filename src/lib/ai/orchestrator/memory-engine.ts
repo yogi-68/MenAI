@@ -52,28 +52,21 @@ export async function getMemoryContext(
       const date = new Date(mem.created_at).toLocaleDateString();
       const entry = `[${date}] ${mem.content}`;
 
-      // Apply emotional prioritization
-      const importance = mem.metadata?.importance || 0.5;
-      let weight = 1.0;
-      
+      // Route each memory to the band the prompt builder reads from.
+      // An earlier draft also computed an importance/weight score here; it was
+      // never read by anything, so the scoring is gone and the routing stays.
       switch (mem.memory_type) {
-        case "conversation":
-          weight = 1.0;
-          longTerm.push(entry);
-          break;
         case "insight":
-          weight = 1.5; // Insights are more valuable
           longTerm.push(entry);
           break;
         case "journal":
         case "preference":
-          weight = 1.1;
           episodic.push(entry);
           break;
         case "mood":
-          weight = 1.2; // Mood patterns are emotionally important
           emotional.push(entry);
           break;
+        case "conversation":
         default:
           longTerm.push(entry);
       }

@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import {
-  effectiveConfidence,
   runDailyMemoryLifecycle,
 } from "@/lib/mentor/memory-lifecycle";
 

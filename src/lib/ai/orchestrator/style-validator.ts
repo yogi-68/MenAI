@@ -361,39 +361,4 @@ function buildRegenerationFeedback(
 
   return parts.join("\n");
 }
-
-/**
- * Quick check if a response is obviously generic
- * Used for fast pre-filtering
- */
-export function isObviouslyGeneric(response: string): boolean {
-  const genericPatterns = [
-    /research.*market.*build.*mvp/i,
-    /step 1.*step 2.*step 3/i,
-    /here are (some|the) (steps|things)/i,
-  ];
-
-  return genericPatterns.some(p => p.test(response));
-}
-
-/**
- * Check if response references user's actual context
- */
-export function hasPersonalization(
-  response: string,
-  lifeContext?: LifeContext | null
-): boolean {
-  if (!lifeContext) return false;
-
-  // Check if any goals are referenced
-  const hasGoalReference = lifeContext.activeGoals.some(goal =>
-    response.toLowerCase().includes(goal.title.toLowerCase())
-  );
-
-  // Check if any commitments are referenced
-  const hasCommitmentReference = lifeContext.activeCommitments.some(commitment =>
-    response.toLowerCase().includes(commitment.description.toLowerCase().slice(0, 20))
-  );
-
-  return hasGoalReference || hasCommitmentReference;
-}
+

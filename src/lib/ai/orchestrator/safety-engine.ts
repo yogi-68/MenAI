@@ -7,6 +7,7 @@
 
 import { moderateContent } from "@/lib/ai/openai";
 import { detectCrisis, getCrisisResponseMessage } from "@/lib/ai/crisis-detection";
+import { logger } from "@/lib/observability/logger";
 import type { SafetyResult, EmotionAnalysis } from "./types";
 
 function buildSafetyFromCrisis(
@@ -58,14 +59,21 @@ export function runCrisisSafetyCheck(
   return buildSafetyFromCrisis(crisisResult, false, emotionalEscalation);
 }
 
-/** OpenAI moderation — call off the hot path. */
+/**
+ * OpenAI moderation — call off the hot path.
+ *
+ * Fails CLOSED. Returning `false` on an API error meant that an outage at the
+ * provider silently disabled moderation entirely, which is precisely the
+ * condition under which you most need it. Treating an error as "flagged" costs
+ * a handful of false positives; treating it as "clean" costs the guarantee.
+ */
 export async function runModerationCheck(message: string): Promise<boolean> {
   try {
     const modResult = await moderateContent(message);
     return modResult.flagged;
   } catch (e) {
-    console.error("Moderation API error:", e);
-    return false;
+    logger.error("[safety] moderation unavailable — failing closed", e);
+    return true;
   }
 }
 
@@ -76,28 +84,8 @@ export function scheduleAsyncModeration(
 ): void {
   void runModerationCheck(message).then((flagged) => {
     if (flagged) {
-      console.warn("[Safety] Post-hoc moderation flagged user message");
+      logger.warn("[safety] post-hoc moderation flagged a user message");
     }
     onFlagged?.(flagged);
   });
-}
-
-/**
- * Full safety pipeline — includes blocking moderation.
- * Prefer runCrisisSafetyCheck + scheduleAsyncModeration for chat paths.
- */
-export async function runSafetyPipeline(
-  message: string,
-  emotion?: EmotionAnalysis
-): Promise<SafetyResult> {
-  const crisisResult = detectCrisis(message);
-  if (crisisResult.requiresEscalation) {
-    return buildSafetyFromCrisis(crisisResult, false, false);
-  }
-
-  const moderationFlagged = await runModerationCheck(message);
-  const emotionalEscalation =
-    !!emotion && emotion.intensity >= 8 && emotion.sentiment === "negative";
-
-  return buildSafetyFromCrisis(crisisResult, moderationFlagged, emotionalEscalation);
 }

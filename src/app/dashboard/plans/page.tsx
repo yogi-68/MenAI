@@ -253,14 +253,14 @@ export default function DailyPlansPage() {
     coachInsight ||
     plan?.whatMattersNow ||
     plan?.daySummary;
-  const metrics = executionData?.metrics;
+  const _metrics = executionData?.metrics;
   const completedTasks = tasks?.filter((t) => t.status === "completed").length || 0;
   const totalTasks = tasks?.length || 0;
-  const completionRate =
+  const _completionRate =
     totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
   const isLoading = planLoading || tasksLoading;
-  const lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
-  const planningQuality = plan?.planningContext?.planningQuality;
+  const _lowContext = plan?.confidence ? isLowPlanConfidence(plan.confidence.score) : false;
+  const _planningQuality = plan?.planningContext?.planningQuality;
   const evidence = plan?.evidence || [];
   const hasGoals =
     (goalsPayload?.goals?.length ?? 0) > 0 &&

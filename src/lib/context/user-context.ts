@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computePerformanceScore } from "@/lib/plans/performance-score";
-import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
 import { getCurrentPhase } from "@/lib/plans/rhythm-phase";
 import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
 import { loadMentorMemories } from "@/lib/mentor/mentor-memory";
@@ -123,7 +122,6 @@ async function assembleUserContext(
   const [
     profileRes,
     performance,
-    taskStats,
     userModel,
     goals,
     todayTasksRes,
@@ -136,7 +134,6 @@ async function assembleUserContext(
       .eq("id", userId)
       .maybeSingle(),
     computePerformanceScore(supabase, userId),
-    fetchTodayTaskStats(supabase, userId),
     getUserModel(supabase, userId),
     fetchActiveExecutionGoals(supabase, userId, 12),
     supabase

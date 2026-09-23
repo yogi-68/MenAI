@@ -159,10 +159,3 @@ export async function applyRhythm(
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-/**
- * Get rhythm description for debugging/logging
- */
-export function getRhythmDescription(config: RhythmConfig): string {
-  return `Rhythm: ${config.mode} (chunk: ${config.chunkDelayMs}ms, sentence: ${config.pauseAfterSentence}ms) - ${config.description}`;
-}

@@ -5,12 +5,11 @@
  * Multi-stage questionnaire with one-question-at-a-time flow
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ONBOARDING_QUESTIONS,
-  buildQuestionFlow,
   getNextQuestion,
   getTotalQuestions,
   getQuestionNumber,

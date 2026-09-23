@@ -24,7 +24,7 @@ function enforceThreeTasksPerGoal(
   const result: typeof tasks = [];
   for (const title of goalTitles) {
     const key = title.toLowerCase();
-    let list = byGoal.get(key) || [];
+    const list = byGoal.get(key) || [];
     while (list.length < TASKS_PER_GOAL && unlinked.length > 0) {
       const next = unlinked.shift()!;
       list.push({ ...next, linkedInitiative: title });

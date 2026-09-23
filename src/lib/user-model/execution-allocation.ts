@@ -111,7 +111,7 @@ function normalizePercents(
   const total = entries.reduce((s, e) => s + e.weight, 0);
   if (total === 0) return entries.map(() => Math.floor(100 / entries.length));
 
-  let percents = entries.map((e) => Math.round((e.weight / total) * 100));
+  const percents = entries.map((e) => Math.round((e.weight / total) * 100));
 
   let sum = percents.reduce((s, p) => s + p, 0);
   if (percents.length > 0 && sum !== 100) {

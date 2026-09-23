@@ -23,7 +23,6 @@ export interface PredictionGenerationParams {
 export async function evaluatePredictions({
   userId,
   extractedData,
-  conversationId,
   serviceClient,
 }: PredictionGenerationParams): Promise<void> {
   if (process.env.ENABLE_PREDICTIONS !== "true") {
