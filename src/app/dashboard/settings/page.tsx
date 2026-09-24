@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAppStore } from "@/lib/store";
 import { Settings, CheckCircle, Sun, Moon } from "lucide-react";
+import { applyTheme, readStoredTheme, type Theme } from "@/lib/theme";
+import { DataControls } from "@/components/settings/data-controls";
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -13,9 +15,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -32,8 +35,7 @@ export default function SettingsPage() {
         setFullName(profile.full_name || "");
       }
 
-      const savedTheme = localStorage.getItem("menai-theme") as "light" | "dark" | null;
-      setTheme(savedTheme || "dark");
+      setTheme(readStoredTheme());
 
       setLoading(false);
     };
@@ -45,6 +47,7 @@ export default function SettingsPage() {
     e.preventDefault();
     setSaving(true);
     setSuccess(false);
+    setSaveError(null);
 
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -69,24 +72,20 @@ export default function SettingsPage() {
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      console.error("Failed to save settings:", err);
-      alert("Error saving settings. Please try again.");
+    } catch {
+      setSaveError("We couldn't save that. Try again in a moment.");
     } finally {
       setSaving(false);
     }
   };
 
   const toggleTheme = () => {
-    const newTheme = theme === "light" ? "dark" : "light";
-    setTheme(newTheme);
-    localStorage.setItem("menai-theme", newTheme);
-
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    const next: Theme = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    // applyTheme also rewrites the inline background and color that the root
+    // layout's bootstrap script sets. Toggling only the class left light mode
+    // showing light text on a dark inline background until a reload.
+    applyTheme(next);
   };
 
   if (loading) {
@@ -165,6 +164,11 @@ export default function SettingsPage() {
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
+            {saveError && (
+              <span role="alert" style={{ fontSize: "0.85rem", color: "var(--accent-danger)" }}>
+                {saveError}
+              </span>
+            )}
             {success && (
               <span style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem", color: "var(--accent-secondary)", fontWeight: 600 }}>
                 <CheckCircle size={16} /> Saved
@@ -181,6 +185,10 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+
+      <div style={{ marginTop: 24 }}>
+        <DataControls />
+      </div>
     </div>
   );
 }

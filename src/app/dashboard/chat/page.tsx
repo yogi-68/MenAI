@@ -103,13 +103,28 @@ function ChatPageInner() {
   const lastScrollTs = useRef(0);
   const skipScrollToBottomRef = useRef(false);
 
-  // Auto-send opening message when intent=improve_confidence is in the URL
+  // Open the conversation for the caller when the URL carries an intent.
+  //
+  // "Add goal" used to link to /dashboard/goals, which is a redirect back to
+  // the page the button was on — so the primary call to action reloaded the
+  // current page. Goals are created by telling the coach, so that is where it
+  // points now.
   useEffect(() => {
-    if (intent !== "improve_confidence" || !intentGoalId || autoSentRef.current) return;
-    if (isSending) return;
-    autoSentRef.current = true;
-    const openingMessage = `I want to improve my plan precision for this goal. What information do you need from me?`;
-    sendMessage(openingMessage, { confidenceGoalId: intentGoalId });
+    if (autoSentRef.current || isSending) return;
+
+    if (intent === "improve_confidence" && intentGoalId) {
+      autoSentRef.current = true;
+      sendMessage(
+        "I want to improve my plan precision for this goal. What do you need from me?",
+        { confidenceGoalId: intentGoalId }
+      );
+      return;
+    }
+
+    if (intent === "new_goal") {
+      autoSentRef.current = true;
+      sendMessage("I want to set up something new to work toward. Ask me what you need.");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intent, intentGoalId, isSending]);
 

@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   MessageSquare,
+  Brain,
   Compass,
   Settings,
   LogOut,
@@ -24,6 +25,7 @@ import { CoachMobileFab } from "@/components/chat/coach-mobile-fab";
 
 const primaryNav = [
   { href: "/dashboard", icon: Compass, label: "Overview" },
+  { href: "/dashboard/mind", icon: Brain, label: "Your mind" },
   { href: "/dashboard/plans", icon: Calendar, label: "Today's Plan" },
   { href: "/dashboard/chat", icon: MessageSquare, label: "Coach", desktopOnly: true },
   { href: "/dashboard/timeline", icon: History, label: "Timeline" },

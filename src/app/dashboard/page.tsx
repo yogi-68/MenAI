@@ -134,7 +134,7 @@ export default function DashboardOverview() {
             {formatHeaderDate()}
           </span>
           <Link
-            href="/dashboard/goals"
+            href="/dashboard/chat?intent=new_goal"
             className="btn-primary inline-flex items-center gap-1.5 text-sm no-underline px-3 py-2"
           >
             <Plus size={14} /> Add goal
@@ -177,11 +177,14 @@ export default function DashboardOverview() {
                 >
                   <MessageSquare size={14} /> Talk to your coach
                 </Link>
+                {/* This used to link to /onboarding, which redirects straight
+                    back here once onboarding is complete — a dead end for
+                    exactly the user seeing this empty state. */}
                 <Link
-                  href="/onboarding"
+                  href="/dashboard/chat?intent=new_goal"
                   className="btn-secondary inline-flex items-center gap-2 text-sm no-underline px-4 py-2"
                 >
-                  <Target size={14} /> Set up via onboarding
+                  <Target size={14} /> Set your first goal
                 </Link>
               </div>
             </ClayCard>
