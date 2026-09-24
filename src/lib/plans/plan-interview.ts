@@ -1,8 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  type ContextDimensionId,
   type DimensionInput,
   type PlanContextSnapshot,
   buildPlanContextSnapshot,
+  pickNextInterviewDimension,
+  questionForDimension,
 } from "@/lib/plans/plan-context-dimensions";
 import {
   buildGoalAnalysis,
@@ -17,6 +20,7 @@ import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 import {
   buildInterviewQuestionPayload,
   runAiIdentityInterviewStep,
+  type AiInterviewQuestion,
 } from "@/lib/plans/ai-identity-interview";
 import {
   prefetchAiInterviewQuestion,
@@ -44,6 +48,12 @@ export interface PlanContextData {
   trainingDaysPerWeek?: number | null;
   studyHoursPerDay?: number | null;
   currentMetric?: string | null;
+  /** When in the day this person thinks most clearly. */
+  peakEnergyWindow?: string | null;
+  /** What reliably drains them. */
+  depletedBy?: string | null;
+  /** What actually restores them, in their own words. */
+  recoveryAction?: string | null;
   /** Missing-variable ids asked today (domain-specific) */
   interviewAskedToday?: string[];
   interviewDate?: string;
@@ -55,6 +65,9 @@ interface PlanContextStore extends PlanContextData {
 }
 
 const LEGACY_FIELD_KEYS: (keyof PlanContextData)[] = [
+  "peakEnergyWindow",
+  "depletedBy",
+  "recoveryAction",
   "weeklyAvailableHours",
   "biggestObstacle",
   "initiativeOutcome90d",
@@ -173,7 +186,11 @@ export async function buildDimensionInput(
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [goalsRes, initRes, patternsRes, tasksRes, reflectionsRes] = await Promise.all([
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  const [goalsRes, initRes, patternsRes, tasksRes, reflectionsRes, checkinsRes] =
+    await Promise.all([
     supabase
       .from("goals")
       .select("title, description")
@@ -206,6 +223,13 @@ export async function buildDimensionInput(
       .eq("user_id", userId)
       .order("reflection_date", { ascending: false })
       .limit(3),
+    // Feeds the state_baseline dimension, which improves by logging rather
+    // than by answering a question.
+    supabase
+      .from("state_checkins")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("checkin_date", fourteenDaysAgo.toISOString().split("T")[0]),
   ]);
 
   const allInits = initRes.data || [];
@@ -225,6 +249,7 @@ export async function buildDimensionInput(
     recentReflections: reflectionsRes.data || [],
     planContext,
     questionsAskedToday: planContext.interviewAskedToday || [],
+    recentStateCheckins: checkinsRes.count ?? 0,
     primaryInitiativeId: primaryId,
   };
 }
@@ -250,6 +275,70 @@ export function buildKnownFactsFromInput(
     lifeArea: init?.life_area,
     goalTexts: linkedGoalTitle ? [linkedGoalTitle] : [],
     planContext: input.planContext as Record<string, unknown>,
+  };
+}
+
+
+/**
+ * Which identity dimension a context dimension reports against.
+ *
+ * The UI and the coverage store are keyed by identity dimension, so a
+ * deterministic context question has to declare where its answer lands.
+ */
+const CONTEXT_TO_IDENTITY: Record<ContextDimensionId, IdentityDimensionId> = {
+  goal_clarity: "goals",
+  initiative_clarity: "goals",
+  deadline_clarity: "planning_baseline",
+  obstacle_clarity: "execution_style",
+  available_time: "constraints",
+  recent_activity: "planning_baseline",
+  energy_pattern: "environment",
+  depletion_source: "constraints",
+  recovery_style: "execution_style",
+  state_baseline: "planning_baseline",
+};
+
+/** The variable id an answer to this dimension is stored under. */
+const CONTEXT_TO_VARIABLE: Partial<Record<ContextDimensionId, string>> = {
+  available_time: "weeklyAvailableHours",
+  obstacle_clarity: "biggestObstacle",
+  initiative_clarity: "initiativeOutcome90d",
+  goal_clarity: "currentMetric",
+  energy_pattern: "peakEnergyWindow",
+  depletion_source: "depletedBy",
+  recovery_style: "recoveryAction",
+};
+
+/**
+ * A deterministic question for a badly-covered structured dimension.
+ *
+ * Preferred over the model when a dimension is genuinely empty: the answer
+ * has a defined destination, it costs no tokens, and the phrasing is stable
+ * across sessions. The model still handles everything more nuanced.
+ */
+function deterministicQuestionFor(
+  input: DimensionInput,
+  primaryTitle?: string
+): AiInterviewQuestion | null {
+  const dimension = pickNextInterviewDimension(input);
+  if (!dimension) return null;
+
+  // Only pre-empt the model when the gap is real. A middling score is better
+  // served by a question the model can shape around what it already knows.
+  if (dimension.score >= 45) return null;
+
+  const variableId = CONTEXT_TO_VARIABLE[dimension.id];
+  if (!variableId) return null;
+
+  const question = questionForDimension(dimension.id, { initiativeTitle: primaryTitle });
+
+  return {
+    id: variableId,
+    dimension: CONTEXT_TO_IDENTITY[dimension.id],
+    prompt: question.prompt,
+    subtitle: question.subtitle,
+    inputType: question.inputType,
+    expectedGain: dimension.marginalGain,
   };
 }
 
@@ -301,6 +390,22 @@ export async function getPlanContextState(
       identityCoverage: cached.coverage,
       overallCoverage: cached.overallCoverage,
     };
+  }
+
+  // A structured dimension with nothing in it gets a fixed question, before
+  // we spend a model call on phrasing one.
+  if (primary && snapshot.shouldInterview) {
+    const direct = deterministicQuestionFor(input, primary.title);
+    if (direct) {
+      return {
+        snapshot,
+        goalAnalysis,
+        nextQuestion: buildInterviewQuestionPayload(direct, askedToday.length + 1),
+        biggestUnknown: direct.subtitle ?? null,
+        identityCoverage: identityProfile.lastCoverage ?? null,
+        overallCoverage: identityProfile.lastOverallCoverage ?? null,
+      };
+    }
   }
 
   const bundle = await buildEvidenceBundle(supabase, userId, identityProfile);
@@ -429,6 +534,15 @@ export async function applyInterviewAnswer(
       break;
     case "weeklyAvailableHours":
       patch.weeklyAvailableHours = Math.min(80, Math.max(1, Number(trimmed) || 0));
+      break;
+    case "peakEnergyWindow":
+      patch.peakEnergyWindow = trimmed;
+      break;
+    case "depletedBy":
+      patch.depletedBy = trimmed;
+      break;
+    case "recoveryAction":
+      patch.recoveryAction = trimmed;
       break;
     case "biggestObstacle":
       patch.biggestObstacle = trimmed;

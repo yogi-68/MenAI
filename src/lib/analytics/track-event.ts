@@ -11,7 +11,10 @@ export type ProductEventName =
   | "suggestion_shown"
   | "suggestion_accepted"
   | "suggestion_dismissed"
-  | "who_am_i_asked";
+  | "who_am_i_asked"
+  | "first_state_checkin"
+  | "state_checkin"
+  | "reset_completed";
 
 /** Server-side product analytics — invisible to regular users. */
 export async function trackProductEvent(

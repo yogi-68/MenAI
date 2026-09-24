@@ -11,7 +11,13 @@ export type ContextDimensionId =
   | "deadline_clarity"
   | "obstacle_clarity"
   | "available_time"
-  | "recent_activity";
+  | "recent_activity"
+  // Mental-performance dimensions. These are what let the coach size a day
+  // against capacity rather than issuing a fixed quota.
+  | "energy_pattern"
+  | "depletion_source"
+  | "recovery_style"
+  | "state_baseline";
 
 export interface ContextDimension {
   id: ContextDimensionId;
@@ -47,9 +53,17 @@ export interface DimensionInput {
     trainingDaysPerWeek?: number | null;
     studyHoursPerDay?: number | null;
     currentMetric?: string | null;
+    /** When in the day the user does their best work. */
+    peakEnergyWindow?: string | null;
+    /** What reliably drains them. */
+    depletedBy?: string | null;
+    /** What actually restores them, in their own words. */
+    recoveryAction?: string | null;
     interviewAskedToday?: string[];
   };
   questionsAskedToday: string[];
+  /** How many state check-ins exist in the recent window. */
+  recentStateCheckins?: number;
 }
 
 const STOP_OVERALL = 78;
@@ -57,45 +71,81 @@ const STOP_WEAK_DIM = 70;
 const MARGINAL_GAIN_FLOOR = 8;
 const MAX_QUESTIONS_PER_DAY = 5;
 
+/**
+ * Dimension metadata.
+ *
+ * `interviewable` marks a dimension the coach may ask about directly. Every
+ * dimension was previously set to false, which meant marginalGainFor()
+ * returned 0 for all of them, pickNextInterviewDimension() could never return
+ * a question, and this entire engine was unreachable. Anything the user can
+ * answer in a sentence is now interviewable; recent_activity is not, because
+ * it is measured from behaviour rather than asked.
+ *
+ * Weights sum to 1.
+ */
 const DIMENSION_META: Record<
   ContextDimensionId,
   { label: string; gapHint: string; interviewable: boolean; weight: number }
 > = {
   goal_clarity: {
     label: "Goal",
-    gapHint: "Share a baseline MenAI doesn't have yet (weight, users, study hours)",
-    interviewable: false,
-    weight: 0.15,
+    gapHint: "Give a baseline we don't have yet — a number to measure from",
+    interviewable: true,
+    weight: 0.1,
   },
   initiative_clarity: {
-    label: "Initiative",
+    label: "Outcome",
     gapHint: "Add a measurable 90-day outcome",
-    interviewable: false,
-    weight: 0.25,
+    interviewable: true,
+    weight: 0.15,
   },
   deadline_clarity: {
     label: "Deadline",
     gapHint: "Set a target date",
-    interviewable: false,
-    weight: 0.2,
+    interviewable: true,
+    weight: 0.12,
   },
   obstacle_clarity: {
     label: "Biggest obstacle",
-    gapHint: "Name what's actually blocking progress",
-    interviewable: false,
-    weight: 0.2,
+    gapHint: "Name what is actually blocking progress",
+    interviewable: true,
+    weight: 0.13,
   },
   available_time: {
     label: "Available time",
-    gapHint: "Share how much time you can spend this week",
-    interviewable: false,
-    weight: 0.15,
+    gapHint: "Say how much time you realistically have this week",
+    interviewable: true,
+    weight: 0.1,
   },
   recent_activity: {
     label: "Recent activity",
-    gapHint: "Complete a task or log a reflection",
+    gapHint: "Finish a task or log a reflection",
     interviewable: false,
     weight: 0.05,
+  },
+  energy_pattern: {
+    label: "Energy pattern",
+    gapHint: "Tell us when in the day you think most clearly",
+    interviewable: true,
+    weight: 0.1,
+  },
+  depletion_source: {
+    label: "What drains you",
+    gapHint: "Name what reliably empties the tank",
+    interviewable: true,
+    weight: 0.1,
+  },
+  recovery_style: {
+    label: "What restores you",
+    gapHint: "Say what actually brings you back",
+    interviewable: true,
+    weight: 0.07,
+  },
+  state_baseline: {
+    label: "State baseline",
+    gapHint: "Log how you are for a few days",
+    interviewable: false,
+    weight: 0.08,
   },
 };
 
@@ -170,6 +220,38 @@ function scoreRecentActivity(input: DimensionInput): number {
   return 25;
 }
 
+function scoreEnergyPattern(input: DimensionInput): number {
+  const value = input.planContext.peakEnergyWindow?.trim();
+  if (!value) return 20;
+  return isVagueContextText(value) ? 55 : 95;
+}
+
+function scoreDepletionSource(input: DimensionInput): number {
+  const value = input.planContext.depletedBy?.trim();
+  if (!value) return 20;
+  return isVagueContextText(value) ? 55 : 95;
+}
+
+function scoreRecoveryStyle(input: DimensionInput): number {
+  const value = input.planContext.recoveryAction?.trim();
+  if (!value) return 25;
+  return isVagueContextText(value) ? 60 : 95;
+}
+
+/**
+ * How much state history exists.
+ *
+ * Not interviewable: it improves by logging, not by answering. Below roughly
+ * a week of readings there is not enough signal to call a trend.
+ */
+function scoreStateBaseline(input: DimensionInput): number {
+  const n = input.recentStateCheckins ?? 0;
+  if (n >= 7) return 95;
+  if (n >= 4) return 75;
+  if (n >= 1) return 45;
+  return 15;
+}
+
 function marginalGainFor(id: ContextDimensionId, score: number): number {
   if (!DIMENSION_META[id].interviewable) return 0;
   if (score >= 85) return 0;
@@ -186,6 +268,10 @@ export function computeContextDimensions(input: DimensionInput): ContextDimensio
     obstacle_clarity: scoreObstacleClarity(input),
     available_time: scoreAvailableTime(input),
     recent_activity: scoreRecentActivity(input),
+    energy_pattern: scoreEnergyPattern(input),
+    depletion_source: scoreDepletionSource(input),
+    recovery_style: scoreRecoveryStyle(input),
+    state_baseline: scoreStateBaseline(input),
   };
 
   return (Object.keys(scores) as ContextDimensionId[]).map((id) => {
@@ -222,55 +308,75 @@ export function planningQualityLabel(
   return "Needs context";
 }
 
+/**
+ * Decide whether to ask a question, and why not if not.
+ *
+ * One rule, evaluated in order. This previously had two competing blocks: a
+ * dimension-based decision, immediately overridden by a second block keyed off
+ * buildGoalAnalysis().missingVariables. With every dimension marked
+ * un-interviewable the first block could never fire anyway, so the override
+ * was the only live path — and it could only ever ask about goal variables,
+ * never about the dimensions this module exists to score.
+ *
+ * The ordering matters: the daily cap comes first so that a user who has
+ * already answered five questions is never asked a sixth, whatever the gaps.
+ */
 export function buildPlanContextSnapshot(input: DimensionInput): PlanContextSnapshot {
   const dimensions = computeContextDimensions(input);
   const overall = overallFromDimensions(dimensions);
   const quality = planningQualityLabel(overall);
+  const asked = input.questionsAskedToday ?? [];
 
-  const unansweredInterviewable = dimensions.filter(
-    (d) => DIMENSION_META[d.id].interviewable && !input.questionsAskedToday.includes(d.id)
+  const candidates = dimensions.filter(
+    (d) =>
+      DIMENSION_META[d.id].interviewable &&
+      !asked.includes(d.id) &&
+      d.marginalGain >= MARGINAL_GAIN_FLOOR
   );
 
-  const weakest = [...unansweredInterviewable].sort(
-    (a, b) => a.score - b.score || b.marginalGain - a.marginalGain
-  )[0];
+  // Goal variables are tracked separately by buildGoalAnalysis and can also
+  // justify a question, so they count toward "is anything missing".
+  const missingGoalVariables =
+    input.initiatives.length > 0
+      ? buildGoalAnalysis(knownFactsFromInput(input)).missingVariables.filter(
+          (m) => !asked.includes(m.id)
+        )
+      : [];
 
-  let shouldInterview = false;
-  let stopReason: PlanContextSnapshot["stopReason"];
-
-  if (overall >= STOP_OVERALL) {
-    stopReason = "threshold_met";
-  } else if (!weakest || weakest.marginalGain < MARGINAL_GAIN_FLOOR) {
-    stopReason = "low_marginal_gain";
-  } else if (input.questionsAskedToday.length >= MAX_QUESTIONS_PER_DAY) {
-    stopReason = "threshold_met";
-  } else if (unansweredInterviewable.every((d) => d.score >= STOP_WEAK_DIM) && overall >= 72) {
-    stopReason = "threshold_met";
-  } else if (weakest && weakest.marginalGain >= MARGINAL_GAIN_FLOOR) {
-    shouldInterview = true;
-  } else {
-    stopReason = "no_gaps";
-  }
-
-  if (input.initiatives.length === 0) {
-    shouldInterview = false;
-  } else {
-    const missing = buildGoalAnalysis(knownFactsFromInput(input)).missingVariables;
-    const asked = input.questionsAskedToday || [];
-    const unanswered = missing.filter((m) => !asked.includes(m.id));
-    if (unanswered.length === 0) {
-      shouldInterview = false;
-      if (!stopReason) stopReason = "no_gaps";
-    } else if (input.questionsAskedToday.length >= MAX_QUESTIONS_PER_DAY) {
-      shouldInterview = false;
-      stopReason = "threshold_met";
-    } else if (overall >= STOP_OVERALL && unanswered.length <= 1) {
-      shouldInterview = false;
-      stopReason = "threshold_met";
-    } else {
-      shouldInterview = true;
+  const decide = (): { shouldInterview: boolean; stopReason?: PlanContextSnapshot["stopReason"] } => {
+    // Nothing to plan around yet: asking about a goal that doesn't exist is
+    // noise, and onboarding covers this ground.
+    if (input.initiatives.length === 0) {
+      return { shouldInterview: false, stopReason: "no_initiatives" };
     }
-  }
+
+    // A hard daily ceiling. The coach earns the right to ask by being useful,
+    // and a wall of questions is the fastest way to lose that.
+    if (asked.length >= MAX_QUESTIONS_PER_DAY) {
+      return { shouldInterview: false, stopReason: "max_questions" };
+    }
+
+    if (candidates.length === 0 && missingGoalVariables.length === 0) {
+      return { shouldInterview: false, stopReason: "no_gaps" };
+    }
+
+    // Context is good enough overall, and nothing weak is left worth asking.
+    if (overall >= STOP_OVERALL) {
+      const weakRemaining = candidates.some((d) => d.score < STOP_WEAK_DIM);
+      if (!weakRemaining && missingGoalVariables.length <= 1) {
+        return { shouldInterview: false, stopReason: "coverage_sufficient" };
+      }
+    }
+
+    if (candidates.length === 0) {
+      // Only goal variables remain; the goal interview handles those.
+      return { shouldInterview: true };
+    }
+
+    return { shouldInterview: true };
+  };
+
+  const { shouldInterview, stopReason } = decide();
 
   return {
     dimensions,
@@ -281,17 +387,22 @@ export function buildPlanContextSnapshot(input: DimensionInput): PlanContextSnap
   };
 }
 
+/**
+ * The single highest-value question to ask right now, or null.
+ *
+ * "Highest value" is the weakest dimension, breaking ties by marginal gain —
+ * the score a good answer is expected to add.
+ */
 export function pickNextInterviewDimension(
   input: DimensionInput
 ): ContextDimension | null {
-  const snapshot = buildPlanContextSnapshot(input);
-  if (!snapshot.shouldInterview) return null;
+  if (!buildPlanContextSnapshot(input).shouldInterview) return null;
 
-  const dimensions = computeContextDimensions(input);
-  const candidates = dimensions.filter(
+  const asked = input.questionsAskedToday ?? [];
+  const candidates = computeContextDimensions(input).filter(
     (d) =>
       DIMENSION_META[d.id].interviewable &&
-      !input.questionsAskedToday.includes(d.id) &&
+      !asked.includes(d.id) &&
       d.marginalGain >= MARGINAL_GAIN_FLOOR
   );
 
@@ -332,12 +443,31 @@ export function questionForDimension(
       };
     case "available_time":
       return {
-        prompt: "How many hours per week can you realistically spend on this?",
+        prompt: "How many hours a week can you realistically give this?",
+        subtitle: "Be honest rather than aspirational — the plan is sized from this.",
         inputType: "number",
+      };
+    case "energy_pattern":
+      return {
+        prompt: "When in the day do you think most clearly?",
+        subtitle: "Your hardest work should land there, not wherever it fits.",
+        inputType: "text",
+      };
+    case "depletion_source":
+      return {
+        prompt: "What reliably drains you?",
+        subtitle: "A meeting, a person, a kind of task — whatever costs you the most.",
+        inputType: "text",
+      };
+    case "recovery_style":
+      return {
+        prompt: "What actually brings you back when you're empty?",
+        subtitle: "What genuinely works, not what's supposed to.",
+        inputType: "text",
       };
     default:
       return {
-        prompt: "What would help MenAI plan your day better?",
+        prompt: "What would help us plan your day better?",
         inputType: "text",
       };
   }
