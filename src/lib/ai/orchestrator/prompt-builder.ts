@@ -239,6 +239,15 @@ Hold them to this. Reference it when they're drifting.`);
 
   parts.push(MENTOR_EXECUTION_PERSONA);
 
+  // Placed before the plan and the time context: how someone is today
+  // governs what it is reasonable to ask of them, so the model should read it
+  // before it reads the task list.
+  if (ctx.stateBlock) {
+    parts.push(
+      `## Their state (self-reported — treat as fact, never contradict it)\n${ctx.stateBlock}\n\nIf they are depleted or low, do not push volume. Name what you notice, then reduce the ask.`
+    );
+  }
+
   if (ctx.rhythmBlock) {
     parts.push(`## Time context (adapt tone and urgency)\n${ctx.rhythmBlock}`);
   }

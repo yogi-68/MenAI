@@ -54,6 +54,7 @@ import {
 } from "@/lib/plans/coach-insights";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TASKS_PER_GOAL } from "@/lib/plans/performance-score";
+import { getRecentCheckins, summarizeState } from "@/lib/mind/state-checkins";
 import { isVagueTask } from "@/lib/tasks/finishable-today";
 import { getUserContext, formatUserContextForPlanner } from "@/lib/context/user-context";
 import { sanitizePlanTaskFields } from "@/lib/plans/task-why-line";
@@ -141,6 +142,8 @@ export interface PlanUserContext {
   goalAnalysis: GoalAnalysis | null;
   primaryInitiativeTitle: string | null;
   maxTasks: number;
+  /** Tasks per goal for today, sized from the user's current state. */
+  tasksPerGoal: number;
   timeEstimationRatio: number;
   executionRate7d: number;
   initiativeMap: Map<string, string>;
@@ -745,8 +748,23 @@ export async function fetchPlanUserContext(
   const planPhase = options.planPhase ?? currentPlanPhase();
   const middayCompleted = options.middayCompleted ?? [];
   const activeGoalCount = Math.max(1, initiatives.length);
+
+  // Size the day against today's state.
+  //
+  // This is the difference between a coach and a task list: a fixed quota
+  // asks the same of someone at 2/10 as at 9/10, and the day they most need
+  // help is the day the plan is least achievable. summarizeState falls back
+  // to the steady band when there is no reading, so behaviour is unchanged
+  // for anyone who has not logged one.
+  const stateSummary = summarizeState(await getRecentCheckins(supabase, userId, 14));
+  const tasksPerGoal = Math.min(TASKS_PER_GOAL, stateSummary.suggestedTaskLoad);
+
   const maxTasks =
-    initiatives.length > 0 ? activeGoalCount * TASKS_PER_GOAL : planMode === "context_building" ? 2 : 0;
+    initiatives.length > 0
+      ? activeGoalCount * tasksPerGoal
+      : planMode === "context_building"
+        ? 2
+        : 0;
 
   const baseMinutes = 480;
   const availableMinutes = baseMinutes;
@@ -803,6 +821,7 @@ export async function fetchPlanUserContext(
     goalAnalysis,
     primaryInitiativeTitle: primaryInit?.title ?? null,
     maxTasks: planPhase === "afternoon" && middayCompleted.length > 0 ? Math.min(maxTasks, 3) : maxTasks,
+    tasksPerGoal,
     timeEstimationRatio: timeProfile.estimationRatio,
     executionRate7d: executionMetrics.last7Days.rate,
     initiativeMap,
@@ -881,7 +900,7 @@ function buildPrompt(ctx: PlanUserContext): string {
 - Ask for missing execution info in whyTheseTasks
 - Mark ALL tasks isContextBuilding: true`
       : `EXECUTION MODE — STRICT 3-TASK RULE:
-- Generate EXACTLY ${TASKS_PER_GOAL} tasks per active goal (${ctx.initiatives.length} goals → ${ctx.maxTasks} tasks total)
+- Generate EXACTLY ${ctx.tasksPerGoal} tasks per active goal (${ctx.initiatives.length} goals → ${ctx.maxTasks} tasks total)
 - NO bonus tasks, NO optional stretches, NO 4th or 5th tasks
 - Each task needs whyItMatters tying it to the goal's CURRENT milestone, recent win, or identity values — never generic busywork
 - Tasks must reference what the coach already knows about this person (values, recent wins, domain)
@@ -1089,10 +1108,17 @@ Return JSON only:
 }`;
 }
 
-function enforceThreeTasksPerGoal(
+/**
+ * Give every goal the same number of tasks, capped at `maxTasks` overall.
+ *
+ * `perGoal` comes from the user's current state rather than being fixed, so
+ * a depleted day produces a shorter list instead of an impossible one.
+ */
+function enforceTasksPerGoal(
   tasks: DailyPlanTask[],
   goalTitles: string[],
-  maxTasks: number
+  maxTasks: number,
+  perGoal: number = TASKS_PER_GOAL
 ): DailyPlanTask[] {
   if (goalTitles.length === 0) return tasks.slice(0, maxTasks);
 
@@ -1115,11 +1141,11 @@ function enforceThreeTasksPerGoal(
   for (const title of goalTitles) {
     const key = title.toLowerCase();
     const list = byGoal.get(key) || [];
-    while (list.length < TASKS_PER_GOAL && unlinked.length > 0) {
+    while (list.length < perGoal && unlinked.length > 0) {
       const next = unlinked.shift()!;
       list.push({ ...next, linkedInitiative: title });
     }
-    result.push(...list.slice(0, TASKS_PER_GOAL));
+    result.push(...list.slice(0, perGoal));
   }
 
   return result.slice(0, maxTasks);
@@ -1225,29 +1251,37 @@ async function fillMissingTasksPerGoal(
   let result = [...tasks];
 
   for (const goalTitle of ctx.activeGoalTitles) {
-    let missing = TASKS_PER_GOAL - countTasksForGoal(result, goalTitle);
+    let missing = ctx.tasksPerGoal - countTasksForGoal(result, goalTitle);
     while (missing > 0 && userId) {
       const generated = await generateTasksForGoal(ctx, goalTitle, missing, userId);
       if (generated.length === 0) break;
       result = [...result, ...generated];
-      missing = TASKS_PER_GOAL - countTasksForGoal(result, goalTitle);
+      missing = ctx.tasksPerGoal - countTasksForGoal(result, goalTitle);
     }
   }
 
-  return enforceThreeTasksPerGoal(result, ctx.activeGoalTitles, ctx.maxTasks);
+  return enforceTasksPerGoal(result, ctx.activeGoalTitles, ctx.maxTasks, ctx.tasksPerGoal);
 }
 
+/**
+ * Whether a stored plan no longer matches what today should look like.
+ *
+ * `perGoal` must be the count the plan was built with, not a constant: a plan
+ * legitimately shortened for a low-capacity day would otherwise look
+ * permanently incomplete and regenerate on every load.
+ */
 export function isPlanContentStale(
   content: DailyPlanContent,
-  goalTitles: string[]
+  goalTitles: string[],
+  perGoal: number = TASKS_PER_GOAL
 ): boolean {
   if ((content.planVersion ?? 0) < PLAN_CONTENT_VERSION) return true;
 
-  const expectedTasks = goalTitles.length * TASKS_PER_GOAL;
+  const expectedTasks = goalTitles.length * perGoal;
   if (goalTitles.length > 0 && content.tasks.length !== expectedTasks) return true;
 
   for (const title of goalTitles) {
-    if (countTasksForGoal(content.tasks, title) < TASKS_PER_GOAL) return true;
+    if (countTasksForGoal(content.tasks, title) < perGoal) return true;
   }
 
   return content.tasks.some(
@@ -1347,10 +1381,10 @@ export async function generateDailyPlanWithAI(
     }
   }
 
-  tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
+  tasks = enforceTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks, ctx.tasksPerGoal);
   tasks = await fillMissingTasksPerGoal(tasks, ctx, userId);
   tasks = fitTasksToTimeBudget(tasks, ctx.availableMinutes, ctx.maxTasks);
-  tasks = enforceThreeTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks);
+  tasks = enforceTasksPerGoal(tasks, ctx.activeGoalTitles, ctx.maxTasks, ctx.tasksPerGoal);
 
   if (tasks.length === 0) {
     throw new Error("AI produced only vague or oversized tasks");
@@ -1471,12 +1505,19 @@ export async function ensureTodayPlan(
     const content = normalizePlanContent(existing.plan_content);
     const activeGoals = await fetchActiveExecutionGoals(supabase, userId, 12);
     const goalTitles = activeGoals.map((g) => g.title);
+
+    // Compare against the count today actually calls for. Using the fixed
+    // constant would mark a plan deliberately shortened for a low-capacity
+    // day as incomplete, and regenerate it on every page load.
+    const todayState = summarizeState(await getRecentCheckins(supabase, userId, 14));
+    const expectedPerGoal = Math.min(TASKS_PER_GOAL, todayState.suggestedTaskLoad);
+
     const stale =
       !content.whyTheseTasks ||
       !content.confidence ||
       !content.planMode ||
       !content.planningContext ||
-      isPlanContentStale(content, goalTitles);
+      isPlanContentStale(content, goalTitles, expectedPerGoal);
 
     if (!stale && content.tasks.length > 0) {
       // Repair: ensure all plan tasks exist in the tasks table and taskId fields are populated

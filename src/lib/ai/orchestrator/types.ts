@@ -464,6 +464,8 @@ export interface PipelineContext {
   conversationId: string;
   modelConfig: ModelConfig;
   memoryRetrievalBlock?: string;
+  /** Recent mental-state readings. Empty when the user has not logged any. */
+  stateBlock?: string;
   rhythmBlock?: string;
   todayPlanBlock?: string | null;
 }

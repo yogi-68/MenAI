@@ -36,6 +36,7 @@ import { ingestChatMentorSignal } from "@/lib/mentor/mentor-memory";
 import { trackProductEvent } from "@/lib/analytics/track-event";
 import { buildRhythmContext, formatRhythmBlockForPrompt } from "@/lib/plans/rhythm-phase";
 import { fetchTodayTaskStats } from "@/lib/plans/today-task-stats";
+import { getRecentCheckins, summarizeState, formatStateForPrompt } from "@/lib/mind/state-checkins";
 import { getUserContext } from "@/lib/context/user-context";
 import { loadTodayPlanBlockForPrompt } from "@/lib/plans/today-plan-context";
 import {
@@ -414,7 +415,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
   // sequential awaits, each a set of database round trips, all of them ahead
   // of the first token. The only dependency is the pivot check below, which
   // needs mentorSignal.
-  const [mentorSignal, pinnedMemories, retrievalCtx, taskStats, userContext] =
+  const [mentorSignal, pinnedMemories, retrievalCtx, taskStats, userContext, stateCheckins] =
     await Promise.all([
       ingestChatMentorSignal(serviceClient, input.userId, input.message),
       loadPinnedMemories(serviceClient, input.userId),
@@ -423,6 +424,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
         : loadMemoryRetrievalContext(serviceClient, input.userId),
       fetchTodayTaskStats(serviceClient, input.userId),
       getUserContext(serviceClient, input.userId, { userModel: initialUserModel }),
+      getRecentCheckins(serviceClient, input.userId, 14),
     ]);
 
   // A pivot invalidates the model we just loaded, so re-synthesize. Rare.
@@ -481,6 +483,9 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     });
   }
 
+  const stateSummary = summarizeState(stateCheckins);
+  const stateBlock = formatStateForPrompt(stateSummary);
+
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
   const todayPlanBlock = await loadTodayPlanBlockForPrompt(
@@ -503,6 +508,7 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     conversationId,
     modelConfig,
     memoryRetrievalBlock,
+    stateBlock,
     rhythmBlock,
     todayPlanBlock,
   };
