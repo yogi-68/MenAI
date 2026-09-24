@@ -1,4 +1,4 @@
-# MenAI Design System (MASTER)
+# Mettle Design System (MASTER)
 
 Source of truth for UI work. **Do not replace these tokens** with auto-generated palettes.
 
