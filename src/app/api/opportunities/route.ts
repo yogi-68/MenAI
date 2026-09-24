@@ -1,124 +1,131 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { withAuth } from "@/lib/api/handler";
+import { apiDbError } from "@/lib/api/errors";
+import { RATE_LIMITS } from "@/lib/api/rate-limit";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-async function invalidatePlanForUser(userId: string) {
-  const supabase = await createServerSupabaseClient();
+export const runtime = "nodejs";
+
+const DateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+const Urgency = z.enum(["low", "medium", "high"]);
+
+const QuerySchema = z.object({
+  status: z.string().trim().max(30).optional(),
+  id: z.string().uuid().optional(),
+});
+
+const CreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).optional().nullable(),
+  lifeArea: z.string().trim().max(60).optional(),
+  urgency: Urgency.optional(),
+  dueDate: DateString.optional().nullable(),
+});
+
+const UpdateSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    lifeArea: z.string().trim().max(60).optional(),
+    urgency: Urgency.optional(),
+    dueDate: DateString.nullable().optional(),
+    status: z.enum(["active", "done", "dismissed"]).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 1, { message: "Nothing to update." });
+
+/** Opportunities feed the planner, so any change invalidates today's plan. */
+async function afterChange(supabase: SupabaseClient, userId: string) {
   await invalidateTodayPlan(supabase, userId);
-  invalidateUserCache(userId, "opportunity changed — daily plan invalidated");
+  invalidateUserCache(userId, "opportunity changed");
+  scheduleUserModelRefresh(supabase, userId);
 }
 
-export async function GET(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withAuth(
+  { scope: "opportunities", query: QuerySchema, rateLimit: RATE_LIMITS.read },
+  async ({ user, supabase, query }) => {
+    let q = supabase
+      .from("opportunities")
+      .select("id, title, description, life_area, urgency, due_date, status, created_at")
+      .eq("user_id", user.id)
+      .order("due_date", { ascending: true, nullsFirst: false });
 
-  const status = new URL(req.url).searchParams.get("status") || "active";
+    const status = query.status ?? "active";
+    if (status !== "all") q = q.eq("status", status);
 
-  let query = supabase
-    .from("opportunities")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("due_date", { ascending: true, nullsFirst: false });
-
-  if (status !== "all") query = query.eq("status", status);
-
-  const { data, error } = await query.limit(30);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ opportunities: data });
-}
-
-export async function POST(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const body = await req.json();
-  const { title, description, lifeArea, urgency, dueDate } = body;
-
-  if (!title?.trim()) {
-    return NextResponse.json({ error: "title is required" }, { status: 400 });
+    const { data, error } = await q.limit(30);
+    if (error) return apiDbError("opportunities", error, { userId: user.id });
+    return NextResponse.json({ opportunities: data ?? [] });
   }
+);
 
-  const { data, error } = await supabase
-    .from("opportunities")
-    .insert({
-      user_id: user.id,
-      title: title.trim(),
-      description: description?.trim() || null,
-      life_area: lifeArea || "personal",
-      urgency: urgency || "medium",
-      due_date: dueDate || null,
-    })
-    .select()
-    .single();
+export const POST = withAuth(
+  { scope: "opportunities", body: CreateSchema, rateLimit: RATE_LIMITS.write },
+  async ({ user, supabase, body }) => {
+    const { data, error } = await supabase
+      .from("opportunities")
+      .insert({
+        user_id: user.id,
+        title: body.title,
+        description: body.description?.trim() || null,
+        life_area: body.lifeArea || "personal",
+        urgency: body.urgency || "medium",
+        due_date: body.dueDate || null,
+      })
+      .select()
+      .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return apiDbError("opportunities", error, { userId: user.id });
 
-  await invalidatePlanForUser(user.id);
-  scheduleUserModelRefresh(supabase, user.id);
-  return NextResponse.json({ opportunity: data }, { status: 201 });
-}
+    await afterChange(supabase, user.id);
+    return NextResponse.json({ opportunity: data }, { status: 201 });
+  }
+);
 
-export async function PATCH(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = withAuth(
+  { scope: "opportunities", body: UpdateSchema, rateLimit: RATE_LIMITS.write },
+  async ({ user, supabase, body }) => {
+    // Only map fields that were actually sent, so a partial update cannot
+    // blank out columns it never mentioned.
+    const updates: Record<string, unknown> = {};
+    if (body.title !== undefined) updates.title = body.title;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.lifeArea !== undefined) updates.life_area = body.lifeArea;
+    if (body.urgency !== undefined) updates.urgency = body.urgency;
+    if (body.dueDate !== undefined) updates.due_date = body.dueDate;
+    if (body.status !== undefined) updates.status = body.status;
 
-  const body = await req.json();
-  const { id, ...updates } = body;
-  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    const { data, error } = await supabase
+      .from("opportunities")
+      .update(updates)
+      .eq("id", body.id)
+      .eq("user_id", user.id)
+      .select()
+      .single();
 
-  const mapped: Record<string, unknown> = {};
-  if (updates.title !== undefined) mapped.title = updates.title;
-  if (updates.description !== undefined) mapped.description = updates.description;
-  if (updates.lifeArea !== undefined) mapped.life_area = updates.lifeArea;
-  if (updates.urgency !== undefined) mapped.urgency = updates.urgency;
-  if (updates.dueDate !== undefined) mapped.due_date = updates.dueDate;
-  if (updates.status !== undefined) mapped.status = updates.status;
+    if (error) return apiDbError("opportunities", error, { userId: user.id });
 
-  const { data, error } = await supabase
-    .from("opportunities")
-    .update(mapped)
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .select()
-    .single();
+    await afterChange(supabase, user.id);
+    return NextResponse.json({ opportunity: data });
+  }
+);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+export const DELETE = withAuth(
+  { scope: "opportunities", query: QuerySchema.required({ id: true }), rateLimit: RATE_LIMITS.write },
+  async ({ user, supabase, query }) => {
+    const { error } = await supabase
+      .from("opportunities")
+      .delete()
+      .eq("id", query.id)
+      .eq("user_id", user.id);
 
-  await invalidatePlanForUser(user.id);
-  scheduleUserModelRefresh(supabase, user.id);
-  return NextResponse.json({ opportunity: data });
-}
+    if (error) return apiDbError("opportunities", error, { userId: user.id });
 
-export async function DELETE(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const id = new URL(req.url).searchParams.get("id");
-  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
-
-  const { error } = await supabase
-    .from("opportunities")
-    .delete()
-    .eq("id", id)
-    .eq("user_id", user.id);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await invalidatePlanForUser(user.id);
-  scheduleUserModelRefresh(supabase, user.id);
-  return NextResponse.json({ success: true });
-}
+    await afterChange(supabase, user.id);
+    return NextResponse.json({ success: true });
+  }
+);

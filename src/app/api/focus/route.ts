@@ -1,101 +1,95 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { withAuth } from "@/lib/api/handler";
+import { apiError } from "@/lib/api/errors";
+import { RATE_LIMITS } from "@/lib/api/rate-limit";
 import { invalidateTodayPlan } from "@/lib/plans/daily-plan-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
 import { scheduleUserModelRefresh } from "@/lib/user-model/synthesis-engine";
 
-export async function GET() {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const runtime = "nodejs";
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("current_focus_goal_id, current_focus_until")
-    .eq("id", user.id)
-    .single();
+const BodySchema = z.object({
+  /** null clears the current focus. */
+  initiativeId: z.string().uuid().nullable(),
+  until: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
+    .optional(),
+});
 
-  if (!profile?.current_focus_goal_id) {
-    return NextResponse.json({ focus: null });
+export const GET = withAuth(
+  { scope: "focus", rateLimit: RATE_LIMITS.read },
+  async ({ user, supabase }) => {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("current_focus_goal_id, current_focus_until")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.current_focus_goal_id) return NextResponse.json({ focus: null });
+
+    const { data: goal } = await supabase
+      .from("goals")
+      .select("id, title, target_date, life_area, status")
+      .eq("id", profile.current_focus_goal_id)
+      .eq("user_id", user.id)
+      .eq("goal_kind", "execution")
+      .maybeSingle();
+
+    if (!goal || goal.status !== "active") return NextResponse.json({ focus: null });
+
+    return NextResponse.json({
+      focus: {
+        initiativeId: goal.id,
+        title: goal.title,
+        until: profile.current_focus_until || goal.target_date,
+        lifeArea: goal.life_area,
+      },
+    });
   }
+);
 
-  const { data: initiative } = await supabase
-    .from("goals")
-    .select("id, title, target_date, life_area, status")
-    .eq("id", profile.current_focus_goal_id)
-    .eq("user_id", user.id)
-    .eq("goal_kind", "execution")
-    .maybeSingle();
+export const PATCH = withAuth(
+  { scope: "focus", body: BodySchema, rateLimit: RATE_LIMITS.write },
+  async ({ user, supabase, body }) => {
+    if (body.initiativeId === null) {
+      await supabase
+        .from("profiles")
+        .update({ current_focus_goal_id: null, current_focus_until: null })
+        .eq("id", user.id);
 
-  if (!initiative || initiative.status !== "active") {
-    return NextResponse.json({ focus: null });
-  }
+      await invalidateTodayPlan(supabase, user.id);
+      invalidateUserCache(user.id, "current focus cleared");
+      scheduleUserModelRefresh(supabase, user.id);
+      return NextResponse.json({ success: true, focus: null });
+    }
 
-  return NextResponse.json({
-    focus: {
-      initiativeId: initiative.id,
-      title: initiative.title,
-      until: profile.current_focus_until || initiative.target_date,
-      lifeArea: initiative.life_area,
-    },
-  });
-}
+    const { data: goal } = await supabase
+      .from("goals")
+      .select("id, title, target_date")
+      .eq("id", body.initiativeId)
+      .eq("user_id", user.id)
+      .eq("goal_kind", "execution")
+      .eq("status", "active")
+      .maybeSingle();
 
-export async function PATCH(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!goal) return apiError("not_found", { message: "That goal isn't active." });
 
-  const body = await req.json();
-  const { initiativeId, until } = body as { initiativeId: string | null; until?: string };
+    const focusUntil = body.until || goal.target_date;
 
-  if (initiativeId === null) {
     await supabase
       .from("profiles")
-      .update({ current_focus_goal_id: null, current_focus_until: null })
+      .update({ current_focus_goal_id: goal.id, current_focus_until: focusUntil })
       .eq("id", user.id);
+
     await invalidateTodayPlan(supabase, user.id);
+    invalidateUserCache(user.id, "current focus changed");
     scheduleUserModelRefresh(supabase, user.id);
-    return NextResponse.json({ success: true, focus: null });
+
+    return NextResponse.json({
+      success: true,
+      focus: { initiativeId: goal.id, title: goal.title, until: focusUntil },
+    });
   }
-
-  const { data: initiative } = await supabase
-    .from("goals")
-    .select("id, title, target_date")
-    .eq("id", initiativeId)
-    .eq("user_id", user.id)
-    .eq("goal_kind", "execution")
-    .eq("status", "active")
-    .single();
-
-  if (!initiative) {
-    return NextResponse.json({ error: "Active initiative not found" }, { status: 404 });
-  }
-
-  const focusUntil = until || initiative.target_date;
-
-  await supabase
-    .from("profiles")
-    .update({
-      current_focus_goal_id: initiativeId,
-      current_focus_until: focusUntil,
-    })
-    .eq("id", user.id);
-
-  await invalidateTodayPlan(supabase, user.id);
-  invalidateUserCache(user.id, "current focus changed");
-  scheduleUserModelRefresh(supabase, user.id);
-
-  return NextResponse.json({
-    success: true,
-    focus: {
-      initiativeId,
-      title: initiative.title,
-      until: focusUntil,
-    },
-  });
-}
+);

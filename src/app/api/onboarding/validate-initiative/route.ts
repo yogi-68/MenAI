@@ -1,58 +1,54 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { withAuth } from "@/lib/api/handler";
+import { RATE_LIMITS } from "@/lib/api/rate-limit";
 import { assessGoalQuality, assessGoalWithLLM } from "@/lib/goals/goal-quality-gate";
 
 export const runtime = "nodejs";
 
-export async function POST(request: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const BodySchema = z.object({
+  title: z.string().trim().min(1, "Tell us what you're working toward.").max(200),
+  directions: z.array(z.string().trim().max(120)).max(10).optional(),
+  buildingWhat: z.string().trim().max(500).nullable().optional(),
+});
 
-  const body = await request.json();
-  const { title, directions, buildingWhat } = body as {
-    title?: string;
-    directions?: string[];
-    buildingWhat?: string;
-  };
+export const POST = withAuth(
+  { scope: "onboarding/validate-initiative", body: BodySchema, rateLimit: RATE_LIMITS.write },
+  async ({ body }) => {
+    let assessment = assessGoalQuality(body.title, {
+      directions: body.directions,
+      buildingWhat: body.buildingWhat ?? null,
+    });
 
-  if (!title?.trim()) {
-    return NextResponse.json({ error: "title required" }, { status: 400 });
-  }
-
-  let assessment = assessGoalQuality(title, {
-    directions,
-    buildingWhat: buildingWhat || null,
-  });
-
-  // Heuristic sharpen options are enough — LLM often returns equally vague alternatives
-  if (
-    assessment.needsSharpening &&
-    (!assessment.sharpenOptions?.length || assessment.sharpenOptions.length < 2)
-  ) {
-    const llmSharpen = await assessGoalWithLLM(title);
-    if (llmSharpen) {
-      assessment = {
-        ...assessment,
-        sharpenPrompt: llmSharpen.sharpenPrompt,
-        sharpenOptions: llmSharpen.sharpenOptions,
-        message: llmSharpen.message || assessment.message,
-      };
+    // The heuristic options are usually enough. Only reach for the model when
+    // it produced fewer than two, since the LLM tends to return alternatives
+    // that are just as vague as the original.
+    if (
+      assessment.needsSharpening &&
+      (assessment.sharpenOptions?.length ?? 0) < 2
+    ) {
+      const llmSharpen = await assessGoalWithLLM(body.title);
+      if (llmSharpen) {
+        assessment = {
+          ...assessment,
+          sharpenPrompt: llmSharpen.sharpenPrompt,
+          sharpenOptions: llmSharpen.sharpenOptions,
+          message: llmSharpen.message || assessment.message,
+        };
+      }
     }
-  }
 
-  return NextResponse.json({
-    valid: assessment.valid,
-    kind: assessment.kind,
-    quality: assessment.quality,
-    needsSharpening: assessment.needsSharpening,
-    sharpenPrompt: assessment.sharpenPrompt,
-    sharpenOptions: assessment.sharpenOptions,
-    exampleTitle: assessment.sharpenOptions?.[0]?.resultTitle,
-    title: assessment.title,
-    message: assessment.message,
-    suggestions: assessment.suggestions,
-  });
-}
+    return NextResponse.json({
+      valid: assessment.valid,
+      kind: assessment.kind,
+      quality: assessment.quality,
+      needsSharpening: assessment.needsSharpening,
+      sharpenPrompt: assessment.sharpenPrompt,
+      sharpenOptions: assessment.sharpenOptions,
+      exampleTitle: assessment.sharpenOptions?.[0]?.resultTitle,
+      title: assessment.title,
+      message: assessment.message,
+      suggestions: assessment.suggestions,
+    });
+  }
+);

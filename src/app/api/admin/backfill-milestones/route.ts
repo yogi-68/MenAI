@@ -3,8 +3,16 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/admin";
 import { ensureMilestonesForUser } from "@/lib/plans/milestone-generator";
 import { invalidateUserCache } from "@/lib/ai/orchestrator/cache-invalidation";
+import { apiError } from "@/lib/api/errors";
+import { z } from "zod";
 
 export const runtime = "nodejs";
+
+const BodySchema = z.object({
+  /** Target user. Defaults to the calling admin. */
+  userId: z.string().uuid().optional(),
+  forcePlanRegen: z.boolean().optional(),
+});
 
 /**
  * POST /api/admin/backfill-milestones
@@ -17,10 +25,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: admin.error }, { status: admin.status });
   }
 
-  const body = (await req.json().catch(() => ({}))) as {
-    userId?: string;
-    forcePlanRegen?: boolean;
-  };
+  const parsed = BodySchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return apiError("invalid_request", { message: "Expected an optional userId and forcePlanRegen." });
+  }
+  const body = parsed.data;
 
   const supabase = await createServerSupabaseClient();
   const targetUserId = body.userId || admin.user.id;

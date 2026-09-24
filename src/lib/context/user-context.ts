@@ -113,7 +113,8 @@ function buildKnowledgeBullets(userModel: UserModel): string[] {
 
 async function assembleUserContext(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  preloadedUserModel?: UserModel
 ): Promise<UserContext> {
   const today = new Date().toISOString().split("T")[0];
   const sevenDaysAgo = new Date();
@@ -134,7 +135,10 @@ async function assembleUserContext(
       .eq("id", userId)
       .maybeSingle(),
     computePerformanceScore(supabase, userId),
-    getUserModel(supabase, userId),
+    // Reuse a model the caller already loaded. The chat pipeline loads one
+    // per turn; without this, a cold context cache made it load a second
+    // time, and a cold model cache means full synthesis on the request path.
+    preloadedUserModel ?? getUserModel(supabase, userId),
     fetchActiveExecutionGoals(supabase, userId, 12),
     supabase
       .from("tasks")
@@ -211,7 +215,7 @@ async function assembleUserContext(
 export async function getUserContext(
   supabase: SupabaseClient,
   userId: string,
-  options?: { refresh?: boolean }
+  options?: { refresh?: boolean; userModel?: UserModel }
 ): Promise<UserContext> {
   const cacheKey = REDIS_KEYS.USER_CONTEXT(userId);
 
@@ -234,7 +238,7 @@ export async function getUserContext(
     );
   }
 
-  const context = await assembleUserContext(supabase, userId);
+  const context = await assembleUserContext(supabase, userId, options?.userModel);
   await setInCache(cacheKey, context, CACHE_TTL.USER_CONTEXT);
   return context;
 }

@@ -34,15 +34,15 @@ export async function GET(
     status: goal.status,
     targetDate: goal.target_date,
     lastActionAt: goal.last_action_at,
-    progress: goal.progress,
+    progress: goal.progress ?? undefined,
   });
 
   const coaching = buildGoalAnalysis({
     domain: "general",
     initiativeTitle: goal.title,
-    initiativeDescription: goal.description,
+    initiativeDescription: goal.description ?? undefined,
     targetDate: goal.target_date,
-    lifeArea: goal.life_area,
+    lifeArea: goal.life_area ?? undefined,
     goalTexts: [goal.title],
     planContext: (profile?.plan_context as Record<string, unknown>) || {},
   });

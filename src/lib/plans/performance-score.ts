@@ -184,48 +184,170 @@ export async function computePerformanceScore(
   };
 }
 
+/** Row shapes the analytics computation needs, whatever query produced them. */
+interface GoalAnalyticsInput {
+  goal: GoalRow;
+  tasks: TaskRow[];
+  milestones: MilestoneRow[];
+  snapshots: SnapshotRow[];
+}
+
+/**
+ * Goal fields the analytics computation and its consumers read.
+ * Structurally compatible with ExecutionGoalRow, so either can be passed.
+ */
+type GoalRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  success_criteria?: string | null;
+  target_date: string | null;
+  progress: number | null;
+  life_area: string | null;
+  last_action_at: string | null;
+  status: string;
+  parent_goal_id?: string | null;
+  priority?: string | null;
+  goal_kind?: string | null;
+};
+type TaskRow = {
+  id: string;
+  status: string;
+  due_date: string | null;
+  completed_at: string | null;
+  goal_id?: string | null;
+};
+type MilestoneRow = {
+  id?: string;
+  goal_id?: string | null;
+  status: string;
+  title: string;
+  sort_order?: number | null;
+  target_date?: string | null;
+  description?: string | null;
+};
+type SnapshotRow = {
+  goal_id?: string | null;
+  snapshot_date: string;
+  progress_pct: number | null;
+  tasks_completed_count: number | null;
+};
+
+/** Columns selected for analytics. Named once so single and batch agree. */
+const ANALYTICS_TASK_COLUMNS =
+  "id, goal_id, status, due_date, completed_at, auto_generated, title, recurrence";
+
+/**
+ * Analytics for one goal.
+ *
+ * Prefer computeGoalAnalyticsBatch when you need more than one: this issues
+ * four queries per call, and the dashboard calls it once per goal.
+ */
 export async function computeGoalAnalytics(
   supabase: SupabaseClient,
   userId: string,
   goalId: string
 ) {
   const since90 = dateStr(daysAgo(90));
-  const today = dateStr(new Date());
 
   const [goalRes, tasksRes, milestonesRes, snapshotsRes] = await Promise.all([
-    supabase
-      .from("goals")
-      .select("*")
-      .eq("id", goalId)
-      .eq("user_id", userId)
-      .single(),
+    supabase.from("goals").select("*").eq("id", goalId).eq("user_id", userId).single(),
     supabase
       .from("tasks")
-      .select("id, status, due_date, completed_at, auto_generated, title, recurrence")
+      .select(ANALYTICS_TASK_COLUMNS)
       .eq("user_id", userId)
       .eq("goal_id", goalId)
       .eq("auto_generated", true)
       .gte("due_date", since90),
-    supabase
-      .from("goal_milestones")
-      .select("*")
-      .eq("goal_id", goalId)
-      .order("sort_order"),
+    supabase.from("goal_milestones").select("*").eq("goal_id", goalId).order("sort_order"),
     supabase
       .from("goal_progress_snapshots")
-      .select("snapshot_date, progress_pct, tasks_completed_count")
+      .select("goal_id, snapshot_date, progress_pct, tasks_completed_count")
       .eq("goal_id", goalId)
       .eq("user_id", userId)
       .gte("snapshot_date", since90),
   ]);
 
-  const goal = goalRes.data;
-  if (!goal) return null;
+  if (!goalRes.data) return null;
 
-  const tasks = tasksRes.data || [];
-  const snapshotByDate = new Map(
-    (snapshotsRes.data || []).map((s) => [s.snapshot_date, s])
-  );
+  return computeGoalAnalyticsFrom({
+    goal: goalRes.data as unknown as GoalRow,
+    tasks: (tasksRes.data || []) as TaskRow[],
+    milestones: (milestonesRes.data || []) as unknown as MilestoneRow[],
+    snapshots: (snapshotsRes.data || []) as SnapshotRow[],
+  });
+}
+
+/**
+ * Analytics for many goals in four queries total.
+ *
+ * The dashboard previously mapped computeGoalAnalytics over up to twelve
+ * goals, i.e. forty-eight round trips for a single page load. Here each table
+ * is read once with an `in` filter and grouped in memory.
+ */
+export async function computeGoalAnalyticsBatch(
+  supabase: SupabaseClient,
+  userId: string,
+  goals: GoalRow[]
+): Promise<Map<string, NonNullable<Awaited<ReturnType<typeof computeGoalAnalytics>>>>> {
+  const results = new Map<string, NonNullable<Awaited<ReturnType<typeof computeGoalAnalytics>>>>();
+  if (goals.length === 0) return results;
+
+  const since90 = dateStr(daysAgo(90));
+  const goalIds = goals.map((g) => g.id);
+
+  const [tasksRes, milestonesRes, snapshotsRes] = await Promise.all([
+    supabase
+      .from("tasks")
+      .select(ANALYTICS_TASK_COLUMNS)
+      .eq("user_id", userId)
+      .in("goal_id", goalIds)
+      .eq("auto_generated", true)
+      .gte("due_date", since90),
+    supabase.from("goal_milestones").select("*").in("goal_id", goalIds).order("sort_order"),
+    supabase
+      .from("goal_progress_snapshots")
+      .select("goal_id, snapshot_date, progress_pct, tasks_completed_count")
+      .eq("user_id", userId)
+      .in("goal_id", goalIds)
+      .gte("snapshot_date", since90),
+  ]);
+
+  const groupBy = <T extends { goal_id?: string | null }>(rows: T[] | null) => {
+    const map = new Map<string, T[]>();
+    for (const row of rows || []) {
+      const key = row.goal_id;
+      if (!key) continue;
+      const list = map.get(key);
+      if (list) list.push(row);
+      else map.set(key, [row]);
+    }
+    return map;
+  };
+
+  const tasksByGoal = groupBy((tasksRes.data || []) as TaskRow[]);
+  const milestonesByGoal = groupBy((milestonesRes.data || []) as unknown as MilestoneRow[]);
+  const snapshotsByGoal = groupBy((snapshotsRes.data || []) as SnapshotRow[]);
+
+  for (const goal of goals) {
+    results.set(
+      goal.id,
+      computeGoalAnalyticsFrom({
+        goal,
+        tasks: tasksByGoal.get(goal.id) ?? [],
+        milestones: milestonesByGoal.get(goal.id) ?? [],
+        snapshots: snapshotsByGoal.get(goal.id) ?? [],
+      })
+    );
+  }
+
+  return results;
+}
+
+/** Pure computation over already-fetched rows. No I/O. */
+function computeGoalAnalyticsFrom({ goal, tasks, milestones, snapshots }: GoalAnalyticsInput) {
+  const today = dateStr(new Date());
+  const snapshotByDate = new Map(snapshots.map((s) => [s.snapshot_date, s]));
   const dailyTrend: Array<{ date: string; score: number; completed: number }> = [];
   const missedDays: string[] = [];
   let streak = 0;
@@ -302,7 +424,6 @@ export async function computeGoalAnalytics(
     });
   }
 
-  const milestones = milestonesRes.data || [];
   const currentMilestone =
     milestones.find((m) => m.status === "in_progress")?.title ??
     milestones.find((m) => m.status === "pending")?.title ??

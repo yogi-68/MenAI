@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { computePerformanceScore, computeGoalAnalytics } from "@/lib/plans/performance-score";
+import { computePerformanceScore, computeGoalAnalyticsBatch } from "@/lib/plans/performance-score";
 import { computeGoalHealth } from "@/lib/plans/goal-health";
 import { fetchActiveExecutionGoals } from "@/lib/goals/active-goals";
 import { lifeAreaLabel } from "@/lib/plans/life-areas";
@@ -16,12 +16,16 @@ export async function GET() {
 
   const [performance, goals] = await Promise.all([
     computePerformanceScore(supabase, user.id),
-    fetchActiveExecutionGoals(supabase, user.id),
+    // Bounded. This was previously unlimited, and each goal then cost four
+    // further queries.
+    fetchActiveExecutionGoals(supabase, user.id, 12),
   ]);
 
-  const goalCards = await Promise.all(
-    goals.map(async (goal) => {
-      const analytics = await computeGoalAnalytics(supabase, user.id, goal.id);
+  // One batched read covering every goal, instead of four queries each.
+  const analyticsByGoal = await computeGoalAnalyticsBatch(supabase, user.id, goals);
+
+  const goalCards = goals.map((goal) => {
+      const analytics = analyticsByGoal.get(goal.id) ?? null;
       const scoreEntry = performance.goalScores.find((s) => s.goalId === goal.id);
       const health = computeGoalHealth({
         status: goal.status,
@@ -48,8 +52,7 @@ export async function GET() {
         sparkline: (analytics?.dailyTrend ?? []).slice(-7).map((d) => d.score),
         currentMilestone: analytics?.currentMilestone ?? null,
       };
-    })
-  );
+  });
 
   const lifeAreaMap = new Map<string, number>();
   for (const g of goalCards) {

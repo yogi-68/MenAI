@@ -410,17 +410,28 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     getUserModel(serviceClient, input.userId),
   ]);
 
-  const mentorSignal = await ingestChatMentorSignal(serviceClient, input.userId, input.message);
+  // These five are independent of each other and used to run as five
+  // sequential awaits, each a set of database round trips, all of them ahead
+  // of the first token. The only dependency is the pivot check below, which
+  // needs mentorSignal.
+  const [mentorSignal, pinnedMemories, retrievalCtx, taskStats, userContext] =
+    await Promise.all([
+      ingestChatMentorSignal(serviceClient, input.userId, input.message),
+      loadPinnedMemories(serviceClient, input.userId),
+      shouldSkipMemoryRetrieval(input.message)
+        ? Promise.resolve(null)
+        : loadMemoryRetrievalContext(serviceClient, input.userId),
+      fetchTodayTaskStats(serviceClient, input.userId),
+      getUserContext(serviceClient, input.userId, { userModel: initialUserModel }),
+    ]);
+
+  // A pivot invalidates the model we just loaded, so re-synthesize. Rare.
   const userModel = mentorSignal.pivoted
     ? await getUserModel(serviceClient, input.userId, { refresh: true })
     : initialUserModel;
 
-  const pinnedMemories = await loadPinnedMemories(serviceClient, input.userId);
   const pinnedBlock = formatPinnedMemoriesForPrompt(pinnedMemories);
 
-  const retrievalCtx = shouldSkipMemoryRetrieval(input.message)
-    ? null
-    : await loadMemoryRetrievalContext(serviceClient, input.userId);
   const memoryRetrievalBlock = [
     pinnedBlock,
     retrievalCtx ? formatMemoryRetrievalForPrompt(retrievalCtx, input.message) : "",
@@ -470,10 +481,6 @@ async function _orchestrateStreamingInternal(input: OrchestratorInput): Promise<
     });
   }
 
-  const [taskStats, userContext] = await Promise.all([
-    fetchTodayTaskStats(serviceClient, input.userId),
-    getUserContext(serviceClient, input.userId),
-  ]);
   const rhythmCtx = buildRhythmContext(taskStats);
   const rhythmBlock = formatRhythmBlockForPrompt(rhythmCtx, taskStats);
   const todayPlanBlock = await loadTodayPlanBlockForPrompt(

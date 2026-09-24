@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
   computePerformanceScore,
-  computeGoalAnalytics,
+  computeGoalAnalyticsBatch,
   TASKS_PER_GOAL,
 } from "@/lib/plans/performance-score";
 import { computeGoalHealth } from "@/lib/plans/goal-health";
@@ -55,9 +55,11 @@ export async function GET() {
     .slice(-7)
     .reduce((sum, d) => sum + Math.round((d.score / 100) * TASKS_PER_GOAL * goalCount), 0);
 
-  const goalCards = await Promise.all(
-    goals.map(async (goal, index) => {
-      const analytics = await computeGoalAnalytics(supabase, user.id, goal.id);
+  // One batched read for every goal, rather than four queries per goal.
+  const analyticsByGoal = await computeGoalAnalyticsBatch(supabase, user.id, goals);
+
+  const goalCards = goals.map((goal, index) => {
+      const analytics = analyticsByGoal.get(goal.id) ?? null;
       const scoreEntry = performance.goalScores.find((s) => s.goalId === goal.id);
       const health = computeGoalHealth({
         status: goal.status,
@@ -80,8 +82,7 @@ export async function GET() {
         confidenceScore: confidence,
         colorIndex: index,
       };
-    })
-  );
+  });
 
   const primaryGoal = goals[0];
   const coachInsight = buildCoachInsightQuote({

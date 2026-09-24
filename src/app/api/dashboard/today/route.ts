@@ -11,6 +11,11 @@ import { buildPersonalBriefing } from "@/lib/dashboard/personal-briefing";
 
 export const runtime = "nodejs";
 
+/** How far back the dashboard looks for tasks. */
+const RECENT_TASK_WINDOW_DAYS = 30;
+/** Hard ceiling, so one busy account cannot produce an unbounded response. */
+const RECENT_TASK_LIMIT = 200;
+
 export async function GET() {
   const supabase = await createServerSupabaseClient();
   const {
@@ -26,14 +31,25 @@ export async function GET() {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split("T")[0];
 
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - RECENT_TASK_WINDOW_DAYS);
+  const windowStartStr = windowStart.toISOString().split("T")[0];
+
   const [profileRes, tasksRes, initiativesRes, planRes, cogState, userModel, yesterdayTasksRes] =
     await Promise.all([
       supabase.from("profiles").select("full_name, current_focus_goal_id, current_focus_until").eq("id", user.id).single(),
+      // Bounded to a recent window. This previously selected every task the
+      // user had ever had, with no date filter and no limit, then filtered in
+      // JavaScript — so the query grew without bound for the life of the
+      // account. Undated tasks are included so the fallback selection below
+      // still has something to work with.
       supabase
         .from("tasks")
         .select("id, title, status, due_date, auto_generated, created_at, goal_id")
         .eq("user_id", user.id)
-        .order("due_date", { ascending: true, nullsFirst: false }),
+        .or(`due_date.gte.${windowStartStr},due_date.is.null`)
+        .order("due_date", { ascending: true, nullsFirst: false })
+        .limit(RECENT_TASK_LIMIT),
       supabase
         .from("goals")
         .select("id, title, life_area, progress, last_action_at, target_date, status, description")
@@ -68,7 +84,12 @@ export async function GET() {
   const allTasks = (tasksRes.data || []).filter((t) =>
     ["pending", "in_progress", "completed"].includes(t.status)
   );
-  const completedToday = allTasks.filter((t) => t.status === "completed").length;
+  // Tasks completed *today*, which is what the dashboard claims to show.
+  // This previously counted every completed task the account had ever had,
+  // so the number only ever grew.
+  const completedToday = allTasks.filter(
+    (t) => t.status === "completed" && t.due_date === today
+  ).length;
   const planTaskCount = planContent?.tasks?.length ?? 0;
   const focusTasks = selectDashboardTasks(
     allTasks.filter((t) => t.status !== "completed"),
