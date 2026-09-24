@@ -93,7 +93,7 @@ export function FinalizeProgress() {
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-6 text-center">
       <h1 className="mb-2 font-display text-2xl font-semibold text-[var(--text-primary)]">
-        Setting up MenAI
+        Setting up Mettle
       </h1>
       <p className="mb-8 text-sm text-[var(--text-secondary)]">
         Building your goal, milestones, and first plan — this usually takes a few seconds.

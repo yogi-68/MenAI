@@ -419,7 +419,7 @@ export function questionForDimension(
     case "goal_clarity":
       return {
         prompt: "What business or project are you actively building?",
-        subtitle: "Helps MenAI connect daily tasks to your direction.",
+        subtitle: "Helps Mettle connect daily tasks to your direction.",
         inputType: "text",
       };
     case "initiative_clarity":
@@ -438,7 +438,7 @@ export function questionForDimension(
     case "obstacle_clarity":
       return {
         prompt: "What's the biggest thing preventing progress right now?",
-        subtitle: "MenAI will plan around this — user acquisition, time, clarity, etc.",
+        subtitle: "Mettle will plan around this — user acquisition, time, clarity, etc.",
         inputType: "text",
       };
     case "available_time":

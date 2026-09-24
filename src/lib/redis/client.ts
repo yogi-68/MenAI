@@ -48,7 +48,7 @@ export const REDIS_KEYS = {
   // UnifiedSessionContext - complete user state
   SESSION_CONTEXT: (userId: string) => `menai:session:${userId}`,
   
-  // CognitionState - the brain of MenAI
+  // CognitionState - the brain of Mettle
   COGNITION_STATE: (userId: string) => `menai:cognition:${userId}`,
   
   // LifeSnapshot - compact operating state

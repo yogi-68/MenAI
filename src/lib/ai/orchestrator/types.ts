@@ -1,6 +1,6 @@
 /**
  * AI Orchestrator Types
- * Shared type definitions for the MenAI Life Operating System pipeline
+ * Shared type definitions for the Mettle Life Operating System pipeline
  */
 
 import type { CognitiveState } from "./cognition-engine";

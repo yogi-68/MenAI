@@ -1,7 +1,7 @@
 /**
  * Style Validator — Response Quality Enforcement
  * 
- * Validates AI responses to ensure they meet MenAI quality standards:
+ * Validates AI responses to ensure they meet Mettle quality standards:
  * - NOT generic advice
  * - NOT robotic templates
  * - Personalized and contextual
@@ -169,7 +169,7 @@ const HALLUCINATED_TASKS: RegExp[] = [
 
 /**
  * Main validation function
- * Checks response against MenAI quality standards
+ * Checks response against Mettle quality standards
  */
 export function validateResponseStyle(
   response: string,

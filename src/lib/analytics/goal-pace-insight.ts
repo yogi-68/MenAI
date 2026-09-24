@@ -12,7 +12,7 @@ export function buildGoalPaceInsight(input: {
   tasksCompletedTotal: number;
 }): string {
   if (!input.targetDate) {
-    return "Add a deadline in Coach — MenAI can't calculate required pace without one.";
+    return "Add a deadline in Coach — Mettle can't calculate required pace without one.";
   }
 
   if (input.remainingDays != null && input.remainingDays <= 0) {

@@ -1,6 +1,6 @@
 /**
  * Goal Confidence Score — rule-based, no LLM.
- * Measures how well MenAI can personalise the daily plan for a specific goal.
+ * Measures how well Mettle can personalise the daily plan for a specific goal.
  * Score 0–100: low = generic tasks, high = tasks only a coach who knows you would give.
  */
 

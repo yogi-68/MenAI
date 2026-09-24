@@ -1,7 +1,7 @@
 /**
  * State Machine — Conversational State Management
  * 
- * MenAI Life Operating System States:
+ * Mettle Life Operating System States:
  * Each state fundamentally changes HOW the AI responds —
  * sentence length, tone, question frequency, coaching depth, technique selection.
  */

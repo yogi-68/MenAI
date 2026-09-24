@@ -909,7 +909,7 @@ PRIORITY STACK (strict):
 2. LIFE AREA BALANCE — distribute tasks across user's life areas (see weights below)
 3. CURRENT FOCUS initiative — largest share but NOT 100% when multiple areas matter
 4. SECONDARY portfolio — max 1–2 tasks total, only if explicitly allocated >= 20%
-5. NEVER generate tasks from long-term goals/direction alone (e.g. "track income" when focus is MenAI)
+5. NEVER generate tasks from long-term goals/direction alone (e.g. "track income" when focus is Mettle)
 
 ${ctx.lifeAreaWeightPlan}
 
@@ -1045,7 +1045,7 @@ ${ctx.goalAnalysis ? `GOAL ANALYSIS (use this for whatMattersNow — do NOT repe
 ${ctx.goalAnalysis.coachInsight}
 Days remaining: ${ctx.goalAnalysis.daysRemaining ?? "unknown"}
 Missing variables: ${ctx.goalAnalysis.missingVariables.map((m) => m.label).join(", ") || "none"}
-Once known, MenAI can estimate: ${ctx.goalAnalysis.onceKnown.join(", ")}` : ""}
+Once known, Mettle can estimate: ${ctx.goalAnalysis.onceKnown.join(", ")}` : ""}
 
 ${COACH_WRITING_RULES}
 
@@ -1370,7 +1370,7 @@ export async function generateDailyPlanWithAI(
   const fallbackWhatMatters =
     ctx.goalAnalysis?.coachInsight ||
     (ctx.planMode === "context_building"
-      ? `MenAI still needs ${ctx.goalAnalysis?.missingVariables[0]?.label.toLowerCase() || "more context"} before tasks can be precise.`
+      ? `Mettle still needs ${ctx.goalAnalysis?.missingVariables[0]?.label.toLowerCase() || "more context"} before tasks can be precise.`
       : undefined);
 
   return {

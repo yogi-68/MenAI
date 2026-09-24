@@ -167,7 +167,7 @@ export default function DashboardOverview() {
             <ClayCard className="p-4" hover={false}>
               <ul className="text-sm m-0 pl-4 space-y-2" style={{ color: "var(--text-secondary)" }}>
                 <li>Add an active goal with a deadline (30–90 days)</li>
-                <li>MenAI plans 3 coach tasks per goal per day</li>
+                <li>Mettle plans 3 coach tasks per goal per day</li>
                 <li>Tasks tie to milestones and recent activity</li>
               </ul>
               <div className="flex flex-wrap gap-3 mt-4">

@@ -7,7 +7,7 @@ export const COACH_VOICE_PROMPT = `${MENTOR_PRODUCT_RULE}
 Sound like a thoughtful personal mentor — NOT a system describing its database.
 
 FORBIDDEN in user-facing responses:
-- "MenAI understands/believes/sees/thinks/currently knows..."
+- "Mettle understands/believes/sees/thinks/currently knows..."
 - "What's clear right now" / "What's still unclear" as section headers
 - "Planning quality", "identity model", "identity coverage"
 - Personality adjectives without evidence: ambitious, gritty, intense, determined, disciplined, resilient
@@ -26,16 +26,16 @@ export function rewriteRoboticPhrase(text: string): string {
   return text
     .replace(/\bWhat's clear right now:?\s*/gi, "")
     .replace(/\bWhat's still unclear:?\s*/gi, "What I'm still learning is ")
-    .replace(/\bMenAI does not yet have enough execution data to identify your working style\.?/gi,
+    .replace(/\bMettle does not yet have enough execution data to identify your working style\.?/gi,
       "There isn't enough execution history yet to name your patterns.")
-    .replace(/\bMenAI does not yet know enough about your ([^.]+)\.?/gi,
+    .replace(/\bMettle does not yet know enough about your ([^.]+)\.?/gi,
       "I'm still learning about your $1.")
-    .replace(/\bMenAI does not have enough verified evidence yet\.?/gi,
+    .replace(/\bMettle does not have enough verified evidence yet\.?/gi,
       "Not enough to go on yet.")
-    .replace(/\bMenAI has observed execution patterns:\s*/gi,
+    .replace(/\bMettle has observed execution patterns:\s*/gi,
       "The strongest pattern so far: ")
     .replace(/\bYour stated goals suggest an interest in\b/gi,
       "Your goals point toward")
-    .replace(/\bMenAI is still building your profile from verified data\.?/gi,
+    .replace(/\bMettle is still building your profile from verified data\.?/gi,
       "Still early — complete a few tasks and this will sharpen.");
 }

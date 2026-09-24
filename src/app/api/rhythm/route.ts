@@ -149,7 +149,7 @@ function _buildFocusPrompt(
   state: import("@/lib/ai/orchestrator/cognition-engine").CognitiveState,
 ): string {
   if (state.maturity_level === "new") {
-    return "Share what's on your mind. MenAI learns from every conversation.";
+    return "Share what's on your mind. Mettle learns from every conversation.";
   }
 
   if (phase === "morning") {
@@ -182,7 +182,7 @@ function _buildSuggestedAction(
   hasDeadline = true,
 ): string {
   if (phase === "morning" && (state.maturity_level === "new" || !hasDeadline)) {
-    return "Set a deadline on your goal and MenAI will generate your plan.";
+    return "Set a deadline on your goal and Mettle will generate your plan.";
   }
 
   if (phase === "morning") {

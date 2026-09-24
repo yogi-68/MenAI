@@ -140,7 +140,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
         label: "Current body-fat %",
         question: "What's your estimated body-fat percentage right now?",
         inputType: "number",
-        why: "This is the biggest missing variable — MenAI can't calculate a realistic deficit without it.",
+        why: "This is the biggest missing variable — Mettle can't calculate a realistic deficit without it.",
       });
     if (!has("trainingDaysPerWeek"))
       missing.push({
@@ -157,7 +157,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
         label: "Current progress",
         question: "Where are you now? (e.g. 0 users, 3 paying customers, $200 MRR)",
         inputType: "text",
-        why: "MenAI needs a baseline to set this week's acquisition or shipping target.",
+        why: "Mettle needs a baseline to set this week's acquisition or shipping target.",
       });
     if (!has("initiativeOutcome90d") && !extractTargetFromText(text))
       missing.push({
@@ -165,7 +165,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
         label: "90-day outcome",
         question: "What's the single measurable outcome for the next 90 days?",
         inputType: "text",
-        why: "Turns a vague build goal into a number MenAI can plan backward from.",
+        why: "Turns a vague build goal into a number Mettle can plan backward from.",
       });
     if (!has("biggestObstacle"))
       missing.push({
@@ -190,7 +190,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
         label: "Exam date",
         question: "When is your exam or deadline?",
         inputType: "date",
-        why: "MenAI needs the timeline to pace revision vs new topics.",
+        why: "Mettle needs the timeline to pace revision vs new topics.",
       });
     if (!has("studyHoursPerDay"))
       missing.push({
@@ -217,7 +217,7 @@ export function computeMissingVariables(facts: KnownFacts): MissingVariable[] {
           ? `When do you want to achieve "${facts.initiativeTitle}" by?`
           : "When is your target date?",
         inputType: "date",
-        why: "Without a deadline, MenAI can't prioritize what matters this week.",
+        why: "Without a deadline, Mettle can't prioritize what matters this week.",
       });
     if (!has("biggestObstacle"))
       missing.push({
@@ -271,14 +271,14 @@ export function buildGoalAnalysis(facts: KnownFacts): GoalAnalysis {
 
   let coachInsight: string;
   if (daysRemaining != null && daysRemaining > 0 && missing.length > 0) {
-    coachInsight = `You have ${daysRemaining} days until ${deadlineLabel}, but MenAI doesn't yet know your ${missing[0].label.toLowerCase()}. That's the biggest missing variable preventing a realistic plan.`;
+    coachInsight = `You have ${daysRemaining} days until ${deadlineLabel}, but Mettle doesn't yet know your ${missing[0].label.toLowerCase()}. That's the biggest missing variable preventing a realistic plan.`;
   } else if (missing.length > 0) {
-    coachInsight = `MenAI already knows your direction${extracted ? ` (${extracted})` : ""}, but still needs your ${missing[0].label.toLowerCase()} before it can plan with precision.`;
+    coachInsight = `Mettle already knows your direction${extracted ? ` (${extracted})` : ""}, but still needs your ${missing[0].label.toLowerCase()} before it can plan with precision.`;
   } else if (daysRemaining != null && daysRemaining > 0) {
-    coachInsight = `${daysRemaining} days until ${deadlineLabel} — MenAI has enough context to build specific daily tasks. Focus on execution this week.`;
+    coachInsight = `${daysRemaining} days until ${deadlineLabel} — Mettle has enough context to build specific daily tasks. Focus on execution this week.`;
   } else {
     coachInsight =
-      "MenAI has the basics. Today's plan should target your current milestone, not restate your goal.";
+      "Mettle has the basics. Today's plan should target your current milestone, not restate your goal.";
   }
 
   return {
@@ -342,7 +342,7 @@ export function buildCoachBriefing(input: BriefingInput): CoachBriefing {
   } else if (input.reflections7d >= 1) {
     recentActivity = "Reflections logged but no completed tasks yet — plans need execution to learn from.";
   } else {
-    recentActivity = "No tasks or reflections logged recently. MenAI can't identify patterns yet.";
+    recentActivity = "No tasks or reflections logged recently. Mettle can't identify patterns yet.";
   }
 
   const mattersToday: string | null =
@@ -389,7 +389,7 @@ export function sanitizeCoachText(
   if (context.userGoal && isObviousRestatement(context.userGoal, t)) {
     if (context.missingVariables?.length) {
       const goal = context.userGoal.slice(0, 60) + (context.userGoal.length > 60 ? "…" : "");
-      return `MenAI knows your target (${goal}), but still needs ${context.missingVariables.slice(0, 2).join(" and ").toLowerCase()} to plan specifically.`;
+      return `Mettle knows your target (${goal}), but still needs ${context.missingVariables.slice(0, 2).join(" and ").toLowerCase()} to plan specifically.`;
     }
     return undefined;
   }
@@ -410,7 +410,7 @@ COACH VOICE (mandatory):
 - NEVER use "Based on the information available" — say what's missing instead.
 - NEVER celebrate milestones or plans that only exist in the database with no completed tasks or reflections.
 - Every sentence must add: a number, a deadline, a missing variable, a constraint, or a specific next action.
-- If context is thin: "MenAI doesn't know your current body-fat %" not "fitness is important".
+- If context is thin: "Mettle doesn't know your current body-fat %" not "fitness is important".
 - Prefer: "You have N days until [date], but [missing variable] blocks a realistic plan."
 `.trim();
 

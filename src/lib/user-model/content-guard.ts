@@ -21,7 +21,7 @@ const FORBIDDEN_PERSONALITY_PATTERNS = [
 ];
 
 const ROBOTIC_VOICE_PATTERNS = [
-  /\bMenAI (understands|believes|sees|thinks|currently knows)\b/i,
+  /\bMettle (understands|believes|sees|thinks|currently knows)\b/i,
   /\bAccording to (available|current|stored)\b/i,
   /\bBased on (available|stored|your profile|current (data|context|knowledge))\b/i,
   /\bAccording to current (data|knowledge|context)\b/i,

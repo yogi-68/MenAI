@@ -156,7 +156,7 @@ export default function SignupPage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              MenAI
+              Mettle
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>
@@ -329,7 +329,7 @@ export default function SignupPage() {
               lineHeight: 1.5,
             }}
           >
-            By signing up, you agree that MenAI is an execution coaching tool and not a substitute for professional medical or mental health advice.
+            By signing up, you agree that Mettle is an execution coaching tool and not a substitute for professional medical or mental health advice.
           </p>
         </div>
 

@@ -44,7 +44,7 @@ export interface AiIdentityInterviewResult {
   stopReason?: "low_marginal_gain" | "coverage_sufficient" | "max_questions" | "no_initiatives";
 }
 
-const INTERVIEW_SYSTEM = `You are MenAI's planning interview engine — NOT a personality profiler.
+const INTERVIEW_SYSTEM = `You are Mettle's planning interview engine — NOT a personality profiler.
 
 ${MENTOR_PRODUCT_RULE}
 

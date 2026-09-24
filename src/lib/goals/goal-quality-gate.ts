@@ -149,7 +149,7 @@ export function assessGoalQuality(
       needsSharpening: true,
       sharpenPrompt: SHARPEN_PROMPTS[broadKey] || "What specific outcome are you trying to reach?",
       sharpenOptions: BROAD_SHARPEN_OPTIONS[broadKey],
-      message: "Got it. Let's make this specific so MenAI can plan precisely.",
+      message: "Got it. Let's make this specific so Mettle can plan precisely.",
     };
   }
 
@@ -165,7 +165,7 @@ export function assessGoalQuality(
       needsSharpening: true,
       sharpenPrompt: SHARPEN_PROMPTS[weakKey] || "What specific outcome are you trying to reach?",
       sharpenOptions: SHARPEN_OPTIONS[weakKey],
-      message: "Got it. Let's make this specific so MenAI can plan precisely.",
+      message: "Got it. Let's make this specific so Mettle can plan precisely.",
     };
   }
 
@@ -231,7 +231,7 @@ export async function assessGoalWithLLM(
       exampleTitle: parsed.exampleTitle?.trim() || sharpenOptions[0]?.resultTitle,
       message:
         parsed.message?.trim() ||
-        "Got it. Let's make this specific so MenAI can plan precisely.",
+        "Got it. Let's make this specific so Mettle can plan precisely.",
     };
   } catch {
     return null;

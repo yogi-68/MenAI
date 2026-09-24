@@ -6,7 +6,7 @@ export const MAX_ACTIVE_GOALS = 3;
 /** Max AI touchpoints per day: morning plan, afternoon check, night reflection. */
 export const DAILY_AI_TOUCHPOINTS = ["morning", "afternoon", "night"] as const;
 
-/** What MenAI optimizes for (not raw productivity). */
+/** What Mettle optimizes for (not raw productivity). */
 export const PRIMARY_OPTIMIZATION = "consistency" as const;
 
 /** Allowed execution/energy/direction patterns (keep list small). */

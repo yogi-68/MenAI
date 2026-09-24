@@ -408,6 +408,6 @@ After all questions answered, say: "Precision is now at [X]%. Your tasks tomorro
 RULES:
 - One question per message only.
 - Never ask two questions at once.
-- Name what each answer unlocks: "A specific date means MenAI can count backwards and tell you exactly what to do each day."
+- Name what each answer unlocks: "A specific date means Mettle can count backwards and tell you exactly what to do each day."
 - If the goal sounds vague (e.g. "financial freedom"), provide realistic context: typical timeline, intermediate milestone, then ask the user to confirm or adjust.`;
 }

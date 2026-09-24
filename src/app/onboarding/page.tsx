@@ -1,54 +1,81 @@
 "use client";
 
 /**
- * Onboarding Flow Component
- * Multi-stage questionnaire with one-question-at-a-time flow
+ * Intake.
+ *
+ * One question at a time, seven questions, with a Back button — the previous
+ * version had none, so anyone who mistyped their goal on the first screen was
+ * stuck with it.
+ *
+ * The flow itself lives in @/lib/onboarding/questions and branches on what
+ * has been answered, so the count in the header can change mid-flow. That is
+ * intentional: someone who has already said they are running on empty should
+ * not then be asked what drains them.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import { ArrowLeft } from "lucide-react";
 import {
   ONBOARDING_QUESTIONS,
-  getNextQuestion,
-  getTotalQuestions,
-  getQuestionNumber,
-  isValidQuestionId,
   ONBOARDING_STEP_LABELS,
+  getNextQuestion,
+  getPreviousQuestion,
+  getQuestionNumber,
+  getStepLabelIndex,
+  getTotalQuestions,
+  isValidQuestionId,
   type OnboardingResponseMap,
 } from "@/lib/onboarding/questions";
-
+import { STATE_SCALE } from "@/lib/mind/state-scale";
+import { BRAND } from "@/lib/product/brand";
 import { FinalizeProgress } from "@/components/onboarding/finalize-progress";
 
+/** What each stated obstacle changes about the plan. Shown as a live preview. */
 const OBSTACLE_PREVIEW: Record<string, { approach: string; taskType: string }> = {
-  overthinking: { approach: "Daily decisions only", taskType: "3 concrete tasks/day" },
-  procrastination: { approach: "Smallest next step first", taskType: "3 concrete tasks/day" },
-  burnout: { approach: "Energy-aware pacing", taskType: "3 lighter tasks/day" },
-  scattered_focus: { approach: "One priority at a time", taskType: "3 focused tasks/day" },
-  scattered_focus_priorities: { approach: "One priority at a time", taskType: "3 focused tasks/day" },
-  lack_of_time: { approach: "Protect one deep block", taskType: "3 high-leverage tasks/day" },
-  avoidance: { approach: "Ship before perfect", taskType: "3 concrete tasks/day" },
-  inconsistency: { approach: "Daily rhythm over intensity", taskType: "3 repeatable tasks/day" },
+  overthinking: { approach: "Decide once, then move", taskType: "3 concrete tasks a day" },
+  procrastination: { approach: "Smallest next step first", taskType: "3 concrete tasks a day" },
+  burnout: { approach: "Sized to your energy", taskType: "Fewer tasks on low days" },
+  scattered_focus: { approach: "One thing at a time", taskType: "3 focused tasks a day" },
+  scattered_focus_priorities: { approach: "One thing at a time", taskType: "3 focused tasks a day" },
+  lack_of_time: { approach: "Protect one deep block", taskType: "3 high-leverage tasks" },
+  avoidance: { approach: "Ship before it's perfect", taskType: "3 concrete tasks a day" },
+  inconsistency: { approach: "Rhythm over intensity", taskType: "3 repeatable tasks a day" },
 };
+
+const FIRST_QUESTION = "Q1";
+
+interface StoredResponse {
+  response: string | null;
+  responseData: { selected?: string | string[]; value?: number } | null;
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [currentQuestionId, setCurrentQuestionId] = useState<string>("Q2");
-  const [responses, setResponses] = useState<Record<string, any>>({});
+  const reduceMotion = useReducedMotion();
+
+  const [currentQuestionId, setCurrentQuestionId] = useState(FIRST_QUESTION);
+  const [responses, setResponses] = useState<Record<string, StoredResponse>>({});
+
   const [textInput, setTextInput] = useState("");
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [sliderValue, setSliderValue] = useState<number>(3);
+  const [scaleValue, setScaleValue] = useState(5);
   const [showOther, setShowOther] = useState(false);
   const [otherText, setOtherText] = useState("");
+  const [customDate, setCustomDate] = useState("");
+
   const [saving, setSaving] = useState(false);
+  const [validatingGoal, setValidatingGoal] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const completionRedirectedRef = useRef(false);
   const [askingFollowUp, setAskingFollowUp] = useState(false);
-  const [initiativeBlocked, setInitiativeBlocked] = useState<{
+
+  const [goalBlocked, setGoalBlocked] = useState<{
     message: string;
     suggestions: string[];
   } | null>(null);
-  const [initiativeWeak, setInitiativeWeak] = useState<{
+  const [goalWeak, setGoalWeak] = useState<{
     message: string;
     sharpenPrompt: string;
     sharpenOptions: Array<{ value: string; label: string; resultTitle: string }>;
@@ -57,21 +84,64 @@ export default function OnboardingPage() {
   const [sharpenConfirmed, setSharpenConfirmed] = useState(false);
   const [keepBroadGoal, setKeepBroadGoal] = useState(false);
 
-  const [validatingGoal, setValidatingGoal] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
-  const [customDate, setCustomDate] = useState("");
+  const [isMounted, setIsMounted] = useState(false);
+  const completionRedirected = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const flowResponses: OnboardingResponseMap = { ...responses };
-
+  const flowResponses = responses as OnboardingResponseMap;
   const currentQuestion = ONBOARDING_QUESTIONS[currentQuestionId];
   const questionNumber = getQuestionNumber(currentQuestionId, flowResponses);
   const totalQuestions = getTotalQuestions(flowResponses);
   const progress = (questionNumber / totalQuestions) * 100;
-  const q3Flexible = currentQuestionId === "Q3" && selectedOptions.includes("flexible");
-  const q3Custom = currentQuestionId === "Q3" && selectedOptions.includes("custom");
+  const previousQuestionId = getPreviousQuestion(currentQuestionId, flowResponses);
 
-  // Prevent hydration errors with a mounted check
-  const [isMounted, setIsMounted] = useState(false);
+  const isDeadlineQuestion = currentQuestionId === "Q2";
+  const wantsCustomDate = isDeadlineQuestion && selectedOptions.includes("custom");
+  const wantsFlexible = isDeadlineQuestion && selectedOptions.includes("flexible");
+
+  const resetInputs = useCallback(() => {
+    setTextInput("");
+    setSelectedOptions([]);
+    setScaleValue(5);
+    setShowOther(false);
+    setOtherText("");
+    setCustomDate("");
+    setGoalBlocked(null);
+    setGoalWeak(null);
+    setSharpenConfirmed(false);
+    setKeepBroadGoal(false);
+    setError(null);
+    setAskingFollowUp(false);
+  }, []);
+
+  /** Restore the inputs for a question already answered, so Back shows it. */
+  const restoreInputs = useCallback(
+    (questionId: string) => {
+      resetInputs();
+      const stored = responses[questionId];
+      if (!stored) return;
+
+      const question = ONBOARDING_QUESTIONS[questionId];
+      if (!question) return;
+
+      if (question.type === "text") {
+        setTextInput(stored.response ?? "");
+      } else if (question.type === "scale") {
+        // Number() yields NaN rather than null for a non-numeric string, so
+        // the fallback has to test for a finite number rather than nullishness.
+        const storedNumeric = Number(stored.response);
+        setScaleValue(
+          stored.responseData?.value ??
+            (Number.isFinite(storedNumeric) ? storedNumeric : 5)
+        );
+      } else {
+        const selected = stored.responseData?.selected;
+        setSelectedOptions(Array.isArray(selected) ? selected : selected ? [selected] : []);
+        if (questionId === "Q2" && stored.response) setCustomDate(stored.response);
+      }
+    },
+    [responses, resetInputs]
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -80,9 +150,9 @@ export default function OnboardingPage() {
     fetch("/api/auth/bootstrap", { method: "POST" })
       .then((res) => res.json())
       .then((bootstrap) => {
-        wasReset = !!bootstrap.onboardingReset;
+        wasReset = Boolean(bootstrap.onboardingReset);
         if (wasReset) {
-          setCurrentQuestionId("Q2");
+          setCurrentQuestionId(FIRST_QUESTION);
           setResponses({});
           resetInputs();
         }
@@ -92,241 +162,232 @@ export default function OnboardingPage() {
       .then((data) => {
         if (!data) return;
         if (data.progress?.completedAt) {
-          if (!completionRedirectedRef.current) {
-            completionRedirectedRef.current = true;
+          if (!completionRedirected.current) {
+            completionRedirected.current = true;
             router.replace("/dashboard");
           }
-        } else if (data.progress?.currentQuestionId && !wasReset) {
-          const nextId = data.progress.currentQuestionId;
-          setCurrentQuestionId(
-            isValidQuestionId(nextId) ? nextId : "Q2"
-          );
+          return;
+        }
+        const nextId = data.progress?.currentQuestionId;
+        if (nextId && !wasReset) {
+          setCurrentQuestionId(isValidQuestionId(nextId) ? nextId : FIRST_QUESTION);
         }
       })
-      .catch(console.error);
-  }, [router]);
+      .catch(() => setError("We couldn't load your progress. Refresh to try again."));
+  }, [router, resetInputs]);
 
-  // NOTE: Keyboard shortcut (Enter to advance) intentionally removed.
-  // Steps only advance when the user clicks Continue / selects a forced-choice option.
+  // Move focus to the input on each new question, so keyboard users don't
+  // have to tab in from the top every time.
+  useEffect(() => {
+    if (currentQuestion?.type === "text") inputRef.current?.focus();
+  }, [currentQuestionId, currentQuestion?.type, askingFollowUp]);
 
-  const saveResponse = async (
-    questionId: string,
-    response: string | null,
-    responseData: any
-  ) => {
-    setSaving(true);
-    setError(null);
-
-    try {
-      const res = await fetch("/api/onboarding/answer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          questionId,
-          response,
-          responseData,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to save response");
-      }
-
-      return true;
-    } catch (err) {
-      setError("Failed to save. Please try again.");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleNext = async (autoOptionValue?: string) => {
-    if (saving) return;
-    
-    const question = currentQuestion;
-
-    let response: string | null = null;
-    let responseData: any = null;
-
-    // Support for auto-advancing forced choice
-    const activeSelectedOptions = autoOptionValue ? [autoOptionValue] : selectedOptions;
-
-    // Collect response based on question type
-    if (question.type === "text" || question.type === "textarea") {
-      response = textInput.trim();
-      if (!response && !question.optional) {
-        setError("Please provide an answer");
-        return;
-      }
-    } else if (question.type === "multiple_choice") {
-      if (activeSelectedOptions.length === 0 && !showOther) {
-        setError("Please select at least one option");
-        return;
-      }
-      responseData = { selected: activeSelectedOptions };
-      if (showOther && otherText.trim()) {
-        response = otherText.trim();
-      }
-    } else if (question.type === "forced_choice") {
-      if (activeSelectedOptions.length === 0 && !showOther) {
-        setError("Please select an option");
-        return;
-      }
-      if (question.id === "Q3" && activeSelectedOptions[0] === "custom") {
-        if (!customDate.trim()) {
-          setError("Pick a target date");
-          return;
-        }
-        response = customDate.trim();
-      }
-      responseData = { selected: activeSelectedOptions[0] };
-      if (showOther && otherText.trim()) {
-        response = otherText.trim();
-      }
-    } else if (question.type === "slider") {
-      responseData = { value: sliderValue };
-      response = String(sliderValue);
-    }
-
-    // Check if we should ask follow-up for "Other"
-    if (showOther && !askingFollowUp && question.otherPrompt && !otherText.trim()) {
-      setAskingFollowUp(true);
-      return;
-    }
-
-    if (question.id === "Q2") {
-      setValidatingGoal(true);
+  const saveResponse = useCallback(
+    async (questionId: string, response: string | null, responseData: unknown) => {
+      setSaving(true);
+      setError(null);
       try {
-        const validateRes = await fetch("/api/onboarding/validate-initiative", {
+        const res = await fetch("/api/onboarding/answer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: response,
-            directions: [],
-            buildingWhat: null,
-          }),
+          body: JSON.stringify({ questionId, response, responseData }),
         });
-        const validateData = await validateRes.json();
-        if (!validateData.valid) {
-          setInitiativeBlocked({
-            message: validateData.message,
-            suggestions: validateData.suggestions || [],
-          });
-          setInitiativeWeak(null);
-          setError(validateData.message);
-          return;
+        if (!res.ok) throw new Error("save failed");
+        return true;
+      } catch {
+        setError("We couldn't save that. Check your connection and try again.");
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    []
+  );
+
+  /** Ask the server whether this goal is concrete enough to plan against. */
+  const validateGoal = useCallback(
+    async (title: string): Promise<boolean> => {
+      setValidatingGoal(true);
+      try {
+        const res = await fetch("/api/onboarding/validate-initiative", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, directions: [], buildingWhat: null }),
+        });
+        const data = await res.json();
+
+        if (!data.valid) {
+          setGoalBlocked({ message: data.message, suggestions: data.suggestions ?? [] });
+          setGoalWeak(null);
+          setError(data.message);
+          return false;
         }
-        if (validateData.needsSharpening) {
-          const isBroad = validateData.quality === "broad";
+
+        if (data.needsSharpening) {
+          const isBroad = data.quality === "broad";
           if (!sharpenConfirmed && !(isBroad && keepBroadGoal)) {
-            setInitiativeWeak({
-              message:
-                validateData.message ||
-                "Got it. Let's make this specific so MenAI can plan precisely.",
-              sharpenPrompt: validateData.sharpenPrompt || "What type of outcome are you building toward?",
-              sharpenOptions: validateData.sharpenOptions || [],
-              quality: validateData.quality,
+            setGoalWeak({
+              message: data.message || "Let's make this specific enough to plan against.",
+              sharpenPrompt: data.sharpenPrompt || "What kind of outcome is this?",
+              sharpenOptions: data.sharpenOptions ?? [],
+              quality: data.quality,
             });
-            setInitiativeBlocked(null);
+            setGoalBlocked(null);
             setError(null);
-            return;
+            return false;
           }
         }
-        setInitiativeBlocked(null);
-        setInitiativeWeak(null);
+
+        setGoalBlocked(null);
+        setGoalWeak(null);
+        return true;
+      } catch {
+        // A validator outage must not block someone from starting.
+        return true;
       } finally {
         setValidatingGoal(false);
       }
-    }
+    },
+    [sharpenConfirmed, keepBroadGoal]
+  );
 
-    if (question.id === "Q7" && response) {
-      const measurable =
-        /\d/.test(response) ||
-        /\b(launch|client|clients|kg|lb|users|revenue|beta|first|complete|finish|pass|ship|reach|get|lose|gain)\b/i.test(
-          response
-        );
-      if (!measurable) {
-        setError("Include a number or measurable outcome — e.g. 3 clients, 5 kg, launch beta");
+  const handleBack = useCallback(() => {
+    if (!previousQuestionId || saving) return;
+    setCurrentQuestionId(previousQuestionId);
+    restoreInputs(previousQuestionId);
+    fetch("/api/onboarding/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentQuestionId: previousQuestionId }),
+    }).catch(() => {});
+  }, [previousQuestionId, saving, restoreInputs]);
+
+  const handleNext = useCallback(
+    async (autoOptionValue?: string) => {
+      if (saving || !currentQuestion) return;
+
+      const chosen = autoOptionValue ? [autoOptionValue] : selectedOptions;
+      let response: string | null = null;
+      let responseData: StoredResponse["responseData"] = null;
+
+      if (currentQuestion.type === "text") {
+        response = textInput.trim();
+        if (!response && !currentQuestion.optional) {
+          setError("Give this a moment of thought, then answer.");
+          return;
+        }
+      } else if (currentQuestion.type === "scale") {
+        responseData = { value: scaleValue };
+        response = String(scaleValue);
+      } else {
+        if (chosen.length === 0 && !showOther) {
+          setError("Pick the one that fits best.");
+          return;
+        }
+        if (isDeadlineQuestion && chosen[0] === "custom" && !customDate.trim()) {
+          setError("Choose a date.");
+          return;
+        }
+        responseData = { selected: chosen[0] };
+        if (isDeadlineQuestion && chosen[0] === "custom") response = customDate.trim();
+        if (showOther && otherText.trim()) response = otherText.trim();
+      }
+
+      // "Other" needs its follow-up before we can move on.
+      if (showOther && !askingFollowUp && currentQuestion.otherPrompt && !otherText.trim()) {
+        setAskingFollowUp(true);
         return;
       }
-    }
 
-    // Save response
-    const saved = await saveResponse(currentQuestionId, response, responseData);
-    if (!saved) return;
+      if (currentQuestionId === "Q1" && response) {
+        const ok = await validateGoal(response);
+        if (!ok) return;
+      }
 
-    // Store locally
-    setResponses({
-      ...responses,
-      [currentQuestionId]: { response, responseData },
-    });
+      if (currentQuestionId === "Q4" && response) {
+        const measurable =
+          /\d/.test(response) ||
+          /\b(launch|client|clients|kg|lb|users|revenue|beta|first|complete|finish|pass|ship|reach|get|lose|gain|hired|offer)\b/i.test(
+            response
+          );
+        if (!measurable) {
+          setError("Give it an edge we can measure — a number, or a thing that either shipped or didn't.");
+          return;
+        }
+      }
 
-    // Move to next question
-    const nextQuestionId = getNextQuestion(currentQuestionId, {
-      ...responses,
-      [currentQuestionId]: { response, responseData },
-    });
-    if (nextQuestionId) {
-      // Background update progress
+      const saved = await saveResponse(currentQuestionId, response, responseData);
+      if (!saved) return;
+
+      const updated = { ...responses, [currentQuestionId]: { response, responseData } };
+      setResponses(updated);
+
+      const nextQuestionId = getNextQuestion(currentQuestionId, updated as OnboardingResponseMap);
+
+      if (!nextQuestionId) {
+        if (completionRedirected.current) return;
+        completionRedirected.current = true;
+        setFinalizing(true);
+        return;
+      }
+
       fetch("/api/onboarding/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentQuestionId: nextQuestionId,
-        }),
-      }).catch(console.error);
+        body: JSON.stringify({ currentQuestionId: nextQuestionId }),
+      }).catch(() => {});
 
       resetInputs();
       setCurrentQuestionId(nextQuestionId);
-    } else {
-      if (completionRedirectedRef.current) return;
-      completionRedirectedRef.current = true;
-      setFinalizing(true);
-    }
-  };
+    },
+    [
+      saving,
+      currentQuestion,
+      currentQuestionId,
+      selectedOptions,
+      textInput,
+      scaleValue,
+      showOther,
+      otherText,
+      customDate,
+      isDeadlineQuestion,
+      askingFollowUp,
+      responses,
+      saveResponse,
+      validateGoal,
+      resetInputs,
+    ]
+  );
 
-  const resetInputs = () => {
-    setTextInput("");
-    setSelectedOptions([]);
-    setSliderValue(3);
-    setShowOther(false);
-    setOtherText("");
-    setInitiativeBlocked(null);
-    setInitiativeWeak(null);
-    setSharpenConfirmed(false);
-    setKeepBroadGoal(false);
-    setCustomDate("");
-    setError(null);
-    setAskingFollowUp(false);
-  };
-
-  const handleOptionToggle = (value: string) => {
-    if (currentQuestion.type === "forced_choice") {
-      setSelectedOptions([value]);
-    } else {
-      setSelectedOptions((prev) =>
-        prev.includes(value)
-          ? prev.filter((v) => v !== value)
-          : [...prev, value]
-      );
-    }
+  const handleOptionSelect = (value: string) => {
+    setSelectedOptions([value]);
     setError(null);
   };
 
-  const canContinue =
-    !initiativeWeak &&
-    (currentQuestion.type === "text" || currentQuestion.type === "textarea"
-      ? currentQuestion.optional || textInput.trim().length > 0
-      : currentQuestion.type === "slider"
-        ? true
-        : q3Custom
-          ? customDate.trim().length > 0
-          : askingFollowUp
-            ? otherText.trim().length > 0
-            : showOther && currentQuestion.allowOther
-              ? otherText.trim().length > 0 || selectedOptions.length > 0
-              : selectedOptions.length > 0);
+  const canContinue = useMemo(() => {
+    if (goalWeak) return false;
+    if (!currentQuestion) return false;
+    if (currentQuestion.type === "text") {
+      return currentQuestion.optional || textInput.trim().length > 0;
+    }
+    if (currentQuestion.type === "scale") return true;
+    if (wantsCustomDate) return customDate.trim().length > 0;
+    if (askingFollowUp) return otherText.trim().length > 0;
+    if (showOther && currentQuestion.allowOther) {
+      return otherText.trim().length > 0 || selectedOptions.length > 0;
+    }
+    return selectedOptions.length > 0;
+  }, [
+    goalWeak,
+    currentQuestion,
+    textInput,
+    wantsCustomDate,
+    customDate,
+    askingFollowUp,
+    otherText,
+    showOther,
+    selectedOptions,
+  ]);
 
   if (finalizing) {
     return (
@@ -338,536 +399,493 @@ export default function OnboardingPage() {
 
   if (!isMounted || !currentQuestion) {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div className="skeleton" style={{ height: "40px", width: "200px", borderRadius: "var(--radius-md)" }} />
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg-primary)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div className="skeleton" style={{ height: 40, width: 200, borderRadius: "var(--radius-md)" }} />
+        <span className="sr-only">Loading</span>
       </div>
     );
   }
 
-  const promptToShow = askingFollowUp ? currentQuestion.otherPrompt : currentQuestion.prompt;
+  const prompt = askingFollowUp ? currentQuestion.otherPrompt : currentQuestion.prompt;
+  const stepIndex = getStepLabelIndex(currentQuestionId);
+  const selectedScale = STATE_SCALE.find((s) => s.score === scaleValue);
+  const obstaclePreview = currentQuestionId === "Q3" ? OBSTACLE_PREVIEW[selectedOptions[0]] : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg-primary)", color: "var(--text-primary)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
-      {/* Ambient Background Effects */}
-      <div className="ambient-bg" />
-
-      {/* Progress Bar Header */}
-      <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }}>
-        <div style={{ width: "100%", height: "4px", background: "var(--bg-secondary)" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg-primary)",
+        color: "var(--text-primary)",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <header style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--bg-primary)" }}>
+        <div
+          role="progressbar"
+          aria-valuenow={questionNumber}
+          aria-valuemin={1}
+          aria-valuemax={totalQuestions}
+          aria-label={`Question ${questionNumber} of ${totalQuestions}`}
+          style={{ width: "100%", height: 4, background: "var(--bg-secondary)" }}
+        >
           <motion.div
-            initial={{ width: 0 }}
+            initial={false}
             animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
+            transition={{ duration: reduceMotion ? 0 : 0.35, ease: "easeOut" }}
             style={{ height: "100%", background: "var(--accent-primary)" }}
           />
         </div>
-        <div
+
+        {/* Step labels are decorative on small screens — the progress bar and
+            the "Question N of M" line carry the same information. */}
+        <ol
+          aria-hidden="true"
+          className="onboarding-steps"
           style={{
             display: "flex",
             justifyContent: "space-between",
+            gap: 4,
             padding: "10px 24px 0",
             maxWidth: 640,
             margin: "0 auto",
+            listStyle: "none",
           }}
         >
           {ONBOARDING_STEP_LABELS.map((label, i) => (
-            <span
+            <li
               key={label}
               style={{
                 fontSize: "0.65rem",
-                fontWeight: i + 1 <= questionNumber ? 600 : 500,
-                color: i + 1 <= questionNumber ? "var(--accent-primary)" : "var(--text-muted)",
+                fontWeight: i <= stepIndex ? 600 : 500,
+                color: i <= stepIndex ? "var(--accent-primary)" : "var(--text-muted)",
                 textTransform: "uppercase",
                 letterSpacing: "0.04em",
+                whiteSpace: "nowrap",
               }}
             >
               {label}
-            </span>
+            </li>
           ))}
-        </div>
-      </div>
+        </ol>
+      </header>
 
-      {/* Main Content Area */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", position: "relative", zIndex: 10 }}>
+      <main
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={currentQuestionId + (askingFollowUp ? "-followup" : "")}
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.98 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            style={{ width: "100%", maxWidth: "600px" }}
+            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -16 }}
+            transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeInOut" }}
+            style={{ width: "100%", maxWidth: 600 }}
           >
-            <div className="glass-card" style={{ padding: "40px", display: "flex", flexDirection: "column", gap: "24px" }}>
-              {/* Question Context */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "var(--accent-primary)", fontSize: "0.85rem", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            <div
+              className="card"
+              style={{ padding: "clamp(24px, 5vw, 40px)", display: "flex", flexDirection: "column", gap: 24 }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <span
+                  style={{
+                    color: "var(--accent-primary)",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                  }}
+                >
                   Question {questionNumber} of {totalQuestions}
                 </span>
-                {currentQuestion.optional && (
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", border: "1px solid var(--border-color)", padding: "2px 8px", borderRadius: "12px" }}>
-                    Optional
-                  </span>
+
+                {previousQuestionId && !askingFollowUp && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    disabled={saving}
+                    aria-label="Go back to the previous question"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: "none",
+                      border: "none",
+                      color: "var(--text-secondary)",
+                      fontSize: "0.85rem",
+                      cursor: saving ? "not-allowed" : "pointer",
+                      padding: "6px 8px",
+                      borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <ArrowLeft size={14} aria-hidden="true" />
+                    Back
+                  </button>
                 )}
               </div>
 
-              {/* Question Prompt */}
-              <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3, margin: 0 }}>
-                {promptToShow}
+              <h1
+                id="onboarding-question"
+                style={{ fontSize: "clamp(1.4rem, 4vw, 1.75rem)", fontWeight: 700, lineHeight: 1.3, margin: 0 }}
+              >
+                {prompt}
               </h1>
+
               {!askingFollowUp && currentQuestion.subtitle && (
-                <p style={{ fontSize: "0.95rem", color: "var(--text-muted)", lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
                   {currentQuestion.subtitle}
                 </p>
               )}
 
-              {/* Input Area */}
-              <div style={{ marginTop: "8px" }}>
-                {initiativeWeak && currentQuestionId === "Q2" && (
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ fontSize: "0.95rem", color: "var(--text-primary)", lineHeight: 1.6, marginBottom: 12 }}>
-                      {initiativeWeak.message}
-                    </p>
-                    <p style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 12 }}>
-                      {initiativeWeak.sharpenPrompt}
-                    </p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                      {initiativeWeak.sharpenOptions.map((opt) => (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          className="btn-secondary"
-                          style={{ textAlign: "left" }}
-                          onClick={() => {
-                            setTextInput(opt.resultTitle);
-                            setInitiativeWeak(null);
-                            setSharpenConfirmed(true);
-                            setError(null);
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    {initiativeWeak.quality === "broad" && textInput.trim() && (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        style={{ fontSize: "0.85rem" }}
-                        onClick={() => {
-                          setKeepBroadGoal(true);
-                          setInitiativeWeak(null);
-                          setError(null);
-                        }}
-                      >
-                        Keep &ldquo;{textInput.trim()}&rdquo; and continue
-                      </button>
-                    )}
-                    {sharpenConfirmed && textInput.trim() && (
-                      <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", margin: 0 }}>
-                        Edit the title below if needed, then click Continue.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {initiativeBlocked && currentQuestionId === "Q2" && (
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-                      {initiativeBlocked.message}
-                    </p>
-                    <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginBottom: 8 }}>
-                      Which is closest?
-                    </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {initiativeBlocked.suggestions.map((s) => (
-                        <button
-                          key={s}
-                          type="button"
-                          className="btn-secondary"
-                          style={{ textAlign: "left" }}
-                          onClick={() => {
-                            setTextInput(s);
-                            setInitiativeBlocked(null);
-                            setError(null);
-                          }}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {currentQuestion.type === "text" && (
-                  <input
-                    type="text"
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    className="input-field"
-                    style={{
-                      width: "100%",
-                      padding: "16px 20px",
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--text-primary)",
-                      fontSize: "1.1rem",
-                      outline: "none",
-                      transition: "border-color 0.2s ease, background 0.2s ease",
-                    }}
-                    placeholder="Type your answer..."
-                    autoFocus
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border-active)";
-                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border-color)";
-                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                    }}
-                  />
-                )}
-
-                {currentQuestion.type === "textarea" && (
-                  <textarea
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    className="input-field"
-                    style={{
-                      width: "100%",
-                      padding: "16px 20px",
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--text-primary)",
-                      minHeight: "140px",
-                      fontSize: "1.1rem",
-                      resize: "vertical",
-                      outline: "none",
-                      transition: "border-color 0.2s ease, background 0.2s ease",
-                    }}
-                    placeholder="Share your thoughts..."
-                    autoFocus
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border-active)";
-                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border-color)";
-                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                    }}
-                  />
-                )}
-
-                {(currentQuestion.type === "multiple_choice" ||
-                  currentQuestion.type === "forced_choice") &&
-                  !askingFollowUp && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                      {currentQuestion.options?.map((option) => {
-                        const isSelected = selectedOptions.includes(option.value);
-                        return (
-                          <motion.button
-                            whileHover={{ scale: 1.01 }}
-                            whileTap={{ scale: 0.98 }}
-                            key={option.value}
-                            onClick={() => handleOptionToggle(option.value)}
-                            style={{
-                              width: "100%",
-                              padding: "18px 24px",
-                              borderRadius: "var(--radius-md)",
-                              border: `1.5px solid ${isSelected ? "var(--accent-primary)" : "var(--border-color)"}`,
-                              background: isSelected ? "var(--accent-primary-transparent)" : "rgba(255,255,255,0.02)",
-                              color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
-                              textAlign: "left",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              fontSize: "1.05rem",
-                              fontWeight: isSelected ? 600 : 500,
-                              boxShadow: isSelected ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "none",
-                            }}
-                          >
-                            {option.label}
-                          </motion.button>
-                        );
-                      })}
-
-                      {q3Custom && (
-                        <input
-                          type="date"
-                          value={customDate}
-                          onChange={(e) => setCustomDate(e.target.value)}
-                          className="input-field"
-                          style={{
-                            width: "100%",
-                            padding: "16px 20px",
-                            background: "rgba(255,255,255,0.03)",
-                            border: "1px solid var(--border-color)",
-                            borderRadius: "var(--radius-md)",
-                            color: "var(--text-primary)",
-                            fontSize: "1rem",
-                          }}
-                        />
-                      )}
-
-                      {q3Flexible && (
-                        <p
-                          style={{
-                            fontSize: "0.9rem",
-                            color: "var(--text-secondary)",
-                            lineHeight: 1.6,
-                            margin: 0,
-                            padding: "12px 16px",
-                            borderRadius: "var(--radius-md)",
-                            border: "1px solid var(--border-color)",
-                            background: "rgba(255,255,255,0.03)",
-                          }}
-                        >
-                          Without a deadline, MenAI plans week-by-week. You can add a specific date
-                          later in Settings.
-                        </p>
-                      )}
-
-                      {currentQuestionId === "Q4" && selectedOptions[0] && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.25 }}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr auto 1fr auto 1fr",
-                            gap: 8,
-                            alignItems: "center",
-                            marginTop: 8,
-                            padding: "12px",
-                            borderRadius: "var(--radius-md)",
-                            border: "1px solid var(--border-color)",
-                            background: "rgba(255,255,255,0.03)",
-                            fontSize: "0.78rem",
-                            color: "var(--text-secondary)",
-                          }}
-                        >
-                          <span style={{ textAlign: "center", fontWeight: 600, color: "var(--text-primary)" }}>
-                            {ONBOARDING_QUESTIONS.Q4.options?.find((o) => o.value === selectedOptions[0])?.label ||
-                              "Your obstacle"}
-                          </span>
-                          <span>→</span>
-                          <span style={{ textAlign: "center" }}>
-                            {OBSTACLE_PREVIEW[selectedOptions[0]]?.approach || "Tailored daily structure"}
-                          </span>
-                          <span>→</span>
-                          <span style={{ textAlign: "center" }}>
-                            {OBSTACLE_PREVIEW[selectedOptions[0]]?.taskType || "3 concrete tasks/day"}
-                          </span>
-                        </motion.div>
-                      )}
-
-                      {currentQuestion.allowOther && (
-                        <motion.button
-                          whileHover={{ scale: 1.01 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => setShowOther(!showOther)}
-                          style={{
-                            width: "100%",
-                            padding: "18px 24px",
-                            borderRadius: "var(--radius-md)",
-                            border: `1.5px solid ${showOther ? "var(--accent-primary)" : "var(--border-color)"}`,
-                            background: showOther ? "var(--accent-primary-transparent)" : "rgba(255,255,255,0.02)",
-                            color: showOther ? "var(--text-primary)" : "var(--text-secondary)",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease",
-                            fontSize: "1.05rem",
-                            fontWeight: showOther ? 600 : 500,
-                          }}
-                        >
-                          Other...
-                        </motion.button>
-                      )}
-
-                      <AnimatePresence>
-                        {showOther && !askingFollowUp && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            style={{ overflow: "hidden", marginTop: "4px" }}
-                          >
-                            <input
-                              type="text"
-                              value={otherText}
-                              onChange={(e) => setOtherText(e.target.value)}
-                              style={{
-                                width: "100%",
-                                padding: "16px 20px",
-                                background: "rgba(255,255,255,0.03)",
-                                border: "1px solid var(--border-color)",
-                                borderRadius: "var(--radius-md)",
-                                color: "var(--text-primary)",
-                                fontSize: "1.05rem",
-                                outline: "none",
-                              }}
-                              placeholder="Please specify..."
-                              autoFocus
-                              onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                              onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )}
-
-                {currentQuestion.type === "slider" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "24px", padding: "20px 10px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                      <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 500 }}>{currentQuestion.labels?.min}</span>
-                      <motion.div 
-                        key={sliderValue}
-                        initial={{ scale: 1.2, opacity: 0.8 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        style={{ color: "var(--accent-primary)", fontWeight: 700, fontSize: "2rem", lineHeight: 1 }}
-                      >
-                        {sliderValue}
-                      </motion.div>
-                      <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 500 }}>{currentQuestion.labels?.max}</span>
-                    </div>
-                    
-                    <input
-                      type="range"
-                      min={currentQuestion.min}
-                      max={currentQuestion.max}
-                      value={sliderValue}
-                      onChange={(e) => setSliderValue(parseInt(e.target.value))}
-                      style={{
-                        width: "100%",
-                        height: "8px",
-                        background: "rgba(255,255,255,0.1)",
-                        borderRadius: "var(--radius-md)",
-                        appearance: "none",
-                        cursor: "pointer",
-                      }}
-                      className="custom-slider"
-                    />
-                  </div>
-                )}
-
-                {askingFollowUp && (
-                  <textarea
-                    value={otherText}
-                    onChange={(e) => setOtherText(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "16px 20px",
-                      background: "rgba(255,255,255,0.03)",
-                      border: "1px solid var(--border-color)",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--text-primary)",
-                      minHeight: "140px",
-                      fontSize: "1.1rem",
-                      resize: "vertical",
-                      outline: "none",
-                    }}
-                    placeholder="Tell me more..."
-                    autoFocus
-                    onFocus={(e) => e.currentTarget.style.borderColor = "var(--border-active)"}
-                    onBlur={(e) => e.currentTarget.style.borderColor = "var(--border-color)"}
-                  />
-                )}
-              </div>
-
-              {/* Error Message */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }} 
-                    animate={{ opacity: 1, y: 0 }} 
-                    exit={{ opacity: 0 }}
-                    style={{
-                      padding: "12px 16px",
-                      background: "rgba(239, 68, 68, 0.1)",
-                      border: "1px solid rgba(239, 68, 68, 0.3)",
-                      borderRadius: "var(--radius-md)",
-                      color: "#ef4444",
-                      fontSize: "0.9rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Action Buttons — always require explicit Continue */}
-              <div style={{ display: "flex", gap: "16px", marginTop: "16px", alignItems: "center" }}>
-                {(currentQuestion.type === "multiple_choice" ||
-                  currentQuestion.type === "forced_choice") &&
-                  selectedOptions.length > 0 && (
-                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-                      {currentQuestion.type === "multiple_choice"
-                        ? `${selectedOptions.length} selected — click Continue when ready`
-                        : "Click Continue to confirm your choice"}
-                    </span>
-                  )}
-                <motion.button
-                  whileHover={{ scale: saving || validatingGoal || !canContinue ? 1 : 1.02 }}
-                  whileTap={{ scale: saving || validatingGoal || !canContinue ? 1 : 0.98 }}
-                  onClick={() => handleNext()}
-                  disabled={saving || validatingGoal || !canContinue}
-                  className="btn-primary"
+              {/* ---- Goal blocked ------------------------------------------------ */}
+              {goalBlocked && (
+                <div
                   style={{
-                    flex: 1,
-                    padding: "16px 24px",
-                    opacity: saving || validatingGoal || !canContinue ? 0.5 : 1,
-                    cursor: saving || validatingGoal || !canContinue ? "not-allowed" : "pointer",
-                    fontWeight: 600,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "8px",
+                    padding: 16,
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--accent-warning, #f59e0b)",
+                    background: "rgba(245,158,11,0.08)",
                   }}
                 >
-                  {saving
-                    ? "Saving..."
-                    : validatingGoal
-                      ? "Checking your goal…"
-                      : questionNumber === totalQuestions
-                        ? "Complete Setup"
-                        : "Continue"}
-                </motion.button>
-              </div>
+                  <p style={{ margin: "0 0 12px", fontSize: "0.9rem" }}>{goalBlocked.message}</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {goalBlocked.suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => {
+                          setTextInput(suggestion);
+                          setGoalBlocked(null);
+                          setError(null);
+                        }}
+                        className="chip"
+                        style={{ cursor: "pointer" }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ---- Goal needs sharpening --------------------------------------- */}
+              {goalWeak && (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--border-color)",
+                    background: "var(--bg-secondary)",
+                  }}
+                >
+                  <p style={{ margin: "0 0 8px", fontSize: "0.9rem" }}>{goalWeak.message}</p>
+                  <p style={{ margin: "0 0 12px", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                    {goalWeak.sharpenPrompt}
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {goalWeak.sharpenOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => {
+                          setTextInput(option.resultTitle);
+                          setSharpenConfirmed(true);
+                          setGoalWeak(null);
+                        }}
+                        className="chip"
+                        style={{ cursor: "pointer" }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  {goalWeak.quality === "broad" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setKeepBroadGoal(true);
+                        setGoalWeak(null);
+                      }}
+                      style={{
+                        marginTop: 12,
+                        background: "none",
+                        border: "none",
+                        color: "var(--text-secondary)",
+                        fontSize: "0.85rem",
+                        textDecoration: "underline",
+                        cursor: "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      Keep &ldquo;{textInput.trim()}&rdquo; and carry on
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* ---- Inputs ------------------------------------------------------ */}
+              {(currentQuestion.type === "text" || askingFollowUp) && (
+                <div>
+                  <label htmlFor="onboarding-answer" className="sr-only">
+                    {prompt}
+                  </label>
+                  <input
+                    id="onboarding-answer"
+                    ref={inputRef}
+                    type="text"
+                    value={askingFollowUp ? otherText : textInput}
+                    onChange={(e) =>
+                      askingFollowUp ? setOtherText(e.target.value) : setTextInput(e.target.value)
+                    }
+                    className="input-field"
+                    placeholder="Type your answer"
+                    aria-describedby={error ? "onboarding-error" : undefined}
+                    style={{ width: "100%", padding: "16px 20px", fontSize: "1.05rem" }}
+                  />
+                </div>
+              )}
+
+              {currentQuestion.type === "scale" && !askingFollowUp && (
+                <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+                  <legend className="sr-only">{currentQuestion.prompt}</legend>
+                  <div
+                    role="radiogroup"
+                    aria-label={currentQuestion.prompt}
+                    style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                  >
+                    {STATE_SCALE.map((option) => {
+                      const isSelected = scaleValue === option.score;
+                      return (
+                        <button
+                          key={option.score}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          aria-label={`${option.score} out of 10, ${option.label}`}
+                          onClick={() => setScaleValue(option.score)}
+                          style={{
+                            flex: "1 1 40px",
+                            minWidth: 40,
+                            minHeight: 48,
+                            borderRadius: "var(--radius-md)",
+                            border: `1.5px solid ${isSelected ? "var(--accent-primary)" : "var(--border-color)"}`,
+                            background: isSelected
+                              ? "var(--accent-primary-transparent)"
+                              : "var(--bg-secondary)",
+                            color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                            fontWeight: isSelected ? 700 : 500,
+                            fontSize: "1rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {option.score}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginTop: 8,
+                      fontSize: "0.75rem",
+                      color: "var(--text-secondary)",
+                    }}
+                  >
+                    <span>{currentQuestion.labels?.min}</span>
+                    <span>{currentQuestion.labels?.max}</span>
+                  </div>
+
+                  {selectedScale && (
+                    <p
+                      aria-live="polite"
+                      style={{
+                        marginTop: 16,
+                        fontSize: "0.9rem",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      <strong>{selectedScale.label}.</strong>{" "}
+                      <span style={{ color: "var(--text-secondary)" }}>{selectedScale.capacity}</span>
+                    </p>
+                  )}
+                </fieldset>
+              )}
+
+              {currentQuestion.type === "forced_choice" && !askingFollowUp && (
+                <div
+                  role="radiogroup"
+                  aria-labelledby="onboarding-question"
+                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                >
+                  {currentQuestion.options?.map((option) => {
+                    const isSelected = selectedOptions.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => handleOptionSelect(option.value)}
+                        style={{
+                          width: "100%",
+                          minHeight: 52,
+                          padding: "16px 20px",
+                          borderRadius: "var(--radius-md)",
+                          border: `1.5px solid ${isSelected ? "var(--accent-primary)" : "var(--border-color)"}`,
+                          background: isSelected
+                            ? "var(--accent-primary-transparent)"
+                            : "var(--bg-secondary)",
+                          color: isSelected ? "var(--text-primary)" : "var(--text-secondary)",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "1rem",
+                          fontWeight: isSelected ? 600 : 500,
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+
+                  {wantsCustomDate && (
+                    <div style={{ marginTop: 4 }}>
+                      <label htmlFor="onboarding-date" className="sr-only">
+                        Target date
+                      </label>
+                      <input
+                        id="onboarding-date"
+                        type="date"
+                        value={customDate}
+                        min={new Date().toISOString().split("T")[0]}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        className="input-field"
+                        style={{ width: "100%", padding: "14px 18px" }}
+                      />
+                    </div>
+                  )}
+
+                  {wantsFlexible && (
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: "4px 0 0" }}>
+                      Fine. {BRAND.name} will plan week by week and ask again when a date starts to matter.
+                    </p>
+                  )}
+
+                  {currentQuestion.allowOther && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOther(true);
+                        setSelectedOptions([]);
+                        setAskingFollowUp(true);
+                      }}
+                      style={{
+                        alignSelf: "flex-start",
+                        marginTop: 4,
+                        background: "none",
+                        border: "none",
+                        color: "var(--text-secondary)",
+                        fontSize: "0.85rem",
+                        textDecoration: "underline",
+                        cursor: "pointer",
+                        padding: "6px 0",
+                      }}
+                    >
+                      Something else
+                    </button>
+                  )}
+
+                  {obstaclePreview && (
+                    <motion.div
+                      initial={reduceMotion ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: reduceMotion ? 0 : 0.2 }}
+                      aria-live="polite"
+                      style={{
+                        marginTop: 8,
+                        padding: 14,
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--bg-secondary)",
+                        border: "1px solid var(--border-color)",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      <span style={{ color: "var(--text-muted)" }}>So your plan becomes: </span>
+                      <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>
+                        {obstaclePreview.approach}
+                      </span>
+                      <span style={{ color: "var(--text-secondary)" }}> — {obstaclePreview.taskType}.</span>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
+              {/* ---- Error ------------------------------------------------------- */}
+              {error && (
+                <p
+                  id="onboarding-error"
+                  role="alert"
+                  aria-live="assertive"
+                  style={{
+                    margin: 0,
+                    padding: "12px 16px",
+                    borderRadius: "var(--radius-md)",
+                    background: "rgba(239,68,68,0.1)",
+                    border: "1px solid var(--accent-danger, #ef4444)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => handleNext()}
+                disabled={!canContinue || saving || validatingGoal}
+                style={{
+                  width: "100%",
+                  minHeight: 52,
+                  padding: "16px 24px",
+                  borderRadius: "var(--radius-md)",
+                  border: "none",
+                  background: canContinue ? "var(--accent-primary)" : "var(--bg-secondary)",
+                  color: canContinue ? "#fff" : "var(--text-muted)",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: canContinue && !saving ? "pointer" : "not-allowed",
+                  transition: "background 0.2s ease",
+                }}
+              >
+                {validatingGoal ? "Checking…" : saving ? "Saving…" : "Continue"}
+              </button>
             </div>
           </motion.div>
         </AnimatePresence>
-      </div>
+      </main>
 
-      <style jsx>{`
-        .custom-slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background: var(--accent-primary);
-          cursor: pointer;
-          border: 4px solid var(--bg-primary);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          transition: transform 0.1s;
-        }
-        .custom-slider::-webkit-slider-thumb:hover {
-          transform: scale(1.15);
-        }
-        .custom-slider::-moz-range-thumb {
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background: var(--accent-primary);
-          cursor: pointer;
-          border: 4px solid var(--bg-primary);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-          transition: transform 0.1s;
-        }
-        .custom-slider::-moz-range-thumb:hover {
-          transform: scale(1.15);
+      <style jsx global>{`
+        @media (max-width: 520px) {
+          .onboarding-steps {
+            display: none !important;
+          }
         }
       `}</style>
     </div>

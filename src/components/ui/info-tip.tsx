@@ -29,4 +29,4 @@ export const HEALTH_LEGEND = {
 } as const;
 
 export const PLANNING_QUALITY_HELP =
-  "How specific MenAI's context is across goals, initiatives, deadlines, obstacles, and time. Answer a few questions to fill gaps — not a score to optimize to 100%.";
+  "How specific Mettle's context is across goals, initiatives, deadlines, obstacles, and time. Answer a few questions to fill gaps — not a score to optimize to 100%.";

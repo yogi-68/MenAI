@@ -3,15 +3,15 @@ type AuthEmailAction = "signup" | "recovery" | "magiclink" | "invite" | "email_c
 export type { AuthEmailAction };
 
 const SUBJECTS: Record<AuthEmailAction, string> = {
-  signup: "Confirm your MenAI account",
-  recovery: "Reset your MenAI password",
-  magiclink: "Your MenAI sign-in link",
-  invite: "You're invited to MenAI",
-  email_change: "Confirm your new MenAI email",
+  signup: "Confirm your Mettle account",
+  recovery: "Reset your Mettle password",
+  magiclink: "Your Mettle sign-in link",
+  invite: "You're invited to Mettle",
+  email_change: "Confirm your new Mettle email",
 };
 
 export function getAuthEmailSubject(action: AuthEmailAction): string {
-  return SUBJECTS[action] ?? "MenAI notification";
+  return SUBJECTS[action] ?? "Mettle notification";
 }
 
 export function buildAuthEmailHtml(params: {
@@ -24,7 +24,7 @@ export function buildAuthEmailHtml(params: {
   const content: Record<AuthEmailAction, { title: string; body: string; cta: string }> = {
     signup: {
       title: "Confirm your email",
-      body: "Click the button below to activate your MenAI account and start onboarding.",
+      body: "Click the button below to activate your Mettle account and start onboarding.",
       cta: "Confirm email",
     },
     recovery: {
@@ -33,18 +33,18 @@ export function buildAuthEmailHtml(params: {
       cta: "Reset password",
     },
     magiclink: {
-      title: "Sign in to MenAI",
+      title: "Sign in to Mettle",
       body: "Use this one-time link to sign in. It expires shortly.",
       cta: "Sign in",
     },
     invite: {
       title: "You're invited",
-      body: "You've been invited to join MenAI. Accept the invitation to get started.",
+      body: "You've been invited to join Mettle. Accept the invitation to get started.",
       cta: "Accept invitation",
     },
     email_change: {
       title: "Confirm email change",
-      body: "Confirm this change to update the email on your MenAI account.",
+      body: "Confirm this change to update the email on your Mettle account.",
       cta: "Confirm new email",
     },
   };
@@ -64,7 +64,7 @@ export function buildAuthEmailHtml(params: {
         <table width="100%" style="max-width:520px;background:#111827;border:1px solid #1e293b;border-radius:16px;padding:32px;">
           <tr>
             <td>
-              <p style="margin:0 0 8px;color:#60a5fa;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">MenAI</p>
+              <p style="margin:0 0 8px;color:#60a5fa;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Mettle</p>
               <h1 style="margin:0 0 12px;color:#f8fafc;font-size:24px;line-height:1.3;">${copy.title}</h1>
               <p style="margin:0 0 28px;color:#94a3b8;font-size:15px;line-height:1.6;">${copy.body}</p>
               <a href="${confirmUrl}" style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;text-decoration:none;font-weight:600;padding:14px 24px;border-radius:10px;">${copy.cta}</a>

@@ -65,7 +65,7 @@ export function formatMomentumLabel(
     building: "Early signals of consistency appearing",
     steady: "Pace is holding — watch for drift on deadlines",
     slowing: "Fewer completions lately — check what's blocking you",
-    stalled: "No recent completions logged — MenAI needs execution data",
+    stalled: "No recent completions logged — Mettle needs execution data",
   };
 
   return {

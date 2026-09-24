@@ -1,7 +1,7 @@
 /**
  * Extraction Engine — Conversational Intelligence
  * 
- * The core differentiator of MenAI:
+ * The core differentiator of Mettle:
  * Automatically extracts structured life data from natural conversations.
  * 
  * User says: "I really want to stop eating processed foods and get healthier."

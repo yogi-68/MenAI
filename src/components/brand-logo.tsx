@@ -12,7 +12,7 @@ export function BrandLogo({ size = 36, className, style }: BrandLogoProps) {
   return (
     <img
       src="/logo.png"
-      alt="MenAI"
+      alt="Mettle"
       width={size}
       height={size}
       className={className}

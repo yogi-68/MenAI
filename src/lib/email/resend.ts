@@ -14,7 +14,7 @@ export function getResendClient(): Resend {
 }
 
 export function getResendFromAddress(): string {
-  return process.env.RESEND_FROM_EMAIL || "MenAI <onboarding@resend.dev>";
+  return process.env.RESEND_FROM_EMAIL || "Mettle <onboarding@resend.dev>";
 }
 
 export function getAppOrigin(): string {

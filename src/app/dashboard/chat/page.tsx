@@ -630,7 +630,7 @@ function ChatPageInner() {
                 What is your <span className="gradient-text">focus</span> today?
               </h2>
               <p>
-                Share what you&apos;re working on or what&apos;s blocking you. MenAI learns your
+                Share what you&apos;re working on or what&apos;s blocking you. Mettle learns your
                 patterns over time.
               </p>
               <div className="chat-suggestions">

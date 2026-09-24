@@ -1,5 +1,5 @@
 /**
- * AI Orchestrator — The Brain of MenAI Life Operating System
+ * AI Orchestrator — The Brain of Mettle Life Operating System
  * 
  * Pipeline:
  * 1. Safety Engine        → Crisis detection + moderation

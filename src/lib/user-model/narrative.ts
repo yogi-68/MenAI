@@ -146,7 +146,7 @@ export function emptyUserModel(): UserModel {
     currentMilestone: null,
     opportunities: [],
     confidence: "low",
-    narrative: "No active initiatives. MenAI needs one specific 90-day outcome with a deadline.",
+    narrative: "No active initiatives. Mettle needs one specific 90-day outcome with a deadline.",
     whoAmIAnswer: "",
     whoAmIStatements: [],
     evidence: [],

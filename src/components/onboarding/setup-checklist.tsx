@@ -21,7 +21,7 @@ export function SetupChecklist({ hasGoals = false }: SetupChecklistProps) {
             Add a goal to generate your daily plan
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            MenAI plans from <strong style={{ color: "var(--text-secondary)" }}>goals → milestones → 3 tasks/day</strong>.
+            Mettle plans from <strong style={{ color: "var(--text-secondary)" }}>goals → milestones → 3 tasks/day</strong>.
             Long-term direction alone is not enough — pick something finishable in 30–90 days.
           </p>
         </div>

@@ -112,7 +112,7 @@ export function CoachMobileFab() {
                 </button>
               </div>
               <iframe
-                title="MenAI Coach"
+                title="Mettle Coach"
                 src="/dashboard/chat/embed"
                 className="coach-mobile-sheet__frame"
               />

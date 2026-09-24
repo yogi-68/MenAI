@@ -46,7 +46,7 @@ function goalsMatchingTopic(model: UserModel, topic: string): string[] {
 export function buildEvidenceExplanation(model: UserModel, message: string): string {
   const topic = topicFromMessage(message);
   const lines: string[] = ["## Direct answer for \"Why do you believe that?\""];
-  lines.push("Cite ONLY stored evidence. Use coach voice — no \"MenAI believes\" phrasing.");
+  lines.push("Cite ONLY stored evidence. Use coach voice — no \"Mettle believes\" phrasing.");
   lines.push("Structure:");
   lines.push("Because:");
   lines.push("• [specific stored fact — goal title, initiative, task count, etc.]");

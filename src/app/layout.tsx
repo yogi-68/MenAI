@@ -21,21 +21,36 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+import { BRAND } from "@/lib/product/brand";
+
 export const metadata: Metadata = {
-  title: "MenAI — Your AI Life Operating System",
-  description:
-    "An AI execution coach and life operating system. Goal tracking, accountability, strategic coaching, and personal growth intelligence — available 24/7.",
-  keywords: ["AI mentor", "execution coach", "accountability", "goal tracking", "life OS", "productivity", "personal growth"],
+  title: {
+    default: `${BRAND.name} — ${BRAND.tagline}`,
+    template: `%s · ${BRAND.name}`,
+  },
+  description: BRAND.description,
+  applicationName: BRAND.name,
+  keywords: [
+    "mental performance",
+    "performance coach",
+    "accountability",
+    "energy management",
+    "daily check-in",
+    "focus",
+  ],
   icons: {
     icon: "/logo.png",
     apple: "/logo.png",
   },
   openGraph: {
-    title: "MenAI — Your AI Life Operating System",
-    description: "AI-powered execution coaching. Goal tracking, accountability, strategic planning & personal growth intelligence.",
+    title: `${BRAND.name} — ${BRAND.tagline}`,
+    description: BRAND.description,
+    siteName: BRAND.name,
     type: "website",
     images: ["/logo.png"],
   },
+  // This is personal, sensitive content. Keep it out of search indexes.
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

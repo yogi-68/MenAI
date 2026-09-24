@@ -3,7 +3,7 @@
  *
  * Tasks don't just exist. They ADAPT.
  *
- * When a user keeps skipping a task, MenAI doesn't nag.
+ * When a user keeps skipping a task, Mettle doesn't nag.
  * It dowscopes, reframes, or deprioritizes automatically.
  *
  * Examples:

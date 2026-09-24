@@ -202,7 +202,7 @@ export default function GoalDetailPage() {
                 Plan precision
               </h3>
               <p className="text-xs mt-0.5 m-0" style={{ color: "var(--text-muted)" }}>
-                How well MenAI can personalise your tasks — {confidenceData.confidence.total}/100
+                How well Mettle can personalise your tasks — {confidenceData.confidence.total}/100
               </p>
             </div>
             {confidenceData.confidence.total < 80 && (

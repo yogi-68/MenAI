@@ -110,7 +110,7 @@ export default function LoginPage() {
                 WebkitTextFillColor: "transparent",
               }}
             >
-              MenAI
+              Mettle
             </span>
           </Link>
           <p style={{ color: "var(--text-secondary)", marginTop: "12px", fontSize: "0.95rem" }}>

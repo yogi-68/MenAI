@@ -27,7 +27,7 @@ export function isBadGoalTitle(raw: string): boolean {
   return false;
 }
 
-/** Extract a short title from a sentence like "In the next 30 days I want to launch MenAI". */
+/** Extract a short title from a sentence like "In the next 30 days I want to launch Mettle". */
 export function normalizeGoalTitle(raw: string): string {
   let t = raw.trim().replace(/\s+/g, " ");
   t = t.replace(/^in the next \d+\s*(days?|weeks?|months?)\s*,?\s*/i, "");

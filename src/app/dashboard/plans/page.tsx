@@ -662,7 +662,7 @@ export default function DailyPlansPage() {
                 <Link href="/dashboard/chat" style={{ color: "var(--accent-primary)", textDecoration: "underline" }}>
                   Coach
                 </Link>
-                {" "}— MenAI generates 3 coach tasks per goal per day from milestones and your recent activity.
+                {" "}— Mettle generates 3 coach tasks per goal per day from milestones and your recent activity.
               </>
             ) : (
               <>

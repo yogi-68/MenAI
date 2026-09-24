@@ -1,5 +1,5 @@
 /**
- * Cognition Engine — The Brain of MenAI
+ * Cognition Engine — The Brain of Mettle
  *
  * This is the SINGLE source of truth for a user's cognitive state.
  * Every feature consumes THIS — not raw DB calls.
@@ -94,7 +94,7 @@ interface DbMemory {
 }
 
 // ===== COGNITIVE STATE TYPE =====
-// This is the full "brain dump" of what MenAI knows about a user right now.
+// This is the full "brain dump" of what Mettle knows about a user right now.
 
 export interface CognitiveState {
   // === DIRECTION ===
@@ -655,7 +655,7 @@ export function formatCognitiveStateForDashboard(state: CognitiveState): {
   // New user — minimal data
   if (state.maturity_level === "new") {
     return {
-      greeting_context: "You're still getting started. MenAI will learn how you work over time.",
+      greeting_context: "You're still getting started. Mettle will learn how you work over time.",
       direction_text: state.direction,
       observation: null,
       momentum_text: null,
