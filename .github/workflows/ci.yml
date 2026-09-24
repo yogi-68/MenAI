@@ -65,23 +65,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check E2E credentials
-        id: creds
-        run: echo "ready=${{ secrets.TEST_SUPABASE_URL != '' }}" >> "$GITHUB_OUTPUT"
-
       - name: Install Playwright browsers
-        if: steps.creds.outputs.ready == 'true'
         run: npx playwright install --with-deps chromium
 
+      # The public-surface suite needs no account and no seeded data, so it
+      # runs on every pull request. Supabase credentials, when present, are
+      # only used so the app boots; the assertions do not depend on them.
       - name: Run E2E
-        if: steps.creds.outputs.ready == 'true'
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY }}
-          OPENAI_API_KEY: ${{ secrets.TEST_OPENAI_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY || 'placeholder' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.TEST_SUPABASE_SERVICE_ROLE_KEY || 'placeholder' }}
+          OPENAI_API_KEY: ${{ secrets.TEST_OPENAI_API_KEY || 'placeholder' }}
           NEXT_PUBLIC_APP_URL: http://localhost:3000
-        run: npm run test:e2e
+        run: npm run test:e2e -- --project=chromium
 
       - uses: actions/upload-artifact@v4
         if: failure()
