@@ -45,7 +45,7 @@ npm run test:e2e   # Playwright, on its own port, against a production build
 |---|---|
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint flat config |
-| `npm run test` | 67 unit tests |
+| `npm run test` | 103 unit tests |
 | `npm run test:e2e` | 15 end-to-end tests |
 | `npm run build` | Production build |
 
@@ -106,13 +106,14 @@ src/
     observability/        structured logger with PII redaction
     product/brand.ts      the product name, in one place
     mind/                 state scale, check-ins, resets
+    patterns/             the pattern vocabulary and the one way to write one
     ai/orchestrator/      the conversation pipeline
     plans/                planning, interview, scoring
     user-model/           synthesis
     mentor/               memory tiers
-supabase/migrations/      044 forward-only migrations
+supabase/migrations/      045 forward-only migrations
 tests/
-  unit/                   67 tests
+  unit/                   103 tests
   e2e/                    15 tests, no account needed
 ```
 
@@ -166,9 +167,10 @@ Before the first production deploy:
 
 Known, deliberately not yet done:
 
-- **Consolidate the pattern detectors.** Five of them write to three tables
-  with different vocabularies, and `pattern-detector`'s output reaches no
-  prompt. They should be one service with one vocabulary.
+- **Route pattern-detector output into a prompt.** It writes to
+  `behavioral_observations` and nothing reads it. The five write paths and the
+  vocabulary are now consolidated (`src/lib/patterns/`), but this detector
+  still feeds nothing.
 - **One confidence scale.** Eight scorers currently run on unrelated ranges;
   `extraction-engine` hardcodes thresholds while `product/constants.ts`
   defines `MEMORY_CONFIDENCE` that it ignores.

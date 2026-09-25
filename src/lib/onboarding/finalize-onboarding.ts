@@ -1,3 +1,4 @@
+import { recordPattern } from "@/lib/patterns/record";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   OBSTACLE_PATTERN_MAP,
@@ -170,25 +171,14 @@ export async function finalizeOnboarding(
 
   const patternMeta = OBSTACLE_PATTERN_MAP[obstacleKey];
   if (patternMeta) {
-    const { data: existingPattern } = await supabase
-      .from("execution_patterns")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("pattern", patternMeta.pattern)
-      .maybeSingle();
-
-    if (!existingPattern) {
-      await supabase.from("execution_patterns").insert({
-        user_id: userId,
-        pattern: patternMeta.pattern,
-        trigger: patternMeta.trigger,
-        behavioral_impact: patternMeta.behavioralImpact,
-        frequency: "occasional",
-        severity: "medium",
-        confidence: 0.85,
-        occurrences: 1,
-      });
-    }
+    // Upsert rather than check-then-insert: the recorder is idempotent per
+    // (user, pattern), so re-running finalization cannot duplicate a row.
+    await recordPattern(supabase, userId, {
+      pattern: patternMeta.pattern,
+      source: "onboarding",
+      trigger: patternMeta.trigger,
+      behavioralImpact: patternMeta.behavioralImpact,
+    });
   }
 
   if (goalTitle || obstacleLabel || successCriteria) {

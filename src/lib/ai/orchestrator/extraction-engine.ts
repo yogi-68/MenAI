@@ -10,6 +10,7 @@
  * This runs on every user message (non-blocking, parallel to response generation).
  */
 
+import { recordPatterns, asFrequency, asSeverity } from "@/lib/patterns/record";
 import { classifyWithLLM } from "./router";
 import { EXTRACTION_PROMPT } from "@/lib/ai/prompts";
 import type { ExtractedLifeData } from "./types";
@@ -591,44 +592,29 @@ export async function persistExtractedData(
     }
   }
 
-  // Persist execution patterns (upsert by pattern type)
+  // Persist execution patterns.
+  //
+  // This was a hand-rolled select-then-update-or-insert that set a different
+  // column set from the other four writers and never computed influence. It
+  // also wrote whatever the model returned straight into a CHECK-constrained
+  // column; recordPattern normalizes first and declines anything it cannot
+  // map, rather than failing the insert.
   if (data.executionPatterns.length > 0) {
-    for (const pattern of data.executionPatterns) {
-      // Check if pattern already exists
-      const { data: existing } = await supabase
-        .from("execution_patterns")
-        .select("id, occurrences")
-        .eq("user_id", userId)
-        .eq("pattern", pattern.pattern)
-        .limit(1);
-
-      if (existing && existing.length > 0) {
-        // Update existing pattern
-        tasks.push(
-          supabase.from("execution_patterns").update({
-            trigger: pattern.trigger || null,
-            frequency: pattern.frequency,
-            severity: pattern.severity,
-            behavioral_impact: pattern.behavioralImpact,
-            confidence: pattern.confidence,
-            last_detected: new Date().toISOString(),
-            occurrences: (existing[0].occurrences || 0) + 1,
-          }).eq("id", existing[0].id).then(() => {})
-        );
-      } else {
-        tasks.push(
-          supabase.from("execution_patterns").insert({
-            user_id: userId,
-            pattern: pattern.pattern,
-            trigger: pattern.trigger || null,
-            frequency: pattern.frequency,
-            severity: pattern.severity,
-            behavioral_impact: pattern.behavioralImpact,
-            confidence: pattern.confidence,
-          }).then(() => {})
-        );
-      }
-    }
+    tasks.push(
+      recordPatterns(
+        supabase,
+        userId,
+        data.executionPatterns.map((pattern) => ({
+          pattern: pattern.pattern,
+          source: "extraction" as const,
+          trigger: pattern.trigger || null,
+          frequency: asFrequency(pattern.frequency),
+          severity: asSeverity(pattern.severity),
+          behavioralImpact: pattern.behavioralImpact,
+          confidence: pattern.confidence,
+        }))
+      ).then(() => {})
+    );
   }
 
   // Persist relationships (upsert by name)

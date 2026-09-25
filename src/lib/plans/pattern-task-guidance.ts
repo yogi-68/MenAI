@@ -1,13 +1,23 @@
-/** Map detected execution patterns to task generation guidance. */
+/**
+ * Task-generation guidance per execution pattern.
+ *
+ * Keyed by `ExecutionPattern`, so adding a pattern to the vocabulary without
+ * guidance for it is a compile error rather than a silent gap. Two entries
+ * used to sit here for patterns that could not exist: `reactive_schedule`,
+ * which the database CHECK constraint rejected, and `distraction`, which was
+ * never in the vocabulary at all. Neither could ever be selected.
+ */
+
+import { isExecutionPattern, type ExecutionPattern } from "@/lib/patterns/vocabulary";
 
 export interface PatternGuidance {
-  pattern: string;
+  pattern: ExecutionPattern;
   avoidTasks: string[];
   preferTasks: string[];
   coachNote: string;
 }
 
-const GUIDANCE: Record<string, PatternGuidance> = {
+const GUIDANCE: Record<ExecutionPattern, PatternGuidance> = {
   overthinking: {
     pattern: "overthinking",
     avoidTasks: ["research competitors", "read more articles", "plan further", "compare options"],
@@ -40,21 +50,26 @@ const GUIDANCE: Record<string, PatternGuidance> = {
   },
   scattered_focus: {
     pattern: "scattered_focus",
-    avoidTasks: ["work on multiple initiatives", "parallel projects"],
-    preferTasks: ["one task on current focus only", "defer everything else explicitly"],
-    coachNote: "Scattered focus — only current focus initiative gets tasks today.",
-  },
-  reactive_schedule: {
-    pattern: "reactive_schedule",
-    avoidTasks: ["schedule more meetings", "plan around calendar"],
-    preferTasks: ["protect 90-minute focus block tomorrow", "decline or shorten 1 meeting", "batch email/calls to one slot"],
-    coachNote: "Reactive calendar — protect deep work blocks; shrink meetings.",
-  },
-  distraction: {
-    pattern: "distraction",
-    avoidTasks: ["open social apps", "browse without purpose"],
-    preferTasks: ["phone in another room for 45 min", "one task with notifications off"],
-    coachNote: "Distraction — reduce friction to focus, not more willpower tasks.",
+    avoidTasks: [
+      "work on multiple initiatives",
+      "parallel projects",
+      "schedule more meetings",
+      "plan around the calendar",
+      "browse without purpose",
+    ],
+    // Absorbed from the former reactive_schedule and distraction entries: a
+    // calendar owned by other people, and an attention pulled elsewhere, are
+    // both causes of the same scattering, and the remedies are the same kind.
+    preferTasks: [
+      "one task on the current focus only",
+      "defer everything else explicitly",
+      "protect a 90-minute focus block tomorrow",
+      "decline or shorten one meeting",
+      "batch email and calls into one slot",
+      "phone in another room for 45 minutes",
+    ],
+    coachNote:
+      "Scattered focus — one initiative gets tasks today; protect a deep block and shrink the calendar.",
   },
   burnout: {
     pattern: "burnout",
@@ -75,7 +90,9 @@ export function buildPatternGuidanceLines(
 ): string[] {
   const lines: string[] = [];
   for (const p of patterns) {
-    const g = GUIDANCE[p.pattern];
+    // Rows predating migration 045 may hold a value outside the vocabulary;
+    // fall through to behavioral_impact rather than indexing with it.
+    const g = isExecutionPattern(p.pattern) ? GUIDANCE[p.pattern] : undefined;
     const stats =
       p.confidence != null || p.occurrences != null
         ? ` [confidence ${Math.round((p.confidence ?? 0.7) * 100)}%, mentions ${p.occurrences ?? 1}]`
@@ -89,6 +106,17 @@ export function buildPatternGuidanceLines(
     }
   }
   return lines;
+}
+
+/**
+ * Guidance for one pattern, or undefined if it is not in the vocabulary.
+ *
+ * The map is keyed by `ExecutionPattern`, so callers holding a narrowed value
+ * can index it directly; this exists for callers holding a plain string, such
+ * as a row written before migration 045 normalized the column.
+ */
+export function patternGuidanceFor(pattern: string): PatternGuidance | undefined {
+  return isExecutionPattern(pattern) ? GUIDANCE[pattern] : undefined;
 }
 
 export function getNextMilestoneTitle(

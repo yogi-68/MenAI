@@ -5,7 +5,7 @@ import {
   patternStatusFromInfluence,
   daysSince,
 } from "@/lib/mentor/memory-lifecycle";
-import { mirrorPatternToVector } from "@/lib/mentor/memory-vector-bridge";
+import { recordPattern, type PatternSource } from "@/lib/patterns/record";
 
 export interface WeaknessProfile {
   pattern: string;
@@ -31,8 +31,12 @@ const CHAT_PATTERN_SIGNALS: Array<{ re: RegExp; pattern: string }> = [
   { re: /\bdoubt myself\b/i, pattern: "overthinking" },
   { re: /\bwork too much\b/i, pattern: "burnout" },
   {
+    // A calendar owned by other people is a specific cause of the same
+    // effect. This used to emit "reactive_schedule", which is not in the
+    // vocabulary, so every insert it produced failed the CHECK constraint —
+    // silently, because the result was never read.
     re: /\bmeeting|calendar|calls?\b.*\b(took|ate|filled|most of)\b|\breactive\b|\bback-to-back\b/i,
-    pattern: "reactive_schedule",
+    pattern: "scattered_focus",
   },
 ];
 
@@ -88,7 +92,13 @@ export async function loadWeaknessProfiles(
     .sort((a, b) => b.influenceScore - a.influenceScore);
 }
 
-/** Record pattern mention — boosts confidence on repeat, decays when absent. */
+/**
+ * Record that a pattern was mentioned.
+ *
+ * Thin wrapper over the shared recorder, kept because several callers already
+ * use this name and signature. The body used to be its own select-then-
+ * update-or-insert with its own column set and its own confidence constants.
+ */
 export async function recordPatternMention(
   supabase: SupabaseClient,
   userId: string,
@@ -96,78 +106,23 @@ export async function recordPatternMention(
   source: string,
   behavioralImpact?: string
 ): Promise<void> {
-  const now = new Date().toISOString();
-  const { data: existing } = await supabase
-    .from("execution_patterns")
-    .select("id, occurrences, confidence, status")
-    .eq("user_id", userId)
-    .eq("pattern", pattern)
-    .maybeSingle();
-
-  if (existing) {
-    const mentions = (existing.occurrences ?? 0) + 1;
-    const confidence = Math.min(0.98, (existing.confidence ?? 0.7) + 0.03);
-    const influence = computePatternInfluence({
-      confidence,
-      occurrences: mentions,
-      lastMentionedAt: now,
-      status: "active",
-    });
-    const status = patternStatusFromInfluence(influence, 0);
-
-    await supabase
-      .from("execution_patterns")
-      .update({
-        occurrences: mentions,
-        evidence_count: mentions,
-        confidence,
-        influence_score: influence,
-        status,
-        last_detected: now,
-        last_mentioned_at: now,
-        source,
-      })
-      .eq("id", existing.id);
-
-    mirrorPatternToVector({
-      userId,
-      pattern,
-      evidenceCount: mentions,
-      influenceScore: influence,
-      behavioralImpact,
-    });
-    return;
-  }
-
-  const confidence = 0.75;
-  const influence = computePatternInfluence({
-    confidence,
-    occurrences: 1,
-    lastMentionedAt: now,
-  });
-
-  await supabase.from("execution_patterns").insert({
-    user_id: userId,
+  await recordPattern(supabase, userId, {
     pattern,
-    trigger: source,
-    behavioral_impact: behavioralImpact || `Mentioned in ${source}`,
-    frequency: "frequent",
-    severity: "medium",
-    confidence,
-    influence_score: influence,
-    occurrences: 1,
-    evidence_count: 1,
-    last_mentioned_at: now,
-    status: "active",
-  });
-
-  mirrorPatternToVector({
-    userId,
-    pattern,
-    evidenceCount: 1,
-    influenceScore: influence,
+    source: isPatternSource(source) ? source : "chat",
     behavioralImpact,
+    trigger: source,
   });
+}
+
+/** Narrow a free-form source string onto the recorder's union. */
+function isPatternSource(value: string): value is PatternSource {
+  return (
+    value === "chat" ||
+    value === "reflection" ||
+    value === "onboarding" ||
+    value === "extraction" ||
+    value === "confidence_qa"
+  );
 }
 
 export function formatWeaknessProfilesForPrompt(profiles: WeaknessProfile[]): string[] {

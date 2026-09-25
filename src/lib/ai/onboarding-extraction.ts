@@ -3,6 +3,7 @@
  * Extracts memory from onboarding questionnaire responses
  */
 
+import { recordPatterns, asFrequency, asSeverity } from "@/lib/patterns/record";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOpenAI } from "@/lib/ai/openai";
 import { FAST_MODEL } from "@/lib/ai/models";
@@ -460,44 +461,27 @@ async function persistExtractedMemory(
     }
   }
 
-  // Insert or update execution patterns
+  // Execution patterns.
+  //
+  // The confidence floor stays: onboarding extraction is inferring a pattern
+  // from prose rather than being told one outright, so a weak guess should
+  // not become a fact the planner acts on.
   if (extracted.executionPatterns && extracted.executionPatterns.length > 0) {
-    for (const pattern of extracted.executionPatterns) {
-      if (pattern.confidence > 0.7) {
-        // Check if pattern already exists
-        const { data: existing } = await supabase
-          .from("execution_patterns")
-          .select("id, occurrences")
-          .eq("user_id", userId)
-          .eq("pattern", pattern.pattern)
-          .single();
-
-        if (existing) {
-          // Update existing pattern
-          await supabase
-            .from("execution_patterns")
-            .update({
-              occurrences: existing.occurrences + 1,
-              last_detected: new Date().toISOString(),
-              frequency: pattern.frequency,
-              severity: pattern.severity,
-            })
-            .eq("id", existing.id);
-        } else {
-          // Insert new pattern
-          await supabase.from("execution_patterns").insert({
-            user_id: userId,
-            pattern: pattern.pattern,
-            trigger: pattern.trigger,
-            frequency: pattern.frequency,
-            severity: pattern.severity,
-            behavioral_impact: pattern.behavioralImpact,
-            confidence: pattern.confidence,
-            occurrences: 1,
-          });
-        }
-      }
-    }
+    await recordPatterns(
+      supabase,
+      userId,
+      extracted.executionPatterns
+        .filter((pattern) => pattern.confidence > 0.7)
+        .map((pattern) => ({
+          pattern: pattern.pattern,
+          source: "onboarding" as const,
+          trigger: pattern.trigger,
+          frequency: asFrequency(pattern.frequency),
+          severity: asSeverity(pattern.severity),
+          behavioralImpact: pattern.behavioralImpact,
+          confidence: pattern.confidence,
+        }))
+    );
   }
 
   // Update profile with extracted data

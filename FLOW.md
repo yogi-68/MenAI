@@ -298,12 +298,16 @@ state-machine       rules      → LISTENING · PLANNING · WISDOM_FIRST · …
 
 Cognitive state is cached in Redis for five minutes.
 
-> **Known duplication.** Five separate pattern detectors write to three tables
-> with different vocabularies, and `pattern-detector`'s output reaches no
-> prompt. Eight confidence scores run on unrelated scales. Consolidating these
-> into one pattern service and one calibrated scale is the largest remaining
-> piece of work; it is tracked in the README's "Next" section rather than
-> quietly left unmentioned here.
+**Writing a pattern.** All five detectors now go through
+`src/lib/patterns/record.ts`, which normalizes the name against one vocabulary
+and upserts on a unique `(user_id, pattern)` — see layer 5a below. Before that,
+each hand-rolled its own select-then-insert with its own column set, and two of
+them wrote values the CHECK constraint rejected.
+
+> **Still outstanding.** `pattern-detector` writes to
+> `behavioral_observations` and nothing reads it, so that detector feeds
+> nothing. Eight confidence scores still run on unrelated scales. Both are
+> tracked in the README's "Next" section.
 
 ---
 

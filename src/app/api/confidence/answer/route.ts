@@ -4,6 +4,7 @@
  * Writes data to DB, recomputes confidence, returns next question.
  */
 
+import { recordPattern } from "@/lib/patterns/record";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
@@ -124,17 +125,20 @@ export async function POST(req: NextRequest) {
       .update({ success_criteria: value })
       .eq("id", goalId);
   } else if (typedFactor === "obstacle") {
-    // Upsert an execution_patterns row for this obstacle
-    await supabase.from("execution_patterns").upsert(
-      {
-        user_id: user.id,
-        pattern: value,
-        behavioral_impact: value,
-        status: "active",
-        source: "confidence_qa",
-      },
-      { onConflict: "user_id,pattern" }
-    );
+    // This wrote the user's free text straight into `pattern`, a column with
+    // a CHECK constraint listing seven allowed values; targeted a unique
+    // index that did not exist; and set a `source` column the table did not
+    // have. Three reasons to fail, and the result was never checked — so
+    // every obstacle answered here was discarded.
+    //
+    // The raw answer is still worth keeping, so it goes to the field that
+    // holds prose while the normalized pattern goes to the one that doesn't.
+    await recordPattern(supabase, user.id, {
+      pattern: value,
+      source: "confidence_qa",
+      behavioralImpact: value,
+      trigger: "confidence question",
+    });
   } else if (typedFactor === "resources") {
     // Upsert an identity_signals row for available hours / resources
     await supabase.from("identity_signals").upsert(
